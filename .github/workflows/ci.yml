@@ -100,9 +100,37 @@ jobs:
           tests/integration/test_improve_example.py
           tests/integration/test_mujoco_episode.py
           -q
-      # The other five files want lerobot, which pins Python 3.12 and pulls torch. That is
-      # a much bigger job and a separate decision; leaving them out is a cost choice, not a
-      # judgement that they matter less. They are the ones that record.
+
+  recording:
+    name: integration (recording)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # lerobot declares requires-python >=3.12. See the [robot] extra in pyproject.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # torch from the CPU index before anything asks for it, so lerobot's dependency is
+      # already satisfied and pip does not fetch the CUDA build for a runner with no GPU
+      # to use it. Measured: 192 MB against 527 MB.
+      - run: >
+          python -m pip install --quiet torch
+          --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pip install --quiet -e ".[dev,sim,robot]"
+      # These are the ones that record, which is design decision 1. The claim that running
+      # is collecting is not something the unit suite can check: it needs a body to move, a
+      # dataset on disk afterwards, and the episode read back. About twenty seconds once
+      # the wheels are cached.
+      - run: >
+          python -m pytest
+          tests/integration/test_cli_eval.py
+          tests/integration/test_cli_run.py
+          tests/integration/test_record_example.py
+          tests/integration/test_shell_correction.py
+          tests/integration/test_shell_session.py
+          -q
 
   shell:
     name: shell builds and type-checks
