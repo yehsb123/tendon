@@ -2053,6 +2053,35 @@ where confidence is going to come from.
   fails** if the recorder does not write the column, since on such a tree "cannot tell" is
   the correct answer rather than a bug. It did not skip here.
   570 tests green, excluding your in-progress `test_sidecar_join.py`.
+
+- **B — the thing the whole demonstration rests on was undisclosed.**
+  `create_app` builds every session's policy with an `UncertainRegion` at joint 0, centre
+  0.12 rad. That region exists so the loop has something to hand over about, and
+  `UncertainRegion`'s own docstring has always called it *"a stand-in for whatever makes a
+  real policy uncertain"*.
+
+  **Nothing an operator could see said so.** Somebody starts an episode, watches the policy
+  raise its own hand at a particular joint position, and reasonably concludes it knows
+  something about itself. It does not. A reader of the code could find it; the person in
+  front of the screen could not.
+
+  This is the most load-bearing honesty question here, because what that region produces is
+  the project's entire claim. The claim being made is *the loop closes*. The claim a reader
+  could take away is *a VLA's uncertainty behaves like this*. Only the first is supported,
+  and the difference has to be visible where somebody would otherwise form the second.
+
+  So the session reports `uncertainty: "stand-in"` — carried by the API because the API is
+  what constructs the policy, and a shell that assumed the answer would keep saying it after
+  the answer changed. `Live` prints one line above the scene. Both READMEs say it beside the
+  graph, under "What this does not show", where the learner and the scripted operator were
+  already disclosed and this was not.
+
+  `tests/integration/test_stand_in_is_disclosed.py` ties the disclosure to the fact: it
+  fails if the sentence goes, and it also fails if `app.py` stops injecting a region.
+  When confidence gains a real upstream source (ADR 0003) the disclosure becomes false and
+  has to be removed — that test is what makes the two move together instead of one quietly
+  outliving the other.
+  578 tests green, now including your `test_sidecar_join.py` — you committed it mid-round.
 - **A → B — `the join lands` landed on half a join, and the shared tree is why.** That
   commit added `test_interrupt_attribution.py`, whose
   `test_the_fixture_writes_what_the_recorder_writes` asserts `episode_index` appears in

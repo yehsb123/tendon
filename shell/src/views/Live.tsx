@@ -15,6 +15,29 @@ import { useSession } from "../state/session";
  * Anything that does not serve that question belongs in another view.
  */
 /**
+ * Where the handover you are about to see comes from.
+ *
+ * The policy raises its own hand at a point in joint space that was chosen in advance, so
+ * that the loop has something to hand over about. Everything downstream of that moment is
+ * real — the interrupt, the correction, the memory, the falling rate — and the moment
+ * itself is a placeholder standing in for whatever makes a model uncertain.
+ *
+ * Said here because this is where somebody watches it happen and concludes the policy knows
+ * something about itself. `UncertainRegion`'s own docstring has always called it a stand-in;
+ * nothing the operator could see did.
+ */
+function StandIn({ uncertainty }: { uncertainty: string | undefined }) {
+  if (uncertainty !== "stand-in") return null;
+
+  return (
+    <p className="taught" data-empty="true">
+      Uncertainty here is a stand-in placed in joint space, not a model's own estimate. What
+      it triggers is real; what triggers it is a placeholder.
+    </p>
+  );
+}
+
+/**
  * What the policy has been taught for the skill and body in front of you.
  *
  * The shell could show that it asks less often. It could not show why, and from the
@@ -118,6 +141,8 @@ export function Live() {
         }
         running={session?.running ?? false}
       />
+
+      <StandIn uncertainty={session?.uncertainty} />
 
       <Taught skill={chosenSkill} body={chosenBody} finished={session?.finished ?? false} />
 

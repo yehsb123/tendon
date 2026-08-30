@@ -72,6 +72,12 @@ class SessionState:
     #: Set when the worker raised. An episode that died silently is worse than one that
     #: failed loudly, so this is surfaced rather than logged.
     error: str | None = None
+    #: Where this policy's uncertainty comes from. `"stand-in"` when it is placed in joint
+    #: space on purpose so the loop has something to hand over about — which is what runs
+    #: today, and which an operator watching the policy "raise its own hand" has no other
+    #: way to know. ADR 0003 says confidence has no upstream source yet; this is the
+    #: sentence that carries that decision to the person in front of it.
+    uncertainty: str = "stand-in"
 
 
 class ShellHandler:
@@ -309,6 +315,7 @@ class EpisodeSession:
             "interventions": state.interventions,
             "corrections": state.corrections,
             "error": state.error,
+            "uncertainty": state.uncertainty,
             "ended": (
                 state.result.state.value
                 if state.result is not None

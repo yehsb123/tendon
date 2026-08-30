@@ -50,12 +50,23 @@ scheduler hands over **before the body moves** rather than after something goes 
 operator corrects it. The correction is stored against the situation it was given in, and
 later episodes recall it and do not ask again.
 
+
 Every piece in that loop is the real one — the same scheduler, safety check, interrupt
 state machine and evaluator a trained policy would run under.
 
 **What this does not show.** The learner here remembers rather than generalises, and the
 operator is scripted. Swapping in LoRA fine-tuning ([`services/trainer.py`](src/tendon/services/trainer.py))
-and a human is the v0.3 experiment. This is v0.1 demonstrating that the machinery closes
+and a human is the v0.3 experiment.
+
+**And the uncertainty is a stand-in.** It is placed at a point in joint space so the loop
+has something to hand over about — a placeholder for whatever makes a real model unsure, an
+unfamiliar object or an out-of-distribution view. Everything downstream of that moment is
+the real thing. What the graph shows is that the loop closes, not that a VLA's own
+uncertainty behaves this way; those are different claims and only the first is made here.
+Confidence has no upstream source yet ([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md)),
+and the shell says so on the screen where you watch it happen — a reader of the code could
+always find it in `UncertainRegion`'s docstring, and an operator watching a policy raise its
+own hand had no way to know at all. This is v0.1 demonstrating that the machinery closes
 the loop — stated plainly, because a demo that blurred the two would be answering a
 question nobody asked while appearing to answer the one that matters.
 

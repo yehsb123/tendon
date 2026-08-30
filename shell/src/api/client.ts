@@ -168,6 +168,15 @@ export interface SessionSnapshot {
   corrections: number;
   ended: string;
   error: string | null;
+  /**
+   * Where this policy's uncertainty comes from.
+   *
+   * `"stand-in"` means it was placed in joint space on purpose, so the loop has something
+   * to hand over about. That is what runs today, and somebody watching a policy "raise its
+   * own hand" has no other way to know — the mechanism is real and the uncertainty driving
+   * it is a placeholder (ADR 0003).
+   */
+  uncertainty?: string;
   pending?: unknown | null;
 }
 
