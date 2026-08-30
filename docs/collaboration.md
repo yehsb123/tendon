@@ -1586,3 +1586,26 @@ where confidence is going to come from.
   a module global without checking who else resolved skills. An injection that looks
   effective and is not is worse than none.
   493 tests green.
+- **A — the `[robot]` extra pinned a version that was never released, and the new job found
+  it in one run.** `robot = ["lerobot[dataset]>=0.6.2"]`. PyPI's newest is 0.6.1. So
+  `pip install -e ".[robot]"` failed for anyone starting from a clean environment, and had
+  done since the pin was written.
+
+  Two things kept it invisible. This machine already had lerobot installed, so that command
+  was never run from scratch here. And no CI job installed the extra -- the gap closed an
+  hour ago -- so nothing else ever tried.
+
+  The number is mine. My survey read LeRobot at `4aaff99` and reported it as 0.6.2, which
+  is the source tree's own version string for an unreleased development state, not a
+  release. B pinned from that in good faith. Every "LeRobot 0.6.2" in this file and in
+  ADRs 0003 and 0004 means that checkout; the newest thing anyone can install is 0.6.1,
+  and it is what has been installed here all along.
+
+  Corrected to `>=0.6.1`. The rationale in the pyproject comment is unaffected: 0.6.1 also
+  declares `requires-python >=3.12`, which is the collision the bound exists to make
+  explicit. Verified rather than argued -- the wheel resolves for linux/py312, and the 36
+  integration tests that need lerobot pass against 0.6.1.
+
+  Worth saying plainly, because it is the argument for the job: a pin nobody could satisfy
+  survived in `pyproject.toml` through a full survey, an ADR, and months of green CI. It
+  took about ninety seconds to find once something actually tried the install.
