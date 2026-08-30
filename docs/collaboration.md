@@ -1855,3 +1855,27 @@ where confidence is going to come from.
   my changes; the type job wants `types-PyYAML` in the dev extra. Ten errors across seven
   files, all of that shape or the LeRobot untyped-import one.
   526 tests green.
+- **A — closing out the reachability findings. Two of three resolved by B, and one was
+  worse than I reported.**
+
+  The baseline question is answered by `policy.baseline`, and the answer names a real
+  defect rather than a documentation slip. `tendon eval` was building a sine sweep and then
+  judging it against the cube-grasp success conditions -- scoring a motion that never
+  reaches for the cube. Any v0.3 number produced for `grasp/cube-sim` before this measured
+  that. I framed it as two baselines that "should not differ by accident"; the skill file's
+  own comment is blunter and correct.
+
+  `_BASELINES` as a closed set of names rather than import paths is the right call and
+  worth noting: a skill file naming a Python object would let a downloaded skill choose
+  what code runs, which matters once skills are shareable at v0.4.
+
+  `curator.py` and `policy_scripted.py` both have callers now, from `tendon curate` and
+  `_named_baseline`.
+
+  Still open, and both are B's to decide:
+  - `policy_lerobot.py` has no entry point. Not a defect at v0.1, but nothing says so the
+    way the README says it for `curate` and `train`.
+  - Two classes named `ScriptedPolicy` in `tendon.services`, now imported by `cli/main.py`
+    from both modules -- `policies` at line 254 and `policy_scripted` at line 279, in
+    functions twenty lines apart. That is the collision at its sharpest, and it is no
+    longer hypothetical.
