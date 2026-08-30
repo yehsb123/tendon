@@ -83,22 +83,57 @@ Everything else is composed.
 
 ## Status
 
-**v0.1 — in development.** Nothing works yet. See [docs/roadmap.md](docs/roadmap.md).
+**v0.1 — in development. Simulation only.** Nothing works yet, and nothing here should be
+connected to physical hardware: safety enforcement and the interrupt path are unwritten.
+See [SECURITY.md](SECURITY.md) before going anywhere near a robot.
 
 The project is proven or discarded at **v0.3**, where a single graph must show:
 *after N human corrections, the intervention rate drops.*
 Everything after that only matters if that graph exists.
+See [docs/roadmap.md](docs/roadmap.md).
 
 ## Repository layout
 
+Every directory carries a README stating what belongs in it and what does not. That is
+the load-bearing part of the structure, not decoration.
+
 ```
-src/        the tendon runtime (kernel, drivers, services, cli)
-shell/      the web interface where a human watches and intervenes
-docs/       concepts, architecture, decisions, roadmap
-skills/     skill packages
-examples/   runnable end-to-end scenarios
-tests/      unit and integration tests
+src/tendon/
+  kernel/        scheduler, action bus, interrupt, safety, and the contracts
+                 other layers implement (types.py, protocols.py)
+  drivers/       the embodiment HAL — mujoco, lerobot, so101, human video
+  services/      recorder, curator, trainer, evaluator, registry
+  api/           REST for precomputable state, WebSocket for live intent
+  cli/           the tendon command
+
+shell/src/
+  views/         Live, Episodes, Skills, Training
+  panels/        IntentPreview, ConfidenceMeter, InterruptPrompt, ...
+  rerun/         embedded Rerun viewer, clock-aligned to the episode
+  api/           typed client mirroring kernel/types.py
+  state/         connection, episode, pending decision
+  design/        tokens and primitives, sized for a tablet on a factory floor
+
+docs/            concepts, architecture, stack, roadmap, glossary, collaboration
+  decisions/     ADRs — one per irreversible choice
+skills/          installable capabilities, distributed via the HF Hub
+examples/        01_record → 04_improve, ordered by what each one proves
+tests/           unit (CPU-only, runs on a bare checkout) + integration
 ```
+
+## Documentation
+
+| | |
+| --- | --- |
+| [docs/concepts.md](docs/concepts.md) | the four decisions everything descends from |
+| [docs/architecture.md](docs/architecture.md) | layers, two clocks, import rules |
+| [docs/stack.md](docs/stack.md) | every dependency, its alternative, its revisit condition |
+| [docs/roadmap.md](docs/roadmap.md) | v0.1–v0.4, each with what would kill it |
+| [docs/glossary.md](docs/glossary.md) | terms sorted by which field they came from |
+| [docs/collaboration.md](docs/collaboration.md) | parallel tracks and file ownership |
+| [docs/decisions/](docs/decisions/) | ADRs |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | conventions, porting rules, commit format |
+| [SECURITY.md](SECURITY.md) | safety first, then software |
 
 ## License
 

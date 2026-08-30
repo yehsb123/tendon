@@ -82,22 +82,56 @@ tendon은 아직 아무도 만들지 않은 네 가지만 직접 씁니다.
 
 ## 상태
 
-**v0.1 — 개발 중.** 아직 아무것도 동작하지 않습니다. [docs/roadmap.md](docs/roadmap.md) 참고.
+**v0.1 — 개발 중. 시뮬레이션 전용입니다.** 아직 아무것도 동작하지 않고, **실물 로봇에
+연결하면 안 됩니다.** 안전 강제(`kernel/safety`)와 인터럽트 경로가 아직 구현되지
+않았습니다. 로봇 근처에 가시기 전에 [SECURITY.md](SECURITY.md)를 먼저 읽어주세요.
 
 이 프로젝트는 **v0.3에서 증명되거나 폐기됩니다.** 그래프 하나가 나와야 합니다.
 *사람이 N번 교정한 뒤, 개입률이 떨어진다.*
-그 그래프가 없으면 이후 단계는 의미가 없습니다.
+그 그래프가 없으면 이후 단계는 의미가 없습니다. [docs/roadmap.md](docs/roadmap.md) 참고.
 
 ## 레포 구조
 
+모든 디렉토리에 README가 있고, **무엇이 여기 살고 무엇이 살지 않는지**를 못박아 뒀습니다.
+장식이 아니라 구조를 지탱하는 부분입니다.
+
 ```
-src/        tendon 런타임 (kernel, drivers, services, cli)
-shell/      사람이 보고 개입하는 웹 인터페이스
-docs/       개념 · 아키텍처 · 결정 기록 · 로드맵
-skills/     스킬 패키지
-examples/   실행 가능한 시나리오
-tests/      단위 · 통합 테스트
+src/tendon/
+  kernel/        스케줄러 · 액션 버스 · 인터럽트 · 안전, 그리고 다른 계층이 구현할
+                 계약 (types.py, protocols.py)
+  drivers/       신체 추상화(HAL) — mujoco, lerobot, so101, 사람 영상
+  services/      recorder · curator · trainer · evaluator · registry
+  api/           REST(미리 계산 가능한 것) + WebSocket(실시간 의도)
+  cli/           tendon 명령
+
+shell/src/
+  views/         Live · Episodes · Skills · Training
+  panels/        IntentPreview · ConfidenceMeter · InterruptPrompt · ...
+  rerun/         Rerun 뷰어 임베드, 에피소드 타임라인과 시계 동기화
+  api/           kernel/types.py를 그대로 미러링한 타입드 클라이언트
+  state/         연결 · 에피소드 · 대기 중인 결정
+  design/        토큰과 프리미티브 (현장 태블릿 기준으로 크기 설계)
+
+docs/            개념 · 아키텍처 · 스택 · 로드맵 · 용어집 · 협업
+  decisions/     ADR — 되돌리기 어려운 결정 하나당 한 파일
+skills/          설치 가능한 능력, HF Hub로 배포
+examples/        01_record → 04_improve, 각각이 무엇을 증명하는지 순서대로
+tests/           unit(CPU 전용, 맨 체크아웃에서 실행) + integration
 ```
+
+## 문서
+
+| | |
+| --- | --- |
+| [docs/concepts.md](docs/concepts.md) | 모든 것이 파생되는 네 개의 결정 |
+| [docs/architecture.md](docs/architecture.md) | 계층 · 두 개의 클럭 · import 규칙 |
+| [docs/stack.md](docs/stack.md) | 모든 의존성과 그 대안, 재검토 조건 |
+| [docs/roadmap.md](docs/roadmap.md) | v0.1~v0.4, 각 단계를 무엇이 죽이는가 |
+| [docs/glossary.md](docs/glossary.md) | 용어가 어느 분야에서 왔는지 기준으로 정리 |
+| [docs/collaboration.md](docs/collaboration.md) | 병렬 트랙과 파일 소유권 |
+| [docs/decisions/](docs/decisions/) | ADR |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 규약 · 이식 규칙 · 커밋 포맷 |
+| [SECURITY.md](SECURITY.md) | 소프트웨어보다 물리적 안전이 먼저 |
 
 ## 라이선스
 

@@ -1,0 +1,95 @@
+name: ci
+
+# Everything here runs on CPU with no hardware attached. That is a design constraint,
+# not a limitation: if the frame cannot be verified on a plain runner, a contributor
+# cannot verify it on a laptop either.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boundaries:
+    name: layer boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No install step. test_boundaries.py reads source with ast rather than
+      # importing, so it runs on a bare checkout — which is what makes it a
+      # meaningful check of what the kernel depends on.
+      - name: install pytest only
+        run: python -m pip install --quiet pytest
+
+      - name: enforce import rules
+        run: python -m pytest tests/unit/test_boundaries.py -q
+
+  lint:
+    name: lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet ruff
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+
+  types:
+    name: type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet mypy pydantic
+      - run: mypy src/tendon --ignore-missing-imports
+
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --quiet -e ".[dev]"
+      - run: python -m pytest tests/unit -q
+
+  provenance:
+    name: ported code carries provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: every third_party directory declares its origin
+        run: |
+          if [ ! -d third_party ]; then
+            echo "no ported code yet"
+            exit 0
+          fi
+          fail=0
+          for d in third_party/*/; do
+            [ -d "$d" ] || continue
+            for required in PROVENANCE.md LICENSE; do
+              if [ ! -f "$d$required" ]; then
+                echo "MISSING: $d$required"
+                fail=1
+              fi
+            done
+          done
+          exit $fail
