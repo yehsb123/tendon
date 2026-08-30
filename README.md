@@ -132,7 +132,7 @@ the load-bearing part of the structure, not decoration.
 
 ```
 src/tendon/
-  kernel/        scheduler, action bus, interrupt, safety, and the contracts
+  kernel/        scheduler, step bus, interrupt, safety, and the contracts
                  other layers implement (types.py, protocols.py)
   drivers/       the embodiment HAL — mujoco, lerobot, so101, human video
   services/      recorder, curator, trainer, evaluator, registry

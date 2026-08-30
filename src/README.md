@@ -4,7 +4,7 @@ The Python package that runs on the robot host.
 
 ```
 src/tendon/
-  kernel/     policy runtime: scheduler, action bus, interrupts, safety
+  kernel/     policy runtime: scheduler, step bus, interrupts, safety
   drivers/    embodiment HAL — one module per body (mujoco, lerobot, so101, human)
   services/   background daemons: recorder, curator, trainer, evaluator
   api/        FastAPI surface the shell talks to

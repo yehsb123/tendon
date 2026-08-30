@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from tendon.kernel.bus import Bus
 from tendon.kernel.interrupt import InterruptState
 from tendon.kernel.scheduler import (
     EpisodeResult,
@@ -194,13 +195,43 @@ def test_deliberation_runs_less_often_than_control() -> None:
 def test_every_step_is_recorded_without_a_flag() -> None:
     """Design decision 1: the recorder is a subscriber, not a mode."""
     seen: list[StepRecord] = []
-    result = Scheduler(driver=FakeDriver(), limits=SafetyLimits(), on_step=seen.append).run_episode(
+    bus: Bus[StepRecord] = Bus()
+    bus.subscribe("test", seen.append)
+
+    result = Scheduler(driver=FakeDriver(), limits=SafetyLimits(), bus=bus).run_episode(
         FakePolicy(), max_steps=6
     )
 
     assert len(seen) == 6
     assert len(result.records) == 6
     assert [r.step for r in seen] == list(range(6))
+
+
+def test_a_failing_subscriber_does_not_stop_the_body() -> None:
+    """A recorder that fills the disk is not a reason for a robot to stop mid-motion.
+
+    The failure is isolated, reported on the result, and the episode runs to completion.
+    """
+    bus: Bus[StepRecord] = Bus()
+    survived: list[StepRecord] = []
+
+    def explode(record: StepRecord) -> None:
+        raise OSError("no space left on device")
+
+    bus.subscribe("broken-recorder", explode)
+    bus.subscribe("shell-stream", survived.append)
+
+    result = Scheduler(driver=FakeDriver(), limits=SafetyLimits(), bus=bus).run_episode(
+        FakePolicy(), max_steps=5
+    )
+
+    assert result.steps == 5, "the episode must finish despite a dead subscriber"
+    assert len(survived) == 5, "the surviving subscriber must still receive every step"
+    assert len(result.subscriber_failures) == 1
+    failure = result.subscriber_failures[0]
+    assert failure.name == "broken-recorder"
+    assert failure.step == 0
+    assert "no space left" in failure.error
 
 
 def test_commanded_and_applied_are_both_kept_when_the_body_clips() -> None:

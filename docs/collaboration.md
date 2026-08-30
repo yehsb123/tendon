@@ -489,3 +489,23 @@ where confidence is going to come from.
   `succeeded`, `interventions`, `corrections`, `faulted`, `failure_mode`,
   `confidence_source`. The last one matters — without it the evaluator cannot tell whether
   a handover was policy-initiated, and ADR 0004 says that distinction is the whole claim.
+- **B** — `kernel/bus.py` implemented, 12 tests, 191 green. Considered deleting it first:
+  the scheduler had an `on_step` callback and the bus looked like an unused abstraction.
+  But Track A's `recorder.py` says it will become a subscriber, and the shell stream will
+  be a second one, so the fan-out is real. Implemented rather than removed.
+
+  **The property that matters: a subscriber can never stop the robot.** A recorder filling
+  the disk, a socket dropping, a curator throwing on a malformed episode — none of those
+  is a reason for a body to stop mid-motion, and all of them would be if `publish`
+  propagated. A failing subscriber is isolated, recorded with its name and step, dropped
+  for the rest of the run, and surfaced on `EpisodeResult.subscriber_failures`. Delivery
+  continues to everyone else. A run where the recorder died at step 12 produced 12 steps
+  and otherwise looked normal; nobody should have to discover that by finding a short file.
+
+  Synchronous fan-out, so subscriber time is loop time. `mean_publish_cost()` and
+  `slowest()` measure it, which is the number `examples/01_record --overhead` needs.
+- **B → A — `recorder.py` can become a subscriber now.** `Scheduler(bus=...)` publishes a
+  `StepRecord` per control step carrying `commanded` and `applied` separately. Subscribe
+  with `bus.subscribe("recorder", recorder.record)`. Two contract notes: names are unique
+  and re-subscribing raises, and **a subscriber on the hot path must enqueue and return** —
+  fan-out is synchronous, so a blocking write costs the control loop directly.

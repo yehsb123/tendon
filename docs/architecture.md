@@ -10,7 +10,7 @@
 |  SERVICES   recorder - curator - trainer - evaluator          |
 |             registry                    [src/tendon/services]|
 +-------------------------------------------------------------+
-|  KERNEL     scheduler - action bus - interrupt - safety       |
+|  KERNEL     scheduler - step bus - interrupt - safety         |
 |                                         [src/tendon/kernel]  |
 +-------------------------------------------------------------+
 |  DRIVERS    embodiment HAL                                    |

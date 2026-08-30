@@ -39,11 +39,11 @@ rather than by trusting.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from tendon.kernel import safety
+from tendon.kernel.bus import Bus, SubscriberFailure
 from tendon.kernel.interrupt import (
     InterruptMachine,
     InterruptState,
@@ -124,6 +124,10 @@ class EpisodeResult:
     #: Every limit that went unevaluated at least once, deduplicated. Surfaced so a caller
     #: knows the episode ran partly unverified rather than having to infer it.
     unchecked: tuple[str, ...] = ()
+    #: Subscribers that raised and were dropped mid-episode. A run where the recorder died
+    #: at step 12 produced 12 steps of data and otherwise looked normal; nobody should have
+    #: to discover that by finding a short file later.
+    subscriber_failures: tuple[SubscriberFailure, ...] = ()
     records: list[StepRecord] = field(default_factory=list)
 
 
@@ -136,10 +140,10 @@ class Scheduler:
     #: Below this confidence, hand over. Ignored when the policy reports no source.
     confidence_threshold: float = 0.5
     handler: InterruptHandler | None = None
-    #: Called for every control step, before the next one begins. This is where the
-    #: recorder attaches — design decision 1 is structural because the recorder is a
-    #: subscriber rather than a mode.
-    on_step: Callable[[StepRecord], None] | None = None
+    #: Every control step is published here. The recorder, the shell stream and anything
+    #: else subscribe. Design decision 1 is structural because of this: recording is not a
+    #: mode that can be switched off, it is a subscriber that is always attached.
+    bus: Bus[StepRecord] | None = None
 
     def run_episode(
         self,
@@ -217,8 +221,10 @@ class Scheduler:
                     unchecked=checked.unchecked,
                 )
                 result.records.append(record)
-                if self.on_step is not None:
-                    self.on_step(record)
+                if self.bus is not None:
+                    # Never raises. A subscriber that throws is dropped and reported;
+                    # none of them is a reason to stop a moving body.
+                    self.bus.publish(record, step=record.step)
 
                 previous = applied
                 result.steps += 1
@@ -231,6 +237,7 @@ class Scheduler:
         result.interventions = machine.interventions
         result.corrections = machine.corrections
         result.unchecked = tuple(sorted(unchecked))
+        result.subscriber_failures = self.bus.failures if self.bus is not None else ()
         return result
 
     # ------------------------------------------------------------------ internals

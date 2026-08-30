@@ -129,7 +129,7 @@ python examples/01_record/run.py --overhead
 
 ```
 src/tendon/
-  kernel/        스케줄러 · 액션 버스 · 인터럽트 · 안전, 그리고 다른 계층이 구현할
+  kernel/        스케줄러 · 스텝 버스 · 인터럽트 · 안전, 그리고 다른 계층이 구현할
                  계약 (types.py, protocols.py)
   drivers/       신체 추상화(HAL) — mujoco, lerobot, so101, 사람 영상
   services/      recorder · curator · trainer · evaluator · registry
