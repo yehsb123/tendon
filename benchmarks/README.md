@@ -36,6 +36,7 @@ laptop, its result cannot be reproduced by whoever has to question it later.
 python benchmarks/capture_grasp.py        # can this body do the task? renders proof
 python benchmarks/recorder_overhead.py    # does recording slow the control loop?
 python benchmarks/end_to_end.py           # does v0.1 run at all?
+python benchmarks/curation.py             # can the curator tell good episodes from bad?
 ```
 
 Each takes about ten seconds and needs only the `sim` and `robot` extras.
@@ -45,6 +46,7 @@ Each takes about ten seconds and needs only the `sim` and `robot` extras.
 | `capture_grasp.py` | Can the body pick up the cube? | Drives IK-solved poses through a five-stage sequence, renders both cameras | cube height > 0.1 m |
 | `recorder_overhead.py` | Does recording fit in a control period? | Times `apply` + `observe` [+ `record`] over 300 steps, four configurations | recording costs < 10% of the period |
 | `end_to_end.py` | Does the v0.1 milestone hold? | Runs policy → scheduler → driver → bus → recorder → dataset → replay, in one process | every stage agrees on the step count, and the cube is lifted |
+| `curation.py` | Does the curator separate good episodes from bad? | Records six real episodes, three of them deliberately damaged, reads them back off disk and ranks them | every damaged episode scores below every clean one, with a reason |
 
 ### The method, and why it is this one
 
@@ -379,6 +381,83 @@ and saying so is what stops it from looking like a policy that never needs help.
 It also tests the abstraction. `kernel/protocols.Policy` claims the scheduler cannot tell a
 VLA from a scripted controller. Wiring one in required no scheduler changes, so the claim
 holds.
+
+---
+
+## 6. Curation — does the metric separate anything?
+
+```bash
+python benchmarks/curation.py
+```
+
+`services/curator.py` is the module that fails quietly. A metric that mislabels a good
+episode removes it from training, the policy gets slightly worse, and nothing goes red.
+Unit tests cannot settle this, because a unit test writes both the episode and the
+expectation.
+
+So this records six real episodes through the real scheduler and recorder — three clean,
+three damaged in one specific way each — reads them back through `drivers/human.py`, and
+ranks them. Scores come from actions recovered off disk, because what a curator sees in
+production is a dataset, not a run.
+
+| Defect | What it stands in for | Signal it should trip |
+| --- | --- | --- |
+| `jittery` | a loose encoder, a dropped demonstration frame, controllers fighting | `peak_jerk` |
+| `idle` | an operator hesitating, a recording left running after the task | `idle_fraction` |
+| `churny` | grip fighting at contact, an operator unsure the object is held | `gripper_churn` |
+
+**Result:**
+
+```
+population: 6 episodes, median 430 steps, median peak jerk 5508.5
+
+  clean-0   0.692   - 53% of steps command no motion
+  clean-1   0.692   - 53% of steps command no motion
+  clean-2   0.692   - 53% of steps command no motion
+  jittery-3 0.653   - jerk 740599.6 is 134.4x the median for this skill
+  churny-5  0.543   - 53% of steps command no motion
+                    - gripper toggles 99.8 times per second
+  idle-4    0.382   - jerk 534308.6 is 97.0x the median for this skill
+                    - 97% of steps command no motion
+
+  PASS: every degraded episode ranks below every clean one, with reasons.
+```
+
+The separation holds, and every penalty comes with something a reviewer can disagree with.
+Two findings came out of getting there, and both are about how the curator has to be
+*operated* rather than about whether it works.
+
+### The reference is only as good as the population
+
+The first run used one clean episode against three damaged ones. The median peak jerk came
+out at **534,308** and the jittery episode triggered **no reason at all** — it was being
+compared against a population that was mostly jitter, so it looked normal.
+
+With three clean episodes in six, the median falls to **5,508** and the same episode is
+flagged at 134x. Nothing about the metric changed.
+
+That is a property of scoring against a population median, and `curator.py` chose that
+deliberately — a fixed jerk threshold would score the hardware rather than the episode.
+The cost is this: **a collection run that is mostly bad cannot detect that it is mostly
+bad.** Worth knowing before the reference is computed over a day's episodes without
+checking what that day contained.
+
+### A clean episode does not score 1.0, and cannot
+
+Every clean run scores 0.692, held down by *"53% of steps command no motion"*. That is
+correct and unavoidable: the scripted sequence closes the gripper and then holds while the
+grasp settles, and during those steps the arm genuinely does not move.
+
+`curator.py` states this blind spot in its own docstring — *"blind to pauses that are part
+of the task"* — and here it is, in real data, on the intended task. The consequence is
+practical: **the score is a ranking, not a grade.** 0.692 is what a good episode looks
+like on this task, and any absolute threshold picked without measuring the clean baseline
+first would discard the entire dataset.
+
+The three clean episodes score identically to three decimal places, which is the other
+thing worth having: a deterministic policy through a deterministic scene produces a
+reproducible number, so a change in this figure later means something changed in the
+system rather than in the weather.
 
 ---
 
