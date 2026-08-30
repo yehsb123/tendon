@@ -26,21 +26,25 @@ laptop, its result cannot be reproduced by whoever has to question it later.
 
 ## How these experiments are run
 
-> **한글.** 실험이 두 개이고 둘 다 명령 하나로 재현됩니다. 판정 기준을 스크립트 안에
+> **한글.** 실험이 세 개이고 전부 명령 하나로 재현됩니다. 판정 기준을 스크립트 안에
 > 넣어서, 결과가 나쁘면 종료 코드 1로 실패합니다. 출력만 하는 벤치마크는 아무도 두 번
-> 돌리지 않기 때문입니다.
+> 돌리지 않기 때문입니다. 5번 절의 `end_to_end.py`는 v0.1 마일스톤 자체를 검사합니다 —
+> 정책부터 데이터셋까지 한 프로세스에서 돌리고, 기록한 것을 다시 읽어 스텝 수가
+> 일치하는지까지 확인합니다.
 
 ```bash
 python benchmarks/capture_grasp.py        # can this body do the task? renders proof
 python benchmarks/recorder_overhead.py    # does recording slow the control loop?
+python benchmarks/end_to_end.py           # does v0.1 run at all?
 ```
 
-Both take about ten seconds and need only the `sim` and `robot` extras.
+Each takes about ten seconds and needs only the `sim` and `robot` extras.
 
 | | What it asks | How it answers | Passes when |
 | --- | --- | --- | --- |
 | `capture_grasp.py` | Can the body pick up the cube? | Drives IK-solved poses through a five-stage sequence, renders both cameras | cube height > 0.1 m |
 | `recorder_overhead.py` | Does recording fit in a control period? | Times `apply` + `observe` [+ `record`] over 300 steps, four configurations | recording costs < 10% of the period |
+| `end_to_end.py` | Does the v0.1 milestone hold? | Runs policy → scheduler → driver → bus → recorder → dataset → replay, in one process | every stage agrees on the step count, and the cube is lifted |
 
 ### The method, and why it is this one
 
@@ -308,6 +312,73 @@ Not benchmarks, but the cost of finding them again is real.
   `dataset` extra, which pins `av>=15,<16`; a bare `pip install av` resolves to 18.x and
   fails with `module 'av' has no attribute 'option'`. There is no `torchcodec` wheel for
   Windows, so LeRobot falls back to pyav with a warning.
+
+---
+
+## 5. End to end — does the milestone hold?
+
+```bash
+python benchmarks/end_to_end.py
+python benchmarks/end_to_end.py --keep    # leave the episode store on disk to inspect
+```
+
+`docs/roadmap.md` defines v0.1 as: *`tendon run` executes a policy in simulation and
+episodes appear in LeRobotDataset format without any collection flag being set.* Every
+part of that is checked here, in one process, with no GPU and no model download.
+
+```
+body   mujoco:so_arm100_cube  dof=5 gripper=parallel 100Hz
+policy scripted/cube-pick  430 steps (4.3s)
+bus    subscribers=('recorder',)
+
+episode a9a88c5c
+  steps               430
+  ended               running
+  interventions       0
+  subscriber failures none
+  cube height         0.1521 m
+
+recorded  steps=430 success=True camera frames=523
+replayed  430 frames as human:tendon/local#0
+
+  PASS: v0.1 runs end to end - policy to body to dataset and back.
+```
+
+**What each line is evidence of.**
+
+*430 steps, zero subscriber failures.* The recorder is a bus subscriber, not a mode. It
+was never enabled — attaching it is the only thing that happened — and design decision 1
+is therefore structural rather than a promise. `subscriber_failures` is checked because a
+run where the recorder died at step 12 produced twelve steps of data and otherwise looked
+completely normal.
+
+*Cube at 0.1521 m.* The scheduler drove a real body to a real outcome. Every one of those
+430 actions passed `safety.check` on the way, which the scheduler guarantees structurally
+by having exactly one `driver.apply` call site.
+
+*430 recorded, 430 replayed.* The round trip. The recorder was written against LeRobot's
+writer and the replay driver against its reader, separately; making them verify each other
+is cheaper than trusting either. The replay also re-derives `dof=5`, a parallel gripper and
+`readonly=True` from the dataset schema alone, which is design decision 3 holding on the
+data side.
+
+*523 camera frames for 430 steps.* More frames than steps, where section 1 measured three
+frames per three hundred. The difference is that this run writes images, which slows each
+step to about 5 ms and lets a 20-30 Hz camera keep up. Recording is what makes the camera
+clock and the control clock compatible — the trade-off in section 1 resolves itself in the
+regime that actually matters.
+
+**The policy is scripted, and that is the point.** `services/policy_scripted.py` plays a
+fixed sequence and ignores its observations. It exists as the baseline v0.3 is measured
+against: a falling intervention-rate curve means nothing without a fixed reference, and if
+a fine-tuned SmolVLA cannot beat a hardcoded sequence on this task, that is worth knowing
+before the training runs rather than after. It also reports `ConfidenceSource.NONE` rather
+than high confidence — a deterministic policy has no opinion about whether it is working,
+and saying so is what stops it from looking like a policy that never needs help.
+
+It also tests the abstraction. `kernel/protocols.Policy` claims the scheduler cannot tell a
+VLA from a scripted controller. Wiring one in required no scheduler changes, so the claim
+holds.
 
 ---
 

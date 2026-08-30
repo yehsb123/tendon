@@ -493,6 +493,24 @@ class MujocoDriver(Driver):
             frames[camera] = self._renderer.render()
         return frames
 
+    def body_position(self, name: str) -> np.ndarray:
+        """World position of a named body in the scene [m].
+
+        Outside the `Driver` protocol, and for evaluation rather than for control. A skill
+        declares success as a condition on the world — `cube_height_above: 0.1` in
+        `skills/grasp/cube-sim/skill.yaml` — and something has to be able to read that.
+
+        A policy must not call this. Ground-truth object positions are available in
+        simulation and not on hardware, so a policy that used them would work in MuJoCo
+        and fail on an SO-101 in a way no simulation test could catch. `Observation` is
+        what a policy sees; this is what a judge sees.
+        """
+        self._require_open()
+        try:
+            return np.asarray(self._data.body(name).xpos, dtype=float).copy()
+        except KeyError as exc:
+            raise DriverError(f"scene has no body named {name!r}") from exc
+
     @property
     def frames_rendered(self) -> int:
         """How many distinct frames the camera thread has produced.

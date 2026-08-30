@@ -24,6 +24,7 @@ skill has to know.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -134,9 +135,9 @@ def features_for(
 class Recorder:
     """Writes one episode at a time to a LeRobotDataset plus a sidecar.
 
-    Not a bus subscriber yet. `kernel/bus.py` is unimplemented, so for now the scheduler
-    calls `record` directly. The method boundary is the same either way: when the bus
-    lands, `record` becomes its callback and nothing else here changes.
+    Attach it to the scheduler's bus with `attach_to`, or drive it directly with `record`.
+    The bus path is what makes design decision 1 structural rather than a promise: the
+    recorder is a subscriber that is always present, not a mode someone can turn off.
     """
 
     def __init__(
@@ -173,7 +174,8 @@ class Recorder:
         self._meta: EpisodeMeta | None = None
         self._task: str = ""
         self._cameras: tuple[str, ...] = ()
-        self._frames = 0
+        # Set by `attach_to`; unused when a caller drives `record` directly.
+        self._frames_source: Callable[[], dict[str, Any]] | None = None
 
         # Sidecar rows for the open episode, flushed on `finish`. Held per episode rather
         # than per frame because writing at control rate is what design decision 1
@@ -247,7 +249,7 @@ class Recorder:
         self._episode_id = episode_id
         self._task = skill
         self._cameras = tuple(cameras)
-        self._frames = 0
+        self._frame_count = 0
         self._sidecar.clear()
         self._interrupts.clear()
         self._meta = EpisodeMeta(
@@ -319,13 +321,54 @@ class Recorder:
         self._sidecar.append(
             {
                 "episode_id": self._episode_id,
-                "frame_index": self._frames,
+                "frame_index": self._frame_count,
                 "confidence": confidence,
                 "intervention": intervention,
                 "sim_time_s": observation.extra.get("sim_time_s"),
             }
         )
-        self._frames += 1
+        self._frame_count += 1
+
+    def attach_to(
+        self,
+        bus: Any,
+        *,
+        name: str = "recorder",
+        frames: Callable[[], dict[str, Any]] | None = None,
+    ) -> None:
+        """Subscribe to the scheduler's step bus.
+
+        Args:
+            bus: The scheduler's `Bus[StepRecord]`.
+            name: Subscriber name. Appears in `EpisodeResult.subscriber_failures` if this
+                recorder raises, which is how a run that recorded twelve steps and then
+                died stops looking like a run that recorded twelve steps.
+            frames: Callable returning `{camera: array}`, typically `MujocoDriver.render`.
+                Passed here rather than read from the step, because `StepRecord` carries an
+                `Observation` and an observation carries frame references rather than
+                pixels — `services` cannot import `drivers` to go and fetch them.
+
+        What is recorded is `applied`, not `commanded`. They differ whenever the body
+        clipped, and storing the command as though it were the outcome is what the
+        `Driver.apply` contract was changed to prevent.
+        """
+        bus.subscribe(name, self._on_step)
+        self._frames_source = frames
+
+    def _on_step(self, record: Any) -> None:
+        """Bus callback. Deliberately thin — it runs at control rate.
+
+        Confidence is not recorded here and that is a gap, not a decision. `StepRecord`
+        carries no confidence: it is a per-step object while confidence is a property of
+        the chunk the step came from. Until the scheduler carries it, the sidecar's
+        confidence column is null for bus-driven episodes and populated only when a caller
+        drives `record` directly. Noted in docs/collaboration.md.
+        """
+        self.record(
+            record.observation,
+            record.applied,
+            frames=self._frames_source() if self._frames_source is not None else None,
+        )
 
     def note_interrupt(self, context: InterruptContext, resolution: InterruptResolution) -> None:
         """Record that control was handed to a human, and what they decided.
@@ -357,7 +400,7 @@ class Recorder:
         if self._episode_id is None or self._meta is None:
             raise RecorderError("no episode is open")
 
-        if self._frames == 0:
+        if self._frame_count == 0:
             # Nothing was recorded. Discard rather than write an empty episode: a
             # zero-frame episode is indistinguishable from a broken one downstream.
             self._dataset.clear_episode_buffer()
@@ -370,7 +413,7 @@ class Recorder:
         meta = self._meta.model_copy(
             update={
                 "ended_at": _now(),
-                "steps": self._frames,
+                "steps": self._frame_count,
                 "interrupts": len(self._interrupts),
                 "success": success,
             }
