@@ -194,3 +194,10 @@ Newest last. One line per push: track, what landed, and anything the other track
   the MuJoCo driver reports `Capability.has_force_sensing`, `check_force` uses it; when
   it does not, the verdict says so. Nothing in Track A needs to change today — this is
   what to expect when the scheduler starts routing actions.
+- **B** — depth 8: `kernel/interrupt.py` implemented as a pure state machine
+  (RUNNING/PENDING/RESUMING/STOPPED/FAULTED) with 26 tests; 73 unit tests green total.
+- **B → A — recorder note.** `InterruptMachine.history` is what the recorder should
+  write to the sidecar table, and `interventions` / `corrections` are counted separately:
+  an approval is an intervention but not a correction, because the operator was consulted
+  and changed nothing. The v0.3 graph plots corrections on x. A faulted machine never
+  reaches PENDING, so faults contribute to neither count by construction.
