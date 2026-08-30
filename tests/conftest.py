@@ -21,6 +21,8 @@ explicit root still work exactly as before — this only moves the *default*.
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -81,3 +83,43 @@ def _no_writes_to_the_home_directory(tmp_path: Path, monkeypatch: pytest.MonkeyP
     same value as one that lets `create_app` reach for it.
     """
     _redirect(monkeypatch, tmp_path)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Optionally end the process without running native teardown.
+
+    Off unless `TENDON_EXIT_WITHOUT_TEARDOWN=1`, and set only on the CI job that installs
+    the robot extra.
+
+    That job reports every test passing and then dies: `terminate called without an active
+    exception`, exit 134. `PYTHONFAULTHANDLER` put a stack to it, and the stack is the
+    whole story -- `<no Python frame>`, with `torch._C` and the forty-odd `av` modules in
+    the loaded list. The interpreter has finished; a native thread is being destroyed while
+    still joinable as libraries tear down. The sibling job runs the same suite in the same
+    run and installs neither library, and it exits cleanly.
+
+    Four attempts were made to fix it as though it were ours: returning the body to the
+    session, closing a duckdb connection nobody closed, cleaning up the registry, and
+    pinning OpenMP to one thread. All four were reasonable and none of them changed the
+    outcome, because the abort is in a dependency's shutdown and not in anything this
+    repository executes.
+
+    So this stops before that runs. `os._exit` skips atexit handlers, garbage collection
+    and native static destructors -- pytest has finished by the time this hook is reached,
+    every fixture has torn down, and the exit status is already decided, so nothing of ours
+    is being skipped.
+
+    What it does cost, and why it is opt-in rather than the default: anything that works
+    after `sessionfinish` is skipped too, coverage reporting included. It is a real hammer,
+    the kind that hides a genuine leak of our own by making its symptom disappear. Scoping
+    it to one job keeps normal teardown everywhere else, so a shutdown bug in tendon's own
+    code still shows up in the unit suite, locally, and in the sibling integration job.
+    `PYTHONFAULTHANDLER` stays on either way, so a crash during a run is still reported.
+    """
+    if os.environ.get("TENDON_EXIT_WITHOUT_TEARDOWN") != "1":
+        return
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(int(exitstatus))
