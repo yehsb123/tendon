@@ -7,8 +7,12 @@ against the MuJoCo driver with no hardware attached.
 from __future__ import annotations
 
 import typer
+from rich.console import Console
+from rich.markup import escape
+from rich.table import Table
 
 from tendon import __version__
+from tendon.cli.doctor import Status, run_checks, summarise
 
 app = typer.Typer(
     name="tendon",
@@ -23,10 +27,46 @@ def version() -> None:
     typer.echo(__version__)
 
 
+_STATUS_STYLE = {
+    Status.OK: ("ok", "green"),
+    Status.LIMITED: ("limited", "yellow"),
+    Status.BLOCKED: ("blocked", "red"),
+}
+
+
 @app.command()
 def doctor() -> None:
-    """Check drivers, GPU, disk and Hub auth before anything else is attempted."""
-    raise NotImplementedError("v0.1")
+    """Check what works here, and what each missing piece costs.
+
+    Read-only and touches no hardware, so it is safe to run on a machine with a robot
+    attached. Exits non-zero when something is blocking, so it can gate a script.
+    """
+    console = Console()
+    checks = run_checks()
+
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("")
+    table.add_column("check")
+    table.add_column("detail")
+
+    for check in checks:
+        label, colour = _STATUS_STYLE[check.status]
+        table.add_row(f"[{colour}]{label}[/{colour}]", check.name, escape(check.detail))
+
+    console.print(table)
+
+    remedies = [c for c in checks if c.remedy]
+    if remedies:
+        console.print()
+        for check in remedies:
+            console.print(f"  [dim]{check.name}:[/dim] {escape(check.remedy)}")
+
+    overall, message = summarise(checks)
+    console.print()
+    console.print(escape(message))
+
+    if overall is Status.BLOCKED:
+        raise typer.Exit(code=1)
 
 
 @app.command()

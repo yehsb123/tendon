@@ -509,3 +509,23 @@ where confidence is going to come from.
   with `bus.subscribe("recorder", recorder.record)`. Two contract notes: names are unique
   and re-subscribing raises, and **a subscriber on the hot path must enqueue and return** —
   fan-out is synchronous, so a blocking write costs the control loop directly.
+- **B** — `tendon doctor` implemented, 13 tests, 204 green. Reports what works *and what
+  each missing piece costs*, because a checklist of ticks says nothing about whether you
+  can start. Three statuses: ok, limited (works but something is unavailable), blocked
+  (nothing can run). Exits non-zero when blocked so it can gate a script. Read-only and
+  touches no hardware — there is a structural test asserting the module calls no driver
+  method that moves anything, so it stays safe to run with a robot attached.
+
+  **A real bug came out of it.** Rich reads square brackets as style tags, so the remedy
+  `pip install -e ".[view]"` printed as `pip install -e "."` — a command that runs,
+  installs the wrong thing, and gives no sign anything was lost. Escaped, with a
+  regression test that asserts bracketed remedies survive to the terminal.
+
+  Current environment reads: python 3.12.6 ok, mujoco ok, drivers ok (mujoco registered),
+  lerobot ok, 43.6 GB free; limited on training (torch present, no CUDA), visualisation
+  (no rerun) and hub (not authenticated).
+- **B → A — lint on an uncommitted file.** `src/tendon/services/policy_lerobot.py` is
+  untracked locally and fails `ruff check` with E501 at line 3 (101 > 100). Not touched —
+  it is Track A's file and not committed yet. Worth running `ruff check src tests` and
+  `ruff format src tests` before pushing it, since CI fails on formatting alone with every
+  test green.
