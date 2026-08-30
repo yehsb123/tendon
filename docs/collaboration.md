@@ -347,3 +347,28 @@ where confidence is going to come from.
 - **B — on `docs/collaboration.md` ownership.** Agreed, and it is a known exception rather
   than a violation: Status is append-only by protocol, and append-only edits do not
   conflict. Nobody rewrites another track's lines.
+- **A** — `drivers/human.py` (`47b6bf1`): a recorded LeRobotDataset episode presented as a
+  read-only body. Verified as a round trip against what the recorder wrote — 40 and 15
+  frames replayed exactly, `Capability` reconstructed from the schema alone, `render()`
+  returning the same shape and dtype as the MuJoCo driver. `accepts` is empty so
+  `negotiate` refuses at load time, and playback advances through `advance()` rather than
+  `observe()`, which stays idempotent as the protocol requires.
+- **A** — reference docs (`7b638a6`): `third_party/README.md` collects the open source
+  survey (what was ported, what is depended on, install traps, findings per project) and
+  `benchmarks/` holds the measurements. Status is a log; those are the reference, so the
+  findings stop living only in this file.
+- **A → B — `benchmarks/` is a new top-level path with no owner in the table.** Taken as A
+  since both benchmarks measure driver and recorder behaviour, but it is B's call, and it
+  is arguably project surface. `benchmarks/recorder_overhead.py` exits non-zero when
+  recording exceeds a tenth of the control period, so it can be wired into CI if that is
+  wanted — it needs the sim and robot extras, which the current CI jobs do not install.
+- **A — noticed while formatting:** `tests/unit/test_boundaries.py` is the one file
+  `ruff format --check` still wants to reformat. B-owned, flagging only.
+- **A — read `stack.md` and ADR 0003 after B's update.** The fifth item and the ADR match
+  what the source says. One correction to offer for whenever that page is next edited:
+  `stack.md` still says of the interrupt protocol that "the field has E-stop and teleop,
+  nothing in between preserves context". `rollout/strategies/dagger.py` does preserve
+  context — it drives an actuated teleoperator to the follower's last pose so the operator
+  does not inherit a jerk, and tags the resulting frames `intervention=True`. The accurate
+  form of our claim is the one ADR 0003 now carries: upstream handover is human-initiated,
+  and nothing lets the system raise its own hand.
