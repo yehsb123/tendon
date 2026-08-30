@@ -602,6 +602,22 @@ class MujocoDriver(Driver):
             frames[camera] = self._renderer.render()
         return frames
 
+    def geom_position(self, name: str) -> np.ndarray:
+        """World position of a named geom [m]. For evaluation, like `body_position`.
+
+        Separate from `body_position` because for a gripper they answer different
+        questions. An SO-ARM100 jaw *rotates*: its two jaw bodies keep their origins a
+        fixed 32 mm apart at every opening, while the contact pads swing from 16 mm to
+        104 mm. Measuring bodies there reports a gripper that never moves. An xArm7's
+        fingers translate, so bodies happen to work — which is exactly the kind of
+        difference that makes one robot a bad test of a HAL.
+        """
+        self._require_open()
+        try:
+            return np.asarray(self._data.geom(name).xpos, dtype=float).copy()
+        except KeyError as exc:
+            raise DriverError(f"scene has no geom named {name!r}") from exc
+
     def body_position(self, name: str) -> np.ndarray:
         """World position of a named body in the scene [m].
 

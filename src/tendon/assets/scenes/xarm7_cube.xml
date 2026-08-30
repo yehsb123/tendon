@@ -9,11 +9,15 @@
       gripper transmission  joint          tendon
       gripper units         radians        0-255
       open end of range     upper (1.75)   LOWER (0)
-      graspable object      16-104 mm      57-141 mm
+      pad separation        16-104 mm      7-93 mm
 
-  The last two rows are the ones that would silently break a skill. `Action.gripper = 1.0`
-  has to mean open on both, and a 30 mm cube that the SO-ARM100 grasps cannot be held by
-  this gripper at all — it does not close past 57 mm. Hence a 70 mm cube here.
+  The fourth row is the one that would silently break a skill: `Action.gripper = 1.0` has
+  to mean open on both bodies, and before the driver absorbed the difference it opened one
+  and closed the other.
+
+  The pad figures are measured at the contact pads, not at the finger bodies — an xArm7
+  finger body spans 56-141 mm while its pads span 7-93 mm, and it is the pads that touch
+  the object. Both were checked with benchmarks/two_bodies.py.
 
   The arm is included from src/tendon/assets/robots/xarm7_wrist_cam.xml, a one-camera
   modification of the Menagerie model (BSD-3-Clause). Unmodified original and attribution
@@ -71,10 +75,14 @@
     <body name="cube" pos="0.5 0 0.035">
       <freejoint name="cube_free"/>
       <!--
-        70 mm cube, half-extent 35 mm. Sized to this gripper, not to the other one: the
-        measured jaw gap is 57 mm fully closed and 141 mm fully open, so a 30 mm cube
-        would fall straight through a fully closed grasp. Friction and solver parameters
-        match the SO-ARM100 scene so the two bodies are compared on the same contact model.
+        70 mm cube, half-extent 35 mm. Sized to this arm rather than copied from the other
+        scene: measured pad separation is 7 mm closed and 93 mm open, so 70 mm sits well
+        inside the range with room to descend around it. A 30 mm cube would also be
+        graspable here — the two arms are not incompatible, they are differently scaled,
+        and a skill that hardcoded one object size would still transfer badly.
+
+        Friction and solver parameters match the SO-ARM100 scene so the two bodies are
+        compared on the same contact model rather than on two different ones.
       -->
       <geom name="cube" type="box" size="0.035 0.035 0.035" material="cube_material"
             mass="0.1" friction="1 0.005 0.0001" solimp="2 1 0.01" solref="0.01 1"/>

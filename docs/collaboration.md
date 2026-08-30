@@ -32,7 +32,7 @@ change, so it is not a style preference.
 | `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py`, `policies.py` | **B** | tendon logic, not ported |
 | `shell/**` | **B** | the interface |
 | `docs/**`, `tests/**`, `examples/**`, `skills/**` | **B** | frame and documentation |
-| `src/tendon/services/skill.py`, `policies.py` | **B** | skill format and baselines |
+| `src/tendon/services/skill.py`, `policies.py`, `bodies.py` | **B** | skill format, baselines, driver lookup |
 | `README*.md`, `pyproject.toml`, `.github/**` | **B** | project surface |
 
 If a change needs a file in the other column, say so in **Status** below rather than
@@ -693,3 +693,22 @@ where confidence is going to come from.
   Unknown is deliberately not failure: a skill asking about cube height on a body that
   does not report it has not failed the task, and counting it as failure would make an
   unmeasurable setup look like a broken policy.
+- **B** — `api/` implemented and `tendon serve` runs it. `/api/health`, `/api/bodies`,
+  `/api/skills`, `/api/skills/{ns}/{name}`, and a compatibility endpoint so the shell can
+  grey out a body *with the reasons attached* rather than letting an operator start a run
+  that fails at load. Binds to loopback by default and warns when told to bind wider,
+  because there is no authentication yet (SECURITY.md). 282 tests green.
+- **B — the boundary test caught my own code, and the fix removed a duplication.**
+  `api/app.py` imported `tendon.drivers`, which `docs/architecture.md` forbids. Rather
+  than relaxing the rule: driver lookup moved to `services/bodies.py`, which is now the
+  only place that knows which driver modules exist to import. The API and the CLI had each
+  grown the same `with suppress(ImportError): import tendon.drivers.mujoco` block, so
+  adding a driver would have meant remembering both. **Adding one is now a single line in
+  `_DRIVER_MODULES`.**
+
+  It also exposes `BodyUnavailable`, wrapping the driver-layer error so `api/` and `cli/`
+  can catch it precisely without importing `drivers/`. Otherwise they were reduced to a
+  bare `except Exception`, which catches a typo in a handler as readily as a missing extra.
+- **B — the Rich markup bug came back.** Fixed in the doctor remedies, reintroduced in a
+  hardcoded CLI hint: `pip install -e ".[sim]"` printed as `pip install -e "."`. Now
+  escaped, with a regression test on that path too — the first test only covered doctor.

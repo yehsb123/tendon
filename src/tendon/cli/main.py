@@ -6,7 +6,7 @@ against the MuJoCo driver with no hardware attached.
 
 from __future__ import annotations
 
-import contextlib
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -89,9 +89,9 @@ def run(
     """
     console = Console()
 
-    from tendon.drivers import base as driver_base
     from tendon.kernel.bus import Bus
     from tendon.kernel.scheduler import Scheduler, StepRecord
+    from tendon.services.bodies import BodyUnavailable, open_body
     from tendon.services.policies import ScriptedPolicy, sine_sweep
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
@@ -101,16 +101,13 @@ def run(
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 
-    # Importing is how a driver registers itself. Absence is expected on a machine
-    # without the sim extra, and `driver_base.load` below reports it properly.
-    with contextlib.suppress(ImportError):
-        import tendon.drivers.mujoco  # noqa: F401
-
     try:
-        body = driver_base.load(driver)
-    except driver_base.DriverError as exc:
+        body = open_body(driver)
+    except BodyUnavailable as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
-        console.print('[dim]install a driver extra, e.g. pip install -e ".[sim]"[/dim]')
+        console.print(
+            "[dim]install a driver extra, e.g. " + escape('pip install -e ".[sim]"') + "[/dim]"
+        )
         raise typer.Exit(code=1) from exc
 
     # Before anything moves. Discovering an incompatibility mid-episode means a robot is
@@ -204,9 +201,31 @@ def _report(console: Console, result, bus) -> None:
 
 
 @app.command()
-def shell(port: int = 8080) -> None:
-    """Serve the intervention interface."""
-    raise NotImplementedError("v0.2")
+def serve(
+    port: int = typer.Option(8000, help="Port to listen on"),
+    host: str = typer.Option("127.0.0.1", help="Interface to bind"),
+    skills_dir: str = typer.Option("skills", help="Where to look for skill packages"),
+) -> None:
+    """Serve the runtime API the shell talks to.
+
+    Binds to loopback by default. `SECURITY.md` records that there is no authentication
+    between shell and runtime yet, so binding to anything wider is a deliberate act rather
+    than a default someone inherits.
+
+    Run the shell separately with `npm run dev` in `shell/`; it proxies /api and /ws here.
+    """
+    import uvicorn
+
+    from tendon.api.app import create_app
+
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        Console().print(
+            f"[yellow]warning:[/yellow] binding to {escape(host)}. There is no "
+            "authentication between the shell and the runtime yet — anyone who can reach "
+            "this port can command the body. See SECURITY.md."
+        )
+
+    uvicorn.run(create_app(skill_root=Path(skills_dir)), host=host, port=port)
 
 
 @app.command()
@@ -244,8 +263,8 @@ def evaluate_skill(
     """
     console = Console()
 
-    from tendon.drivers import base as driver_base
     from tendon.kernel.scheduler import Scheduler
+    from tendon.services.bodies import BodyUnavailable, open_body
     from tendon.services.evaluator import EpisodeOutcome, SuccessCriterion, evaluate, judge
     from tendon.services.policies import ScriptedPolicy, sine_sweep
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
@@ -256,13 +275,10 @@ def evaluate_skill(
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 
-    with contextlib.suppress(ImportError):
-        import tendon.drivers.mujoco  # noqa: F401
-
     try:
-        body = driver_base.load(driver)
+        body = open_body(driver)
         require_compatible(loaded, body)
-    except (driver_base.DriverError, IncompatibleBody) as exc:
+    except (BodyUnavailable, IncompatibleBody) as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 

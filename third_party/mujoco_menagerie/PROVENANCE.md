@@ -1,14 +1,26 @@
-# Provenance — MuJoCo Menagerie (trs_so_arm100)
+# Provenance — MuJoCo Menagerie (trs_so_arm100, ufactory_xarm7)
 
 **Source:** https://github.com/google-deepmind/mujoco_menagerie
 **Commit:** da76818e269b82289eba39808e2fb91d679d6994
 **Retrieved:** 2026-08-30
-**Licence:** Apache-2.0
+**Licence:** per model, see below
 
-Note that the Menagerie repository as a whole is `NOASSERTION` on GitHub, because each
-model carries the terms of its own author. Only the licence of the model actually taken
-applies here, and `trs_so_arm100/LICENSE` is Apache-2.0. Nothing else from the repository
-is vendored, so no other model's terms are inherited.
+The Menagerie repository as a whole is `NOASSERTION` on GitHub, because each model carries
+the terms of its own author. **Two models are vendored and they are under different
+licences**, so the terms have to be read per directory rather than for this folder:
+
+| Model | Licence | Author |
+| --- | --- | --- |
+| `trs_so_arm100/` | Apache-2.0 | The Robot Studio, via Google DeepMind |
+| `ufactory_xarm7/` | BSD-3-Clause | UFACTORY, via Google DeepMind |
+
+Both are permissive and both permit redistribution inside an Apache-2.0 project. BSD-3
+additionally requires the copyright notice, the licence text and the disclaimer to be
+retained in redistributions, which `ufactory_xarm7/LICENSE` carries unmodified.
+
+`third_party/mujoco_menagerie/LICENSE` is the Apache-2.0 text, kept because CI requires a
+`LICENSE` at each `third_party/*` directory. It is **not** the licence of everything
+beneath it — the per-model files are.
 
 ## What was taken
 
@@ -20,8 +32,20 @@ Sparse checkout of one model directory. The repository holds dozens of robots an
   - `scene.xml` — upstream's own scene (ground plane, lighting), kept for reference
   - `assets/*.stl` — 18 meshes, visual and collision
   - `LICENSE`, `README.md`, `CHANGELOG.md`
-- `trs_so_arm100/LICENSE` → also copied to `third_party/mujoco_menagerie/LICENSE`, so the
-  directory CI checks for carries the terms that actually apply to its contents.
+- `ufactory_xarm7/` → `third_party/mujoco_menagerie/ufactory_xarm7/`, 4.5MB
+  - `xarm7.xml`, `hand.xml`, `scene.xml`, `assets/` (16 meshes), `LICENSE`, `README.md`,
+    `CHANGELOG.md`
+- `trs_so_arm100/LICENSE` → also copied to `third_party/mujoco_menagerie/LICENSE` to
+  satisfy the CI check for a licence at each ported directory.
+
+**Why a second arm.** Design decision 3 says a body is a driver. One robot cannot
+demonstrate that; it only shows the driver works. The xArm7 disagrees with the SO-ARM100
+on every axis the HAL has to absorb — seven joints against five, a **tendon**-driven
+gripper against a joint-driven one, 0-255 against radians, and the **opposite end of the
+control range means open**. Measured pad separation differs too: 16-104 mm against
+7-93 mm. Loading both through the same driver, with the same recorder
+producing a different schema for each, is what makes decision 3 checkable rather than
+asserted. See `benchmarks/two_bodies.py`.
 
 Upstream in turn derives this MJCF from the URDF published by The Robot Studio at
 https://github.com/TheRobotStudio/SO-ARM100 . Their derivation steps are recorded in
@@ -37,6 +61,11 @@ file finds the other:
 - `src/tendon/assets/robots/so_arm100_wrist_cam.xml` — a copy of `so_arm100.xml` with one
   `<camera name="wrist">` added to the `Fixed_Jaw` body, and nothing else. It carries a
   header stating that it is modified, as Apache-2.0 §4(b) requires.
+- `src/tendon/assets/robots/xarm7_wrist_cam.xml` — a copy of `xarm7.xml` with one
+  `<camera name="wrist">` added to the `xarm_gripper_base_link` body, and nothing else.
+  BSD-3 does not require a modification notice the way Apache-2.0 §4(b) does, but the
+  header carries one anyway: a reader who finds two nearly identical files should not have
+  to diff them to learn which is upstream.
 
 The camera could not be added from the scene file instead. MJCF has no way to add a child
 to a body that arrived through `<include>`: re-declaring `<body name="Fixed_Jaw">` fails
