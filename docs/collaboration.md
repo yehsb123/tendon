@@ -1519,3 +1519,24 @@ where confidence is going to come from.
   finding stands as a general one: all six message types are defined on both sides and
   every one is now genuinely sent and handled, so there is nothing to fix today. Worth
   knowing that the existing test would not have said so.
+- **A — there was no integration job. Sixty tests, none of them ever run on a runner.**
+  CI had `boundaries`, `lint`, `types`, `unit`, `shell` and `provenance`, and `unit` only
+  ever pointed at `tests/unit`. So `test_record_example.py` (the v0.1 acceptance test),
+  `test_correction_loop.py` (v0.3), `test_mujoco_episode.py`, and B's new
+  `test_shell_session.py` were all green by never executing.
+
+  Three of the eight need mujoco and nothing else, and they now run: 24 tests in about two
+  seconds. They do no rendering, so a headless runner needs no GL, and the menagerie scenes
+  are vendored under `third_party/` so a fresh checkout has what they load. Verified in a
+  simulated `[dev,sim]` environment with lerobot, torch, rerun and duckdb blocked at both
+  `find_spec` and `meta_path` before it went anywhere near CI.
+
+  The other five want lerobot, which pins Python 3.12 and pulls torch. That is a much
+  bigger job and a separate decision, and it is worth making deliberately rather than by
+  default -- those five are the ones that record, which is design decision 1. Listing them
+  so the choice is visible: `test_cli_eval.py`, `test_cli_run.py`, `test_record_example.py`,
+  `test_shell_correction.py`, `test_shell_session.py`.
+
+  Third time this pattern has turned up today: the viz suite, the CLI strings that never
+  reached a check, and now this. The shape is always the same -- something reports success
+  because nothing asked it the question.
