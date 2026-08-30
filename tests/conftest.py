@@ -39,6 +39,10 @@ GUARDED_ROOTS = (
     ("tendon.services.recorder", "DEFAULT_ROOT", "episodes"),
     ("tendon.services.memory_store", "DEFAULT_MEMORY_ROOT", "memory"),
     ("tendon.services.progress", "DEFAULT_PROGRESS_ROOT", "progress"),
+    # A file rather than a directory, and redirected for the opposite reason to the
+    # others: nothing writes it, but a test that read the developer's real ceiling would
+    # pass or fail depending on whose machine it ran on.
+    ("tendon.services.limits", "DEFAULT_LIMITS_PATH", "limits.yaml"),
 )
 
 
@@ -85,6 +89,10 @@ def _no_writes_to_the_home_directory(tmp_path: Path, monkeypatch: pytest.MonkeyP
     _redirect(monkeypatch, tmp_path)
 
 
+#: Carried from sessionfinish to unconfigure, which is not handed the status.
+_EXIT_STATUS: int | None = None
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Optionally end the process without running native teardown.
@@ -117,9 +125,30 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     code still shows up in the unit suite, locally, and in the sibling integration job.
     `PYTHONFAULTHANDLER` stays on either way, so a crash during a run is still reported.
     """
-    if os.environ.get("TENDON_EXIT_WITHOUT_TEARDOWN") != "1":
+    global _EXIT_STATUS
+    _EXIT_STATUS = int(exitstatus)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Where the exit actually happens, and why it is not `sessionfinish`.
+
+    The first version called `os._exit` from `sessionfinish` and truncated pytest's own
+    summary line: the run showed its progress dots and then stopped, with no "N passed" to
+    read. A green job that cannot say how many tests it ran is a worse trade than the
+    abort it was avoiding, since the count is the thing that proves the suite did not
+    quietly shrink.
+
+    The terminal reporter writes that summary through its own writer during teardown, so
+    the exit has to come after it. `unconfigure` is the last hook pytest calls, and the
+    status is carried from `sessionfinish` because this one is not given it.
+    """
+    if os.environ.get("TENDON_EXIT_WITHOUT_TEARDOWN") != "1" or _EXIT_STATUS is None:
         return
 
+    terminal = config.pluginmanager.get_plugin("terminalreporter")
+    if terminal is not None:
+        terminal._tw.flush()
     sys.stdout.flush()
     sys.stderr.flush()
-    os._exit(int(exitstatus))
+    os._exit(_EXIT_STATUS)
