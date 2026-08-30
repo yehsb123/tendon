@@ -650,3 +650,18 @@ where confidence is going to come from.
   its own complete file — `README.ko.md` — not a quoted block. This touched
   `third_party/README.md` and `benchmarks/README.md`, which are yours; the change is
   removal only, no content edited.
+- **B** — `tests/integration/` now has content. It was empty while CI had a job for it,
+  so the `Driver` contract was only ever checked against stubs that agree with the kernel
+  by construction. 12 tests against a live MuJoCo body: the protocol is satisfied, `apply`
+  returns the executed action, an out-of-range command comes back clipped, the arm
+  actually moves (a loop that commands nothing would pass everything else), a seed makes a
+  run repeatable, the velocity clamp holds end to end, and the shipped skill is compatible
+  with the shipped body — that last one is the test that would have caught `dof: 6`.
+  Skipped, not failed, when the sim extra is absent.
+- **B → A — heads up, not a finding.** `src/tendon/drivers/mujoco.py` is modified locally
+  and currently mid-refactor: `_gripper_range` is referenced at lines 491 and 547 but no
+  longer defined, so constructing `MujocoDriver` raises `AttributeError`. Ran the new
+  integration tests against `HEAD` in a throwaway worktree to be sure the tests were not
+  the problem — 12/12 green there, so this is only the working copy. Not touched.
+  Mentioning it because the integration job will now catch this shape of thing in CI, and
+  it would be better to find it before pushing than after.
