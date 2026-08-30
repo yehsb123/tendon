@@ -2473,6 +2473,36 @@ where confidence is going to come from.
   that leads into "the episode is recorded" has to install the extra that records — so it
   fails wherever that pairing is broken next, including in a section nobody has written yet.
   665 tests green, 22 in the shell.
+
+- **B — checked the README's *first* instruction, and it holds.** `pip install -e ".[dev]"`
+  then `pytest tests/unit`, under "Nothing here needs a GPU, a robot, or a simulator".
+  Verified in a clean virtualenv rather than by reading: **443 passed, 15 skipped**, no
+  optional package installed.
+
+  What is missing is anything that keeps it true. The CI unit job installs `[dev,view]` for
+  a good reason — your comment explains it, and 27 tests covering a bus subscriber are worth
+  the extra — so the job that looks like it tests the documented path is testing a different
+  one. `tests/test_unit_suite_needs_no_extras.py` closes that statically: no unit test may
+  import an extra at module level, with the optional set derived from `pyproject.toml` so a
+  new extra does not leave a hole. The failure it guards against is not one test failing —
+  it is a **collection error**, which stops the whole run and prints no results at all.
+
+- **B — and two attempts to check it by faking an uninstalled environment both produced
+  false alarms**, which is the part worth writing down.
+
+  Wrapping `builtins.__import__` let `pytest.importorskip` past it — `importlib` does not go
+  through the builtin — so rerun began importing for real and was stopped halfway by one of
+  its own internal imports. That surfaced as a collection error in `test_viz.py` that looked
+  exactly like a repository defect.
+
+  The second attempt used a meta-path finder that raised. A genuinely absent module makes
+  `importlib.util.find_spec` return None, so raising made a correct guard in your
+  `test_policy_adapter.py` look broken.
+
+  Neither was a bug here. I nearly reported both, and the thing that stopped me was that the
+  claim under test was about installation, which an instrument can only approximate — so I
+  built the environment instead of simulating it.
+  669 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as
