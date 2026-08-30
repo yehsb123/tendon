@@ -9,6 +9,14 @@ Thin by design. The kernel owns four things and nothing else.
 | `interrupt` | Design decision 2. Raise on low confidence or a safety trip, hand control to a human with context preserved, resume. |
 | `safety` | Hard limits checked on every action, independent of the policy. Workspace bounds, force ceilings, velocity caps. |
 
+The other two modules are not responsibilities and are listed because a reader looking for
+`Driver` or `Action` should not have to guess:
+
+| Module | Responsibility |
+| --- | --- |
+| `types` | The vocabulary. `Action`, `Observation`, `Intent`, `Confidence`, `SafetyLimits`, `Capability` — what every layer above agrees these words mean. |
+| `protocols` | The contracts. `Driver` and `Policy`, structural rather than inherited, so a body or a policy can satisfy them without importing tendon. |
+
 ## Invariants
 
 - The kernel never imports `torch`, `mujoco`, or any driver.

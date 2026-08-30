@@ -2159,3 +2159,30 @@ where confidence is going to come from.
   is indistinguishable from one this runtime never had, which is what `get` already returns
   None for and the shell already handles.
   590 tests green.
+
+- **B — the READMEs that index a directory had stopped indexing it.**
+  `services/README.md` described five modules. There are seventeen — twelve missing,
+  including four added in the last few rounds. `kernel/README.md` opened with "the kernel
+  owns four things and nothing else" and omitted `types` and `protocols`, which is where
+  `Action` and `Driver` live. `shell/src/views/README.md` listed four screens, said "the
+  other three", and gave the job of showing the intervention rate to `Training` — which
+  does not exist — while `Progress`, which does it, was not mentioned at all.
+
+  None of it breaks anything. It misinforms the next person to open the file, which is the
+  only reason the file is there.
+
+  All three brought back to reality, and `tests/test_docs_enumerate_reality.py` keeps them
+  there in both directions: a module missing from its index fails, and an index naming a
+  file that is gone fails. **Unless the entry says it is not built** — `Training` stays
+  listed and marked, because somebody wondering where training went is better served by
+  "not built" than by silence.
+
+  Only the three directories whose README *is* an index are checked. `api/` and `drivers/`
+  are prose about a boundary, which is a fine thing for a README to be, and a rule that
+  demanded an index everywhere would force one on documents better without.
+
+  The parser reads table rows and listing lines rather than every backtick. A first version
+  read the whole file and counted `kernel/README.md`'s invariant — *the kernel never imports
+  `torch` or `mujoco`* — as claims that those modules exist, which would have failed a
+  correct document. There is a test for that specifically.
+  598 tests green.
