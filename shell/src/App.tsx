@@ -1,10 +1,11 @@
 import { useState } from "react";
 
+import { Curate } from "./views/Curate";
 import { Episodes } from "./views/Episodes";
 import { Live } from "./views/Live";
 import { Skills } from "./views/Skills";
 
-type View = "live" | "episodes" | "skills" | "training";
+type View = "live" | "episodes" | "skills" | "curate" | "training";
 
 /**
  * Shell root.
@@ -20,7 +21,7 @@ export function App() {
   return (
     <div className="app">
       <nav className="app-nav" aria-label="Views">
-        {(["live", "episodes", "skills", "training"] as const).map((v) => (
+        {(["live", "episodes", "skills", "curate", "training"] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -37,6 +38,7 @@ export function App() {
         {view === "live" ? <Live /> : null}
         {view === "episodes" ? <Episodes /> : null}
         {view === "skills" ? <Skills /> : null}
+        {view === "curate" ? <Curate /> : null}
         {view === "training" ? <NotBuiltYet view={view} /> : null}
       </main>
     </div>

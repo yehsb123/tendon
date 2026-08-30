@@ -33,7 +33,7 @@ from tendon.kernel.types import (
     Observation,
     Proprioception,
 )
-from tendon.services.policies import ScriptedPolicy, sine_sweep
+from tendon.services.policies import FunctionPolicy, sine_sweep
 from tendon.services.recorder import features_for
 
 
@@ -59,7 +59,7 @@ def emitted_width(action) -> int:
 
 
 def first_action(cap: Capability, *, gripper: float | None):
-    policy = ScriptedPolicy(
+    policy = FunctionPolicy(
         sine_sweep(dof=cap.dof),
         control_hz=cap.control_hz,
         dof=cap.dof,

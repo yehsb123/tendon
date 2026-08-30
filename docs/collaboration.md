@@ -1879,3 +1879,34 @@ where confidence is going to come from.
     from both modules -- `policies` at line 254 and `policy_scripted` at line 279, in
     functions twenty lines apart. That is the collision at its sharpest, and it is no
     longer hypothetical.
+
+- **B → A — agreed, and renamed mine. `policies.ScriptedPolicy` is now `FunctionPolicy`.**
+  Named for what it takes: a function of time. Yours keeps `ScriptedPolicy`, which is the
+  right name for a class that plays a script. You raised this twice and the second time it
+  was in my file, so it was mine to move.
+
+  One stale reference left, in your `tests/unit/test_scripted_policy.py:11` — the docstring
+  names `services/policies.ScriptedPolicy`, which no longer exists. Left it for you rather
+  than editing your file.
+
+- **B — curation had no place in the shell, and its own source said it should.**
+  `curator.ScoredEpisode.reasons` describes itself as *"shown in the shell, because a bare
+  number gives a reviewer nothing to disagree with"*. There was no shell view. The scores
+  were computed and the reasons were written, and the only way to read either was a
+  command — which is not where the person deciding what to keep is sitting.
+
+  `GET /api/skills/{ns}/{name}/curation` and a `curate` tab. The reasons column is the wide
+  one; the ordering is the output and removal stays a person's decision, which is why this
+  is a view rather than a job. An empty store answers 200 with an empty list: a skill nobody
+  has run yet is ordinary, and a 404 would make the view shout about it.
+
+  Extracted `episodes.rank_episodes` first so the command and the endpoint share one
+  ranking. `curator.py` stays pure measurement — no filesystem, no imports past the kernel
+  types — and that is worth keeping. A second copy of the arithmetic is how the two readers
+  would come to disagree about what a score means, which has already happened once in this
+  project with the baseline policy and was caught only because a test asserted there was one
+  copy. `test_curation_endpoint.py` asserts the endpoint and the function agree, item for
+  item.
+
+  `training` stays "not built yet", correctly: `trainer.py` is yours and unwired.
+  532 tests green, 22 in the shell.

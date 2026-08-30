@@ -9,7 +9,7 @@ evaluation needs: a run whose behaviour cannot drift, against which a learned po
 compared. It is also how a human demonstration becomes a policy — the same episode that a
 `human` driver produced can be handed to the scheduler and executed on a robot.
 
-**`ScriptedPolicy`** generates a trajectory from a function of time. Used for smoke tests,
+**`FunctionPolicy`** generates a trajectory from a function of time. Used for smoke tests,
 for exercising the interrupt path without a model, and for the `01_record` overhead
 measurement, where the point is the loop cost rather than the behaviour.
 
@@ -41,7 +41,7 @@ from tendon.kernel.types import (
     Observation,
 )
 
-__all__ = ["PolicyExhausted", "ReplayPolicy", "ScriptedPolicy"]
+__all__ = ["FunctionPolicy", "PolicyExhausted", "ReplayPolicy"]
 
 _NO_CONFIDENCE = Confidence(
     score=0.0,
@@ -133,11 +133,14 @@ class ReplayPolicy:
         )
 
 
-class ScriptedPolicy:
+class FunctionPolicy:
     """Generates a trajectory from a function of step index.
 
-    **Not the same class as `policy_scripted.ScriptedPolicy`, and not for the same job.**
-    One module-name word apart, so the distinction is worth stating in both places:
+    Named for what it takes: a function of time. It was `ScriptedPolicy` until
+    `policy_scripted.ScriptedPolicy` — a different class, one module-name word away —
+    ended up imported into the same file twenty lines apart, and a traceback naming
+    `ScriptedPolicy` said nothing about which. The two are still worth distinguishing in
+    prose:
 
     - This one takes a trajectory function and does not attempt any task. It exists to
       exercise the loop — the interrupt path, the safety check, the recorder — where the

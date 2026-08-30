@@ -29,7 +29,7 @@ from typing import Any
 
 from tendon.kernel.types import Action, ActionSpace
 
-__all__ = ["StoredEpisode", "EpisodeReadError", "read_episodes"]
+__all__ = ["StoredEpisode", "EpisodeReadError", "Ranking", "read_episodes", "rank_episodes"]
 
 
 class EpisodeReadError(RuntimeError):
@@ -104,6 +104,69 @@ def read_episodes(directory: Path, *, gripper: bool | None = None) -> tuple[Stor
             had_interrupt=interrupted,
         )
         for index, actions in sorted(grouped.items())
+    )
+
+
+@dataclass(frozen=True)
+class Ranking:
+    """Episodes in order, best first, and what the ordering could not account for."""
+
+    scored: tuple[Any, ...]
+    #: True when the store could say which episodes were interrupted. False when it could
+    #: not, in which case none were promoted and whoever reads the ranking should be told:
+    #: interrupt episodes are the ones a curator most wants at the top.
+    interrupts_known: bool
+
+
+def rank_episodes(directory: Path, *, limit: int | None = None) -> Ranking:
+    """Read a dataset and rank it, best first.
+
+    Here rather than in `curator.py` because that module is pure measurement — no
+    filesystem, no imports beyond the kernel types — and it is worth keeping that way. It
+    is also here rather than in the command, because the command and the API both need it
+    and a second copy of this arithmetic is how the two would eventually disagree about
+    what a score means.
+    """
+    from tendon.services.curator import ScoredEpisode, score_episode, select, signals_for
+
+    episodes = read_episodes(directory)
+    if not episodes:
+        return Ranking(scored=(), interrupts_known=True)
+
+    # Both references are population scales, not absolutes. Jerk that is violent on a
+    # six-axis arm is nothing on a delta robot, and an episode is only long or short
+    # relative to the others of the same skill, so scoring against fixed numbers would be
+    # scoring the hardware.
+    lengths = sorted(len(e.actions) for e in episodes)
+    median_steps = float(lengths[len(lengths) // 2])
+
+    measured = [
+        (
+            episode,
+            signals_for(
+                episode.actions,
+                episode.dt_s,
+                median_steps,
+                had_interrupt=bool(episode.had_interrupt),
+            ),
+        )
+        for episode in episodes
+    ]
+    jerks = sorted(signals.peak_jerk for _, signals in measured)
+    jerk_reference = jerks[len(jerks) // 2] or 1.0
+
+    scored = []
+    for episode, signals in measured:
+        value, reasons = score_episode(signals, jerk_reference=jerk_reference)
+        scored.append(
+            ScoredEpisode(
+                episode_id=episode.episode_id, score=value, signals=signals, reasons=reasons
+            )
+        )
+
+    return Ranking(
+        scored=tuple(select(scored, limit=limit)),
+        interrupts_known=all(e.had_interrupt is not None for e in episodes),
     )
 
 

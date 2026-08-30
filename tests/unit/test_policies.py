@@ -17,7 +17,7 @@ from tendon.kernel.types import (
     Observation,
     Proprioception,
 )
-from tendon.services.policies import ReplayPolicy, ScriptedPolicy, sine_sweep
+from tendon.services.policies import FunctionPolicy, ReplayPolicy, sine_sweep
 
 HZ = 100.0
 
@@ -126,19 +126,19 @@ def test_invalid_construction_is_refused(chunk: int, hz: float) -> None:
 
 
 def test_scripted_satisfies_the_protocol() -> None:
-    policy = ScriptedPolicy(sine_sweep(dof=2), control_hz=HZ, dof=2)
+    policy = FunctionPolicy(sine_sweep(dof=2), control_hz=HZ, dof=2)
     assert isinstance(policy, Policy)
 
 
 def test_scripted_advances_between_calls() -> None:
-    policy = ScriptedPolicy(sine_sweep(dof=2, period_steps=8), control_hz=HZ, dof=2, chunk_size=2)
+    policy = FunctionPolicy(sine_sweep(dof=2, period_steps=8), control_hz=HZ, dof=2, chunk_size=2)
     first = [a.values[0] for a in policy.predict(obs()).actions]
     second = [a.values[0] for a in policy.predict(obs()).actions]
     assert first != second
 
 
 def test_scripted_reset_returns_to_the_start() -> None:
-    policy = ScriptedPolicy(sine_sweep(dof=2, period_steps=8), control_hz=HZ, dof=2, chunk_size=2)
+    policy = FunctionPolicy(sine_sweep(dof=2, period_steps=8), control_hz=HZ, dof=2, chunk_size=2)
     first = [a.values for a in policy.predict(obs()).actions]
     policy.reset()
     again = [a.values for a in policy.predict(obs()).actions]
@@ -148,7 +148,7 @@ def test_scripted_reset_returns_to_the_start() -> None:
 def test_a_dof_mismatch_is_refused_loudly() -> None:
     """A mismatched action would be clipped by the driver and recorded as though it were
     intended — silently wrong data rather than a visible error."""
-    policy = ScriptedPolicy(lambda _: [0.0], control_hz=HZ, dof=3)
+    policy = FunctionPolicy(lambda _: [0.0], control_hz=HZ, dof=3)
     with pytest.raises(ValueError):
         policy.predict(obs())
 
@@ -179,7 +179,7 @@ def test_sine_sweep_needs_at_least_one_joint() -> None:
     "policy",
     [
         ReplayPolicy(recording(4), control_hz=HZ),
-        ScriptedPolicy(sine_sweep(dof=2), control_hz=HZ, dof=2),
+        FunctionPolicy(sine_sweep(dof=2), control_hz=HZ, dof=2),
     ],
 )
 def test_baselines_report_no_confidence(policy: Policy) -> None:

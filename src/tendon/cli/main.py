@@ -251,12 +251,12 @@ def _baseline_policy(loaded, capability):
     motion that happens to run on the same body — `tendon eval grasp/cube-sim` reported an
     intervention rate and failure modes for a sweep that never reached for the cube.
     """
-    from tendon.services.policies import ScriptedPolicy, sine_sweep
+    from tendon.services.policies import FunctionPolicy, sine_sweep
 
     if loaded.policy_baseline:
         return _named_baseline(loaded, capability)
 
-    return ScriptedPolicy(
+    return FunctionPolicy(
         sine_sweep(dof=capability.dof),
         control_hz=capability.control_hz,
         dof=capability.dof,
@@ -548,8 +548,7 @@ def curate(
     """
     console = Console()
 
-    from tendon.services.curator import ScoredEpisode, score_episode, select, signals_for
-    from tendon.services.episodes import EpisodeReadError, read_episodes
+    from tendon.services.episodes import EpisodeReadError, rank_episodes
     from tendon.services.skill import SkillError, load_skill
     from tendon.services.store import DEFAULT_ROOT
 
@@ -563,48 +562,17 @@ def curate(
     directory = root / loaded.ref.replace("/", "__")
 
     try:
-        episodes = read_episodes(directory)
+        ranking = rank_episodes(directory, limit=limit or None)
     except EpisodeReadError as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         console.print(f"[dim]record some first: tendon run {escape(loaded.ref)}[/dim]")
         raise typer.Exit(code=1) from exc
 
-    if not episodes:
+    if not ranking.scored:
         console.print(f"[dim]nothing recorded for {escape(loaded.ref)} under {escape(str(root))}")
         raise typer.Exit(code=1)
 
-    # Both references are population scales, not absolutes. Jerk that is violent on a
-    # 6-axis arm is nothing on a delta robot, and an episode is only long or short
-    # relative to the others of the same skill — scoring against fixed numbers would be
-    # scoring the hardware.
-    lengths = sorted(len(e.actions) for e in episodes)
-    median_steps = float(lengths[len(lengths) // 2])
-
-    measured = [
-        (
-            episode,
-            signals_for(
-                episode.actions,
-                episode.dt_s,
-                median_steps,
-                had_interrupt=bool(episode.had_interrupt),
-            ),
-        )
-        for episode in episodes
-    ]
-    jerks = sorted(signals.peak_jerk for _, signals in measured)
-    jerk_reference = jerks[len(jerks) // 2] or 1.0
-
-    scored = []
-    for episode, signals in measured:
-        value, reasons = score_episode(signals, jerk_reference=jerk_reference)
-        scored.append(
-            ScoredEpisode(
-                episode_id=episode.episode_id, score=value, signals=signals, reasons=reasons
-            )
-        )
-
-    ranked = select(scored, limit=limit or None)
+    ranked = ranking.scored
 
     table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
     table.add_column("episode")
@@ -621,7 +589,7 @@ def curate(
         )
     console.print(table)
 
-    if any(e.had_interrupt is None for e in episodes):
+    if not ranking.interrupts_known:
         # The signal the curator values most, and the store cannot attribute it. Said
         # loudly rather than left to be inferred from a ranking that looks complete.
         console.print()

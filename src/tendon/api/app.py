@@ -249,6 +249,43 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
 
         return {"compatible": not reasons, "reasons": list(reasons)}
 
+    @app.get("/api/skills/{namespace}/{name}/curation")
+    async def curation(namespace: str, name: str, limit: int = 0) -> dict[str, Any]:
+        """Recorded episodes for one skill, ranked by what is worth training on.
+
+        `curator.ScoredEpisode.reasons` says of itself that it is "shown in the shell,
+        because a bare number gives a reviewer nothing to disagree with". There was no
+        shell view. The scores existed, the reasons existed, and the only way to read
+        either was a command.
+
+        Never deletes and never filters by threshold — the ordering is the output and the
+        removal is a person's decision, which is exactly why this is a view rather than a
+        job.
+        """
+        from tendon.services.episodes import EpisodeReadError, rank_episodes
+
+        try:
+            ranking = rank_episodes(episode_root / f"{namespace}__{name}", limit=limit or None)
+        except EpisodeReadError:
+            # Not a 404. The skill exists and simply has no episodes yet, which is the
+            # normal state before anybody has run it, and an error would make the view
+            # shout about something ordinary.
+            return {"episodes": [], "interrupts_known": True}
+
+        return {
+            "episodes": [
+                {
+                    "episode_id": entry.episode_id,
+                    "score": entry.score,
+                    "steps": entry.signals.steps,
+                    "had_interrupt": entry.signals.had_interrupt,
+                    "reasons": list(entry.reasons),
+                }
+                for entry in ranking.scored
+            ],
+            "interrupts_known": ranking.interrupts_known,
+        }
+
     @app.get("/api/memory")
     async def memory() -> list[dict[str, Any]]:
         """What the operator has taught, per skill and body.

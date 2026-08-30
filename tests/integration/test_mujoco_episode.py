@@ -20,7 +20,7 @@ from tendon.kernel.bus import Bus  # noqa: E402
 from tendon.kernel.protocols import Driver, Policy  # noqa: E402
 from tendon.kernel.scheduler import Scheduler, StepRecord  # noqa: E402
 from tendon.kernel.types import ActionSpace, SafetyLimits  # noqa: E402
-from tendon.services.policies import ScriptedPolicy, sine_sweep  # noqa: E402
+from tendon.services.policies import FunctionPolicy, sine_sweep  # noqa: E402
 from tendon.services.skill import check_compatibility, load_skill  # noqa: E402
 
 SKILL = "skills/grasp/cube-sim"
@@ -40,7 +40,7 @@ def body():
 
 def scripted_for(body: Driver) -> Policy:
     capability = body.capability
-    return ScriptedPolicy(
+    return FunctionPolicy(
         sine_sweep(dof=capability.dof, amplitude=0.1),
         control_hz=capability.control_hz,
         dof=capability.dof,
@@ -171,7 +171,7 @@ def test_a_velocity_limit_is_enforced_against_the_real_body(body) -> None:
     def ramp(step: int) -> list[float]:
         return [step * 0.05] + [0.0] * (capability.dof - 1)
 
-    policy = ScriptedPolicy(ramp, control_hz=capability.control_hz, dof=capability.dof)
+    policy = FunctionPolicy(ramp, control_hz=capability.control_hz, dof=capability.dof)
     result = Scheduler(driver=body, limits=SafetyLimits(max_joint_velocity=ceiling)).run_episode(
         policy, max_steps=40, seed=0
     )

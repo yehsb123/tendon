@@ -270,6 +270,10 @@ It reads the parquet with duckdb rather than through LeRobot, so **curation runs
 machine that cannot record** — no simulator, no torch. That is the machine somebody
 actually does this on: a laptop, against data collected somewhere else.
 
+The same ranking is a tab in the shell, which is where the reasons were always meant to be
+read — the person deciding what to keep is sitting in front of the interface, not the
+terminal.
+
 A body that moves real hardware is refused unless you pass `--physical`, and `doctor` says
 which bodies those are. Driver arguments go through `--driver-arg key=value`.
 

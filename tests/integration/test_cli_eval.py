@@ -119,7 +119,11 @@ def test_eval_and_run_build_the_same_baseline_policy() -> None:
             if (
                 isinstance(inner, ast.Call)
                 and isinstance(inner.func, ast.Name)
-                and inner.func.id == "ScriptedPolicy"
+                # Both baselines. `FunctionPolicy` was called `ScriptedPolicy` until it
+                # collided with the class of that name in `policy_scripted`, which this
+                # file imported twenty lines away — a traceback naming `ScriptedPolicy`
+                # said nothing about which one had raised.
+                and inner.func.id in {"FunctionPolicy", "ScriptedPolicy"}
             ):
                 builders.add(node.name)
 

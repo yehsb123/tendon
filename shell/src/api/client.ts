@@ -118,6 +118,28 @@ export interface Memory {
   radius: number;
 }
 
+/** One recorded episode, scored. */
+export interface CuratedEpisode {
+  episode_id: string;
+  score: number;
+  steps: number;
+  had_interrupt: boolean;
+  reasons: string[];
+}
+
+/**
+ * A ranking, and what it could not account for.
+ *
+ * `interrupts_known` is false when the store cannot say which episodes an operator was
+ * handed control in. Those are the episodes a curator most wants at the top — the only
+ * recordings of recovery from failure — so a ranking that quietly omits them is worse
+ * than one that says it is incomplete.
+ */
+export interface Curation {
+  episodes: CuratedEpisode[];
+  interrupts_known: boolean;
+}
+
 export interface SessionSnapshot {
   session_id: string;
   skill: string;
@@ -140,6 +162,8 @@ export const api = {
   skills: () => request<SkillSummary[]>("/api/skills"),
   episodes: () => request<Episode[]>("/api/episodes"),
   memory: () => request<Memory[]>("/api/memory"),
+  curation: (namespace: string, name: string) =>
+    request<Curation>(`/api/skills/${namespace}/${name}/curation`),
 
   skill: (namespace: string, name: string) =>
     request<SkillDetail>(`/api/skills/${namespace}/${name}`),
