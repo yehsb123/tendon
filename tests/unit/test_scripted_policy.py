@@ -1,9 +1,17 @@
-"""`services/policy_scripted.py`, the baseline v0.3 is measured against.
+"""`services/policy_scripted.py`, the fixed reference the benchmarks measure against.
 
 The point of this module is that it is boring and does not change. A falling
 intervention-rate curve means nothing without a fixed reference, so a reference that
 quietly drifts would invalidate the comparison it exists to support. These tests are the
 thing that keeps it fixed.
+
+This file used to open by calling it "the baseline v0.3 is measured against", which is not
+established. `benchmarks/end_to_end.py`, `benchmarks/curation.py` and `examples/01_record`
+import this class; `tendon eval`, which prints the intervention rate, builds a different
+one -- `services/policies.ScriptedPolicy`, a sine sweep whose own docstring says it is for
+cases where the behaviour is irrelevant. Whether those should be the same policy is an
+open question in docs/collaboration.md. Until it is answered, this says who calls it
+rather than what it proves.
 
 Needs no simulator, no model and no torch: the policy is arithmetic over a list of poses.
 """
