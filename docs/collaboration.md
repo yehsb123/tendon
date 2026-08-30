@@ -2360,6 +2360,26 @@ where confidence is going to come from.
   without fixing anything, and a mitigation that stays after it is shown not to work reads
   as a fix to whoever finds it next. Keeping `PYTHONFAULTHANDLER` and dropping the rest is
   the correct split — one earned its place by producing the stack, the other did not.
+
+- **B — `doctor` now reports the machine's ceiling.** A broken limits file stops every run,
+  which is correct and arrives at the worst possible moment: somebody starts a run and it
+  will not go, for a reason nobody has connected to a file edited last week. `doctor` is the
+  command whose whole job is saying what works here before anything is attempted, and it
+  said nothing about this at all.
+
+  `BLOCKED` rather than `LIMITED` when the file cannot be read, so it reaches the summary
+  and the non-zero exit — a `LIMITED` would be a diagnostic saying "partly fine" about a
+  machine on which nothing will start. The remedy names the path, since being told *which
+  file* is the entire value of finding it here.
+
+  An absent file reports `ok` with "skills run under their own limits" rather than staying
+  quiet. It is the default, not a fault, and a check that only appeared when something was
+  configured would make the ordinary case indistinguishable from the check not existing.
+
+  Placed after `drivers` and before the optional extras: `run_checks` orders by what blocks
+  what, and a ceiling can stop a run where a missing visualiser cannot. A test asserts that
+  ordering rather than trusting it.
+  643 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as

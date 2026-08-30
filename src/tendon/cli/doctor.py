@@ -248,6 +248,39 @@ def _storage(root: Path | None = None) -> Check:
     return Check("storage", Status.OK, f"{free_gb:.1f} GB free")
 
 
+def _local_limits() -> Check:
+    """Whether this machine caps what a skill is allowed to ask for.
+
+    Here because a broken ceiling now stops every run — `tendon run`, `tendon eval` and the
+    API all refuse rather than fall back to a skill's own numbers. Finding that from
+    `doctor` is the difference between a message about a config file and a robot that will
+    not start for a reason nobody has connected to the file they edited last week.
+
+    An absent file is `ok` and says so in words. It is the default, not a fault, and
+    "skills run under their own limits" is a sentence somebody should be able to read
+    deliberately rather than infer from silence.
+    """
+    from tendon.services.limits import DEFAULT_LIMITS_PATH, LocalLimitsError, load_local_limits
+
+    try:
+        ceiling = load_local_limits()
+    except LocalLimitsError as exc:
+        return Check(
+            "limits",
+            Status.BLOCKED,
+            str(exc),
+            f"fix {DEFAULT_LIMITS_PATH} or remove it - a run will not start while it is unreadable",
+        )
+
+    if ceiling is None:
+        return Check("limits", Status.OK, "no local ceiling - skills run under their own limits")
+
+    named = [
+        f"{field} {value}" for field, value in ceiling.model_dump().items() if value is not None
+    ]
+    return Check("limits", Status.OK, "ceiling: " + ", ".join(named))
+
+
 def _hub() -> Check:
     """Whether skills could be installed or published.
 
@@ -280,6 +313,9 @@ def run_checks() -> list[Check]:
     moot, and the Hub matters only once everything else works.
     """
     checks = [_python(), _simulation(), _drivers(), _storage()]
+    # After the drivers and before the optional extras: a ceiling is about what the bodies
+    # above are allowed to do, and it can block a run in a way none of the extras can.
+    checks.insert(3, _local_limits())
     checks.extend([_datasets(), _training(), _visualisation(), _hub()])
     return checks
 
