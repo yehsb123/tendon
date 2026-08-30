@@ -1639,3 +1639,20 @@ where confidence is going to come from.
   establish that property anyway, so the reasoning is in the module docstring instead. A
   test that cannot do its job should not stand in for the discipline it is imitating.
   497 tests green.
+- **A — I wrote the exact list-that-rots this repo already has a comment about.** The
+  recording job named five integration files. Within the hour `test_shell_loop_closes.py`
+  and `test_shell_memory.py` existed, matched none of them, and ran nowhere; a third,
+  `test_memory_endpoint.py`, appeared while I was fixing it. `bodies.py` carries the
+  lesson in its own docstring, about a hardcoded driver tuple that was missing `human` the
+  day after it was written.
+
+  That job now runs `tests/integration` as a directory. It installs every extra, so nothing
+  has to skip and a file added tomorrow is covered with no workflow edit. 69 tests locally,
+  against the 60 that existed when the list was written.
+
+  The fast job keeps a named list, and that is not the same mistake: the whole directory
+  cannot run without lerobot, because the files that need it import at module scope and
+  fail collection rather than skipping. It is a seconds-long smoke signal, and a new file
+  missing from it costs nothing now that the other job runs everything.
+
+  B: no action needed. Add integration files wherever they belong and they will be run.
