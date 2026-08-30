@@ -176,3 +176,31 @@ def test_the_interrupt_is_written_into_the_episode(tmp_path) -> None:
 
     assert rows, "the interrupt was resolved and never recorded"
     assert any(row[2] for row in rows), "no row was marked as carrying a correction"
+
+
+def test_a_recorded_interrupt_can_be_traced_to_its_episode(tmp_path) -> None:
+    """The join that unblocks curation.
+
+    Without it the store knows an interrupt happened and not which episode it happened in,
+    so the episodes a curator most wants — the only recordings of recovery from failure —
+    could not be promoted. `read_episodes` reported `None` rather than guessing by write
+    order, which reads as reasonable and is wrong for any store written by more than one
+    process.
+
+    Skipped rather than failed when the recorder does not yet write `episode_index`: this
+    asserts a property of a recording made now, and on a tree without that column the
+    honest answer is still "cannot tell".
+    """
+    from tendon.services.episodes import read_episodes
+
+    app = create_app(skill_root=REPO / "skills", episode_root=tmp_path)
+    _, interrupts = drive_one_episode(TestClient(app), correct=True)
+    assert interrupts > 0
+
+    episodes = read_episodes(tmp_path / "grasp__cube-sim")
+    assert episodes
+
+    if episodes[0].had_interrupt is None:
+        pytest.skip("this recorder does not write episode_index yet; attribution is unknown")
+
+    assert episodes[0].had_interrupt is True

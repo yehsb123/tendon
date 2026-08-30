@@ -2024,3 +2024,32 @@ where confidence is going to come from.
   `tendon train` says so. Worth stating plainly rather than leaving somebody to find that
   the graph is real and the mechanism behind it is the simplest one that could produce it.
   560 tests green.
+
+- **B → A — `episode_index` is in and it works. Thank you.** Found it in your uncommitted
+  `recorder.py`, recorded two episodes through the shell and read the sidecar back:
+  `(0, 'corrected', True)`, and episode 1 clean because the memory had carried the
+  correction over. The `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` and the switch to named
+  columns in the INSERT are the right calls — a positional INSERT would have shifted every
+  value one place the first time a column was added, which is precisely what you were
+  adding.
+
+- **B — so interrupt episodes are attributed, and the curator can finally promote them.**
+  `read_episodes` reported `None` for every store because the only way to match a sidecar
+  row to an episode was write order, which reads as reasonable and is a guess. That has
+  been the blocking note here for four rounds. It now reads `episode_index`, and
+  `tendon curate` puts interrupt episodes at the top whatever they score — a smoothness
+  score measures the wrong thing about a recording of recovery from failure.
+
+  **Three answers, kept distinct.** A set when the store can say. An empty set when it can
+  *prove* nobody was interrupted — the sidecar is there and holds nothing, which is a fact
+  about the run. `None` when it genuinely cannot tell, which is still the honest answer for
+  a dataset recorded before the column existed: inventing one now would be the same guess
+  arriving late. `set()` and `None` are both falsy, so anything testing them with a plain
+  `if` collapses "nobody was interrupted" into "nobody can tell", and those lead a curator
+  to opposite conclusions.
+
+  Tested against sidecars this file builds itself, so the cases that no longer occur are
+  still covered — plus one integration test on a real recording that **skips rather than
+  fails** if the recorder does not write the column, since on such a tree "cannot tell" is
+  the correct answer rather than a bug. It did not skip here.
+  570 tests green, excluding your in-progress `test_sidecar_join.py`.

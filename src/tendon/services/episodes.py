@@ -101,7 +101,7 @@ def read_episodes(directory: Path, *, gripper: bool | None = None) -> tuple[Stor
             episode_id=str(index),
             actions=tuple(actions),
             dt_s=dt_s,
-            had_interrupt=interrupted,
+            had_interrupt=None if interrupted is None else index in interrupted,
         )
         for index, actions in sorted(grouped.items())
     )
@@ -208,22 +208,24 @@ def _has_gripper(info: dict[str, Any]) -> bool:
     return isinstance(names, list) and bool(names) and names[-1] == "gripper"
 
 
-def _interrupted_episodes(directory: Path) -> bool | None:
-    """Whether the episodes in this dataset were interrupted, when that is knowable.
+def _interrupted_episodes(directory: Path) -> set[int] | None:
+    """Which episodes an operator was handed control in, when the store can say.
 
-    Returns False when the sidecar exists and holds no interrupt rows at all — that does
-    prove no episode was interrupted. Returns None otherwise.
+    Returns a set of `episode_index` values, or None when the question cannot be answered
+    — and the difference matters, because an empty set means *nobody was interrupted* while
+    None means *nobody can tell*, and a curator draws opposite conclusions from those.
 
-    None covers two cases and both are genuinely unknown. There is no sidecar, so nothing
-    was written down. Or there are interrupt rows and **they cannot be attributed**: the
-    sidecar keys them by the recorder's episode uuid and the parquet numbers episodes from
-    zero, with no column joining the two.
+    This was None for every store until the recorder learned to write `episode_index`
+    alongside each interrupt. Before that the sidecar keyed rows by the recorder's episode
+    uuid while the parquet numbered episodes from zero, and matching them by write order —
+    which reads as perfectly reasonable — was a guess: right only for a store written by
+    one process in one sequence, silently wrong otherwise. An interrupt episode promoted
+    into a training set on a guess is the exact mistake curation exists to prevent, so it
+    stayed None until the column existed.
 
-    The tempting fix is to match them by write order. It reads as reasonable and is a
-    guess: it is right only for a store written by one process in one sequence, and wrong
-    silently for anything else — an interrupt episode promoted into a training set is
-    exactly the mistake curation exists to avoid. Track A owns `recorder.py`; one column
-    settles it (docs/collaboration.md).
+    Older datasets still answer None, and that is correct: they were recorded before
+    anything wrote the column, and inventing an answer for them now would be the same
+    guess arriving late.
     """
     sidecar = directory / "tendon_sidecar.duckdb"
     if not sidecar.is_file():
@@ -237,15 +239,22 @@ def _interrupted_episodes(directory: Path) -> bool | None:
         return None
 
     try:
-        row = con.execute("SELECT count(*) FROM interrupts").fetchone()
-    except Exception:  # noqa: BLE001 - the table may not exist on an older dataset
+        total = con.execute("SELECT count(*) FROM interrupts").fetchone()
+        attributed = con.execute(
+            "SELECT DISTINCT episode_index FROM interrupts WHERE episode_index IS NOT NULL"
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - the table or column may not exist on older data
         return None
     finally:
         con.close()
 
-    # `fetchone` is typed as optional and a count query will always return a row, but
-    # unpacking on that assumption is how a query that changes shape later becomes a
-    # TypeError instead of an unknown.
-    if row is None:
+    if total is None:
         return None
-    return False if row[0] == 0 else None
+    if total[0] == 0:
+        # Proven, not assumed: the sidecar is there and holds no interrupts at all.
+        return set()
+    if not attributed:
+        # Rows exist and none of them says which episode. Recorded before the column.
+        return None
+
+    return {int(index) for (index,) in attributed}
