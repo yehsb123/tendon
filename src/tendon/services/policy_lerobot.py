@@ -65,6 +65,12 @@ from tendon.services.confidence import estimate_from_samples
 _OBS_STATE = "observation.state"
 _OBS_IMAGES = "observation.images"
 _TASK = "task"
+# The singular form. LeRobot has two camera conventions and checkpoints use both: a
+# multi-camera policy declares `observation.images.top`, a single-camera one often declares
+# a bare `observation.image`. `lerobot/act_aloha_sim_transfer_cube_human` is the first kind
+# and `lerobot/diffusion_pusht` is the second, so an adapter that writes only one of them
+# fails on half the Hub with a KeyError raised from inside the policy.
+_OBS_IMAGE_SINGULAR = "observation.image"
 
 # Samples per prediction. Three is the floor `services.confidence` accepts — below it a
 # spread is noise rather than a measurement — and each one is a full forward pass, so this
@@ -145,11 +151,39 @@ class LeRobotPolicy:
         self._has_gripper = has_gripper
         self._frames = frames
         self._deterministic = deterministic
+        # What the checkpoint says it wants. Asking is better than guessing a convention:
+        # `config.input_features` is how a policy declares its own inputs.
+        self._image_keys = self._declared_image_keys(policy)
+
+        # Observation history. A policy with n_obs_steps > 1 conditions on a window of
+        # past observations, and the adapter builds a batch from one. Refused at
+        # construction rather than at the first prediction, where it surfaces as an einops
+        # shape error from three frames inside the policy that says nothing about the
+        # cause. `lerobot/diffusion_pusht` wants 2; ACT and SmolVLA want 1.
+        history = int(getattr(getattr(policy, "config", None), "n_obs_steps", 1) or 1)
+        if history > 1:
+            raise PolicyError(
+                f"{name} conditions on {history} observation steps, and this adapter "
+                f"builds a batch from one. Supporting it needs an observation buffer in "
+                f"the adapter, which is not written yet."
+            )
+        self._history = history
 
         if self._control_hz <= 0:
             raise PolicyError(f"control_hz must be positive, got {control_hz}")
         if self._dof <= 0:
             raise PolicyError(f"dof must be positive, got {dof}")
+
+    @staticmethod
+    def _declared_image_keys(policy: Any) -> tuple[str, ...]:
+        """Image inputs the checkpoint declares, in the order it declares them.
+
+        Empty for a policy with no config, which is every hand-rolled test double. The
+        batch builder then falls back to the plural convention, which is what tendon's own
+        recorder writes.
+        """
+        features = getattr(getattr(policy, "config", None), "input_features", None) or {}
+        return tuple(k for k in features if k.startswith(_OBS_IMAGE_SINGULAR))
 
     # ------------------------------------------------------------------ loading
 
@@ -307,16 +341,38 @@ class LeRobotPolicy:
         batch: dict[str, Any] = {_OBS_STATE: state, _TASK: [self._task]}
 
         if self._frames is not None:
-            for camera, pixels in self._frames().items():
+            for index, (camera, pixels) in enumerate(self._frames().items()):
                 # HWC uint8 from a driver; CHW float in [0, 1] for a vision encoder.
                 image = torch.as_tensor(pixels)
                 if image.ndim == 3 and image.shape[-1] in (1, 3, 4):
                     image = image.permute(2, 0, 1)
                 if image.dtype == torch.uint8:
                     image = image.float() / 255.0
-                batch[f"{_OBS_IMAGES}.{camera}"] = image.unsqueeze(0)
+                batch[self._image_key(camera, index)] = image.unsqueeze(0)
 
         return batch
+
+    def _image_key(self, camera: str, index: int) -> str:
+        """Where this camera's pixels go in the batch.
+
+        Matched against what the checkpoint declared: by name where the names line up, by
+        position where they do not. A driver calls its camera `wrist` and a checkpoint
+        trained elsewhere calls the same view `top`; refusing on that mismatch would be
+        right only if the names meant something, and they do not.
+
+        Falls back to the plural convention when the policy declares nothing, which is the
+        case for a test double.
+        """
+        if not self._image_keys:
+            return f"{_OBS_IMAGES}.{camera}"
+
+        suffix = f".{camera}"
+        for key in self._image_keys:
+            if key.endswith(suffix):
+                return key
+        if index < len(self._image_keys):
+            return self._image_keys[index]
+        return self._image_keys[0]
 
     def _sample_chunk(self, batch: dict[str, Any]) -> list[Action]:
         """Draw one action chunk and convert it to typed actions.
