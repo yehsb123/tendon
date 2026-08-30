@@ -49,6 +49,17 @@ velocities, gripper state.
 large model cannot drive a robot directly, and the reason deliberation and control are
 separate tiers in `kernel/scheduler`.
 
+**Isaac Lab** - NVIDIA GPU-parallel robot learning framework, lineage Isaac Gym ->
+Orbit -> Isaac Lab. Runs thousands of environments at once for RL. Considered and deferred
+in ADR 0002.
+
+**Newton** - a physics backend (NVIDIA / DeepMind / Disney Research, Linux Foundation)
+using MuJoCo-Warp as its default solver. Differentiable, and runnable kit-less, meaning
+without the Isaac Sim application. Still beta as of Isaac Lab 3.0.
+
+**Kit-less** - running a simulation backend without the Omniverse Kit application. The
+distinction matters because Kit brings a proprietary licensed stack with it.
+
 **URDF / USD** — formats describing the links, joints and geometry of a robot.
 
 ## tendon

@@ -52,7 +52,7 @@ change, and a forked skill can be evaluated against its parent.
 | | Why | Revisit when |
 | --- | --- | --- |
 | Multi-robot fleets | A single host is hard enough | v0.4 ships |
-| Isaac Sim driver | MuJoCo covers v0.1 through v0.3 | vision-based Sim2Real is needed |
+| Isaac Lab driver | 441k LOC, pinned toolchain, RTX-only (ADR 0002) | Newton kit-less leaves beta |
 | ROS 2 driver | Install burden on contributors | a real industrial deployment asks |
 | Training a foundation model | Not a solo problem | never |
 | Our own registry | The Hub is sufficient | never, ideally |

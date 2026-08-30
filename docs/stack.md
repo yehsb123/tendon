@@ -34,13 +34,20 @@ manipulation literature, and it runs without an NVIDIA GPU. Development must not
 a workstation.
 
 *Alternative considered:* **Isaac Sim / Isaac Lab** — better photorealistic rendering and
-massively parallel RL, both of which matter later. Rejected for v0.1: tens of GB, Linux-first,
-RTX required. It becomes a driver when we need vision-based Sim2Real or large-scale RL,
-not before.
+massively parallel RL, both of which matter later. Rejected for v0.1 and revisited in
+[ADR 0002](decisions/0002-isaac-lab-is-a-later-driver.md) against the actual 3.0.0-beta2
+source. Short version: 441k LOC, 15 packages, Python 3.12 and torch 2.10 pinned exactly,
+RTX required, Linux-first. It becomes a driver when we need vision-based Sim2Real or
+large-scale RL, not before.
 
-*Watch:* **Newton** (NVIDIA / DeepMind / Disney Research, Linux Foundation) aims to bring
-MuJoCo-grade contact accuracy to GPU-parallel simulation. If it lands, the tradeoff above
-disappears and it likely becomes the default backend.
+*Correction:* an earlier draft of this file listed **Newton** as something to watch for.
+It has already shipped — Isaac Lab 3.0 contains `isaaclab_newton` as one of three
+swappable physics backends, with MuJoCo-Warp as its default solver, Warp-based
+differentiability, and kit-less execution that does not require Isaac Sim at all. It is
+still beta and carries no official support, and precision-assembly tasks (Factory, Forge,
+AutoMate) remain PhysX-only. So the tradeoff has narrowed rather than disappeared, and
+the revisit condition is now concrete: **when Newton kit-less leaves beta.** At that point
+the Isaac driver costs a GPU rather than the whole Omniverse stack.
 
 ## Robot control and dataset format
 
