@@ -67,6 +67,28 @@ def test_base_is_not_mistaken_for_a_body() -> None:
     assert "base" not in {info.name for info in discover()}
 
 
+def _needs_configuration(name: str) -> bool:
+    """Whether opening this body requires arguments a caller has to supply.
+
+    Read from the driver's own signature rather than from a list. `discover()` exists
+    because a hardcoded list of drivers goes stale; a hardcoded list of *exceptions* to a
+    test over those drivers goes stale the same way.
+    """
+    import inspect
+
+    from tendon.drivers import base as driver_base
+
+    driver = driver_base._REGISTRY[name]
+    for parameter in inspect.signature(driver).parameters.values():
+        positional = parameter.kind in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+        if positional and parameter.default is inspect.Parameter.empty:
+            return True
+    return False
+
+
 def test_a_discovered_body_can_actually_be_opened() -> None:
     """Discovery that reports a body it cannot open would be worse than not reporting it.
 
@@ -81,8 +103,12 @@ def test_a_discovered_body_can_actually_be_opened() -> None:
     `CONTRIBUTING.md` requires and the CI unit job depends on.
     """
     for name in available():
-        if name == "human":
-            # Read-only and needs a recording; construction requires arguments.
+        if _needs_configuration(name):
+            # A body that cannot be opened without being told where it is. `human` needs a
+            # recording, `so101` needs a serial port. Naming them here would mean editing
+            # this test every time a driver is added, which is the failure the discovery
+            # scan was written to remove — so the requirement is read off the constructor
+            # instead.
             continue
         try:
             body = open_body(name)
