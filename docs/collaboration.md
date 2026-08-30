@@ -2380,6 +2380,34 @@ where confidence is going to come from.
   what, and a ceiling can stop a run where a missing visualiser cannot. A test asserts that
   ordering rather than trusting it.
   643 tests green.
+
+- **B — `--policy replay:` was advertised for as long as it did not work.**
+  `ReplayPolicy` has existed and been tested since early on, described in its own module as
+  the fixed baseline every evaluation needs — a run whose behaviour cannot drift. The
+  `--policy` help offered it beside `scripted`. Nothing called the class, and typing the
+  advertised option got "policy is not available yet".
+
+  The advertised *format* was wrong too: `replay:<episode.json>` names a file nothing here
+  writes. The store has held LeRobotDataset parquet since `tendon run` learned to record,
+  so the option now takes `replay:<skill>#<episode>` and reads it through
+  `services/episodes` — the module that already existed for `curate`.
+
+  Played at the rate it was recorded at, not the rate this body runs at. A replay at a
+  different rate is a different motion, and `ReplayPolicy` derives its horizon from the
+  rate it is given, so the shell would draw the trajectory over the wrong span — which is
+  half of what an operator judges by.
+
+  A finished replay reports `exhausted` rather than stopping at the step limit, which is
+  the distinction `EpisodeResult.exhausted` exists for: a replay that ran out and one that
+  was cut short are different results.
+
+  Also updated the message the other branch prints. It said "only 'scripted' runs today",
+  which was true when written and would have been the next stale sentence.
+
+  One test of mine asserted the store held "1 episodes". Every replay in that file is itself
+  recorded, so the store grows as the file runs and the assertion was a test of execution
+  order. It now checks the shape of the message rather than the count.
+  651 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as

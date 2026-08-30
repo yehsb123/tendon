@@ -105,7 +105,12 @@ def run(
     ),
     driver: str = typer.Option("mujoco", help="Which body to run on"),
     policy: str = typer.Option(
-        "scripted", help="scripted | replay:<episode.json> | the skill's own policy"
+        "scripted",
+        help=(
+            "scripted | replay:<skill>#<episode> | the skill's own policy. "
+            "replay: takes a recording from the store, not a file - nothing writes "
+            "episode JSON."
+        ),
     ),
     steps: int = typer.Option(500, help="Maximum control steps"),
     seed: int | None = typer.Option(None, help="Seed the body for a repeatable start"),
@@ -174,10 +179,12 @@ def run(
 
     if policy == "scripted":
         running = _baseline_policy(loaded, capability)
+    elif policy.startswith("replay:") or policy == "replay":
+        running = _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
     else:
         console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
         console.print(
-            "[dim]Only 'scripted' runs today. A LeRobot adapter for "
+            "[dim]'scripted' and 'replay:<skill>#<episode>' run today. A LeRobot adapter for "
             f"{escape(loaded.policy_base or 'the skill policy')} is Track A work "
             "(docs/collaboration.md).[/dim]"
         )
@@ -259,6 +266,59 @@ def _effective_limits(console: Console, loaded):
     if ceiling is not None and limits != loaded.limits:
         console.print("[dim]local limits are tighter than the skill's; using the tighter[/dim]")
     return limits
+
+
+def _replay_policy(console: Console, loaded, capability, spec: str, store: str):
+    """Play a recorded episode back, from `replay:<skill>` or `replay:<skill>#<index>`.
+
+    `ReplayPolicy` has existed and been tested since early on, described in its own module
+    as "the fixed baseline every evaluation needs: a run whose behaviour cannot drift". The
+    `--policy` help has advertised `replay:` for as long. Nothing called it, and the format
+    the help named — `<episode.json>` — was never written by anything: the store holds
+    LeRobotDataset parquet.
+
+    So the spec names a skill and an episode in the store rather than a file, which is where
+    recordings actually are, and `services/episodes` already reads them.
+    """
+    from tendon.services.episodes import EpisodeReadError, read_episodes
+    from tendon.services.policies import ReplayPolicy
+    from tendon.services.store import DEFAULT_ROOT
+
+    reference, _, index_text = spec.partition("#")
+    reference = reference or loaded.ref
+
+    try:
+        index = int(index_text) if index_text else 0
+    except ValueError as exc:
+        raise typer.BadParameter(f"{index_text!r} is not an episode number") from exc
+
+    root = Path(store) if store else DEFAULT_ROOT
+    try:
+        episodes = read_episodes(root / reference.replace("/", "__"))
+    except EpisodeReadError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print(f"[dim]record some first: tendon run {escape(reference)}[/dim]")
+        raise typer.Exit(code=1) from exc
+
+    if index >= len(episodes):
+        console.print(
+            f"[red]{escape(reference)} has {len(episodes)} episodes; "
+            f"there is no episode {index}[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    episode = episodes[index]
+    console.print(
+        f"[dim]replaying {escape(reference)} episode {index}, {len(episode.actions)} steps[/dim]"
+    )
+    return ReplayPolicy(
+        episode.actions,
+        # The rate the episode was recorded at, not the rate this body runs at. A replay
+        # played at a different rate is a different motion, and the shell would draw a
+        # trajectory over the wrong span.
+        control_hz=1.0 / episode.dt_s,
+        name=f"replay:{reference}#{index}",
+    )
 
 
 def _baseline_policy(loaded, capability):

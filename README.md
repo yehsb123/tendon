@@ -249,6 +249,10 @@ tendon train <skill>     v0.3 — not available yet, and says so
 A skill is named the way everything else names it — `tendon run grasp/cube-sim` — and a
 path to a skill directory works too.
 
+`--policy replay:<skill>#<episode>` plays a recording back instead of running the baseline.
+It is the one policy whose behaviour cannot drift, which is what a comparison needs: run it
+before a change and after, and the difference is the change.
+
 ```
 $ tendon run grasp/cube-sim
 grasp/cube-sim 0.1.0 on so_arm100_cube (5 axes, 100 Hz) via scripted
