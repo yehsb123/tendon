@@ -78,6 +78,32 @@ jobs:
       - run: python -m pip install --quiet -e ".[dev,view]"
       - run: python -m pytest tests/unit -q
 
+  integration:
+    name: integration (simulated body)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Nothing was running these. Eight integration files, sixty tests, and the ones
+      # that check the claims this project leads with -- that a body moves, that a
+      # correction loop closes -- had never executed on a runner.
+      #
+      # These three need mujoco and nothing else: no rendering, so no GL on a headless
+      # box, and they finish in about two seconds. The menagerie scenes are vendored
+      # under third_party/, so a fresh checkout has everything they load.
+      - run: python -m pip install --quiet -e ".[dev,sim]"
+      - run: >
+          python -m pytest
+          tests/integration/test_correction_loop.py
+          tests/integration/test_improve_example.py
+          tests/integration/test_mujoco_episode.py
+          -q
+      # The other five files want lerobot, which pins Python 3.12 and pulls torch. That is
+      # a much bigger job and a separate decision; leaving them out is a cost choice, not a
+      # judgement that they matter less. They are the ones that record.
+
   shell:
     name: shell builds and type-checks
     runs-on: ubuntu-latest
