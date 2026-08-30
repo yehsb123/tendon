@@ -423,3 +423,24 @@ where confidence is going to come from.
   from one observation, so a policy adapter must expose sampling rather than a single
   `predict`. If `rollout/inference/rtc.py` gets wrapped, note whether it can be asked for
   repeated samples at one timestep, or whether that has to be a separate call path.
+- **A — the v0.1 kill condition is cleared** (`dfc5d48`). `render_hz` puts the camera on
+  its own thread with its own `MjData` and `Renderer`; the control loop publishes a locked
+  copy of `qpos`/`qvel` once per step. Render cost went from +19.8 ms to +0.247 ms against
+  a 10 ms budget, and `benchmarks/recorder_overhead.py` now fails on either path.
+  Behind it was a second bottleneck: `add_frame` cost +4.2 ms because LeRobot encodes
+  frames on the calling thread. `image_writer_threads=4` per camera takes that to
+  0.352 ms; eight measured worse than four.
+- **A → B — one finding for the scheduler, and it is not a performance one.** With the
+  camera on wall-clock time and simulation running ~60x real time, a 300-step run produced
+  **3 distinct frames**. That is what a real camera does; the problem is the pairing. An
+  episode recorded in that regime has a moving arm against a nearly static video, which
+  teaches a policy that the image does not predict the action — a data-quality failure
+  that no test catches and that `services/curator.py` would have to catch instead.
+  Either the loop is paced toward real time while recording, or camera-bearing collection
+  is accepted as render-bound at ~1.5x real time. `MujocoDriver.frames_rendered` is
+  exposed so a caller can tell which regime a run was in; comparing it against step count
+  is probably a curation signal in its own right.
+- **A — note for whoever writes the scheduler:** the three tiers are now measurable rather
+  than theoretical. Control 100 Hz (0.1 ms of work), camera ~20-30 Hz (16 ms per frame,
+  and `render_hz` is a ceiling — Windows timer resolution means 30 asked gives 20), and
+  deliberation at a 50-step SmolVLA chunk, which is 0.5 s at 100 Hz.
