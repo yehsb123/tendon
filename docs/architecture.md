@@ -5,19 +5,32 @@
 |  APPS       task workspaces                                  |
 +-------------------------------------------------------------+
 |  SHELL      intent preview - confidence - approve/reject      |
-|             natural language correction        [shell/]      |
+|             correct a trajectory - progress - curate          |
+|                                                [shell/]      |
 +-------------------------------------------------------------+
-|  SERVICES   recorder - curator - trainer - evaluator          |
-|             registry                    [src/tendon/services]|
+|  SERVICES   recorder - store - episodes - curator - evaluator |
+|             adaptive - memory_store - progress - limits       |
+|             skill - confidence - policy_scripted              |
+|             policy_lerobot                                    |
+|             bodies - policies - viz - trainer - registry      |
+|                                         [src/tendon/services]|
 +-------------------------------------------------------------+
 |  KERNEL     scheduler - step bus - interrupt - safety         |
-|                                         [src/tendon/kernel]  |
+|             types - protocols            [src/tendon/kernel] |
 +-------------------------------------------------------------+
 |  DRIVERS    embodiment HAL                                    |
-|             mujoco - lerobot - so101 - human                  |
+|             mujoco - so101 - human                            |
 |                                         [src/tendon/drivers] |
 +-------------------------------------------------------------+
 ```
+
+The shell corrects a trajectory by editing it, not by describing it. An earlier version of
+this diagram said "natural language correction", which was a plan rather than a layer — and
+a diagram is the wrong place to keep one, because it is read as a description of what is
+there.
+
+`trainer` and `registry` are the two services with no caller: LoRA fine-tuning is v0.3 and
+the Hub registry is v0.4, and `tendon train` says so at runtime.
 
 ## Control flow
 

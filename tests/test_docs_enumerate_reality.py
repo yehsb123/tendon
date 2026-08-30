@@ -107,6 +107,81 @@ def test_the_parser_reads_the_indexes_it_is_pointed_at() -> None:
         assert len(documented(REPO / readme)) >= 4, readme
 
 
+#: Layers the architecture diagram names, as (heading, source dir, suffix).
+#:
+#: The diagram is the first thing anybody sees, and it had drifted further than any of the
+#: module READMEs: five services out of seventeen, a `lerobot` driver that has never
+#: existed, and "natural language correction" as a shell capability — a plan written into a
+#: picture that reads as a description of what is there.
+DIAGRAM_LAYERS = (
+    ("SERVICES", "src/tendon/services", ".py"),
+    ("KERNEL", "src/tendon/kernel", ".py"),
+    ("DRIVERS", "src/tendon/drivers", ".py"),
+)
+
+
+def diagram_names(heading: str) -> set[str]:
+    """Module names listed under one layer of the architecture diagram.
+
+    Read between the layer's heading and the next `+---` rule, so a name in the prose below
+    the diagram is not mistaken for a claim about a module.
+    """
+    text = (REPO / "docs/architecture.md").read_text(encoding="utf-8")
+    start = text.index(f"|  {heading}")
+    end = text.index("+---", start)
+
+    # Digits included, or `so101` reads as `so`. The excluded words are the path fragment
+    # each row ends with and the plain English in it — a row is a list of modules plus a
+    # label, and only the first half is a claim about what exists.
+    # `bus` is deliberately not excluded: the diagram writes "step bus" and the module is
+    # `bus`, so excluding it as prose hid a real module from the completeness check.
+    prose = {"src", "tendon", "py", "embodiment", "hal", "step", "correct", "a"}
+    return {
+        word
+        for word in re.findall(r"[a-z_][a-z_0-9]*", text[start:end])
+        if word not in prose and word not in {"services", "kernel", "drivers", "shell"}
+    }
+
+
+@pytest.mark.parametrize(
+    ("heading", "source", "suffix"), DIAGRAM_LAYERS, ids=[layer[0] for layer in DIAGRAM_LAYERS]
+)
+def test_the_diagram_does_not_name_a_module_that_does_not_exist(
+    heading: str, source: str, suffix: str
+) -> None:
+    """The direction that misleads. `lerobot` sat in the drivers row for months, and
+    somebody looking for `drivers/lerobot.py` would have found nothing and assumed the
+    install was broken."""
+    named = diagram_names(heading)
+    real = present(REPO / source, suffix)
+
+    invented = sorted(n for n in named if n not in real and n not in {"base"})
+    assert not invented, f"the {heading} row names {invented}, which are not modules in {source}"
+
+
+@pytest.mark.parametrize(
+    ("heading", "source", "suffix"), DIAGRAM_LAYERS, ids=[layer[0] for layer in DIAGRAM_LAYERS]
+)
+def test_the_diagram_names_every_module_in_the_layer(
+    heading: str, source: str, suffix: str
+) -> None:
+    """The other direction, added after the first pass left `policy_lerobot` out.
+
+    Only checking for invented names catches a diagram that lies and misses one that is
+    merely out of date — which is how the SERVICES row came to list five modules out of
+    seventeen without anything noticing.
+    """
+    missing = sorted(present(REPO / source, suffix) - diagram_names(heading) - {"base"})
+
+    assert not missing, f"the {heading} row does not mention {missing}"
+
+
+def test_the_diagram_reads_something() -> None:
+    """A parser that matched nothing would make the check above pass on empty sets."""
+    for heading, _, _ in DIAGRAM_LAYERS:
+        assert len(diagram_names(heading)) >= 3, heading
+
+
 def test_it_does_not_read_invariants_as_module_names() -> None:
     """`kernel/README.md` says the kernel never imports `torch` or `mujoco`. Counting those
     as claimed modules is what the first version of this did, and it would have made the

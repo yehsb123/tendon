@@ -2428,6 +2428,29 @@ where confidence is going to come from.
   instead. Rewritten to the stronger property: neither command names a policy constructor
   at all, so neither can grow its own idea of what the baseline is.
   654 tests green.
+
+- **B — the architecture diagram had drifted further than any of the READMEs.**
+  It is the first thing anybody sees, and it listed five services out of seventeen, a
+  `lerobot` driver that has never existed, and "natural language correction" as a shell
+  capability. That last one is the worst of the three: a plan written into a picture, where
+  it reads as a description of what is there. Corrections are trajectory edits and always
+  have been.
+
+  Somebody looking for `drivers/lerobot.py` would have found nothing and concluded their
+  install was broken.
+
+  Rewritten to what exists, with `trainer` and `registry` named as the two services with no
+  caller, and `tests/test_docs_enumerate_reality.py` extended to cover the diagram the same
+  way it covers the module indexes.
+
+  **Three passes to get the check right, and each mistake is worth keeping.** The first
+  parser read `so101` as `so`, because the pattern stopped at letters. The second excluded
+  `bus` as prose — the diagram writes "step bus" and the module is `bus` — which hid a real
+  module from the completeness half. And the first version only checked for invented names,
+  which catches a diagram that lies and misses one that is merely out of date: exactly how
+  the SERVICES row came to list five of seventeen without anything noticing. It left
+  `policy_lerobot` out on its own first run.
+  661 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as
