@@ -1540,3 +1540,13 @@ where confidence is going to come from.
   Third time this pattern has turned up today: the viz suite, the CLI strings that never
   reached a check, and now this. The shape is always the same -- something reports success
   because nothing asked it the question.
+  **Update: the five are gated now, and the entry above is superseded.** Leaving them out
+  was recorded as a cost decision, which meant the cost was worth measuring rather than
+  assuming. torch is 527 MB from PyPI and 192 MB from the CPU index, and a runner has no
+  GPU to use the difference; installing from that index first satisfies lerobot's
+  dependency so pip never reaches for the CUDA build. The tests run in about twenty
+  seconds, and jobs run in parallel, so lint, types and unit still answer as quickly as
+  before.
+
+  All 36 pass locally. What no local run can check is how `lerobot[dataset]` resolves on
+  Linux with torch already installed, and that is what the first run of the job will say.
