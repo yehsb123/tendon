@@ -124,6 +124,23 @@ jobs:
       - run: >
           python -m pip install --quiet torch
           --index-url https://download.pytorch.org/whl/cpu
+      # The README's own command, with nothing added to it. Two bugs this session were
+      # the same shape -- install as documented, get a broken system. One was a pin naming
+      # a lerobot version that was never released; the other was a quickstart missing the
+      # extra that does the recording. Both survived because every machine that ran them
+      # already had everything installed, so nobody ever executed the documented command.
+      #
+      # Installing [dev] at the same time would hide the next one: a runtime dependency
+      # that only dev provides looks fine until a user follows the page.
+      - run: python -m pip install --quiet -e ".[sim,robot]"
+      - name: the documented install records an episode
+        run: |
+          tendon doctor
+          tendon run grasp/cube-sim --steps 20 --store "$RUNNER_TEMP/episodes"
+          tendon episodes --store "$RUNNER_TEMP/episodes"
+          # An episode on disk, not just a command that exited 0. "Recorded to ..." printed
+          # by a run that wrote nothing is exactly what the README promised and did not do.
+          test -n "$(find "$RUNNER_TEMP/episodes" -name '*.parquet' -print -quit)"
       - run: python -m pip install --quiet -e ".[dev,sim,robot]"
       # The whole directory, deliberately, rather than a list of files. The first version
       # of this job named five, and within the hour two new integration files existed that
