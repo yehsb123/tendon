@@ -131,9 +131,7 @@ def make_interrupt(
         step=step,
         reason=reason,
         intent=make_intent(),
-        observation=Observation(
-            step=step, proprio=Proprioception(joint_positions=[0.0] * DOF)
-        ),
+        observation=Observation(step=step, proprio=Proprioception(joint_positions=[0.0] * DOF)),
     )
 
 
