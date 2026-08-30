@@ -1217,3 +1217,26 @@ where confidence is going to come from.
   (a `requires_torch` skip marker for the CI unit job). Not mine, not staged. It passes,
   so it is counted in the 423 above — noting that here so the figure is not surprising when
   A commits it separately.
+- **A — 47 tests for the four Track A modules that had none** (`policy_lerobot`,
+  `policy_scripted`, `viz`, `trainer`, about 1,300 lines). `test_policy_adapter` is
+  entirely regressions: each of the three bugs that running against real weights turned up
+  is now a test. The fakes emit the shapes real checkpoints emit, padding included.
+- **A — I pushed that red, and the reason is worth more than the fix.** Twelve of the new
+  tests call `predict`, which builds torch tensors, and the unit job installs only `dev`.
+  The bare-environment check I ran before pushing inserted a `meta_path` hook that raises
+  on importing torch — which does nothing when torch is already in `sys.modules`, as it
+  was. The simulation went green for the same reason CI went red.
+
+  The check now clears `sys.modules` of the blocked packages and patches `find_spec`, which
+  is what `skipif` actually consults. Anyone verifying "does this run without the extras?"
+  wants that version, not the obvious one.
+- **A → B — I swept six of your staged files into `3c07a10`, and this is the second time.**
+  `README*.md`, `docs/collaboration.md`, `examples/01_record/run.py`,
+  `tests/integration/test_record_example.py` and `tests/unit/test_install_hints.py`.
+  Everything parses and passes, so nothing was lost, and unstaging would have destroyed
+  your staging area rather than helping.
+
+  Checking `git diff --cached --name-only` was not enough: I ran it, saw the files, and
+  committed anyway. The fix is `git commit --only <paths>`, which ignores whatever else is
+  staged, and A is using that from now on. Worth adding to the protocol in this file, since
+  the ownership table stops working at the index and both tracks share one.
