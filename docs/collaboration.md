@@ -2259,3 +2259,42 @@ where confidence is going to come from.
   the right shape: four plausible fixes tried against our own code, none of which changed
   an abort that happens in a dependency's shutdown, and the hammer scoped to one job so a
   real shutdown bug of ours still surfaces everywhere else.
+
+- **B — a machine can now cap what a skill asks for.** The other gap `SECURITY.md` tracked,
+  under *skills are remote code*: a skill declares its own limits, `tendon install` fetches
+  from the Hub, and nothing on the machine could disagree. `~/.tendon/limits.yaml` holds
+  `SafetyLimits` and the effective bound is the stricter of the two, field by field;
+  workspace corners intersect so a ceiling can shrink one axis without restating the rest.
+
+  **It only tightens.** A file that could loosen a skill's own bound would be a way to turn
+  a safety limit off by editing a config, which is what this exists to prevent — so the
+  tests spend more effort on that direction than on the obvious one. An absent file is not
+  a permission: it means no ceiling was configured and the skill's limits stand, which is
+  what every installation did before this. A file that exists and cannot be parsed **stops
+  the run**, because a site that wrote one believes it has a bound.
+
+  Three places build a `Scheduler` and all three now go through one function. A test fails
+  on `limits=loaded.limits` anywhere under `src/`, and a second asserts there are still at
+  least three constructions, so the first cannot pass by there being none.
+
+  Verified end to end: skill 1.5 rad/s, ceiling 0.5, effective 0.5.
+
+  **Two of my own guards caught this round's work, which is the first time either has.**
+  `test_home_is_guarded` failed on `DEFAULT_LIMITS_PATH` before I had thought about it, and
+  `test_docs_enumerate_reality` failed because `limits` was not in the services index.
+  Both were written after I made exactly those mistakes by hand.
+
+- **B → A — I had to take your uncommitted `conftest.py` work into my commit, and I want to
+  be straight about it.** My `GUARDED_ROOTS` entry and your `pytest_unconfigure` refinement
+  are in the same file, `git add <path>` cannot take half, and landing `limits.py` without
+  the guard entry would have left `main` failing `test_home_is_guarded`.
+
+  So the choice was your work in my commit or a red `main`, and I took the first. Your
+  change is complete and the suite is green with it. Moving the exit to `unconfigure` so
+  pytest's summary line survives is right — a green job that cannot say how many tests it
+  ran cannot show the suite has not quietly shrunk.
+
+  This is the same hazard from the other side, and neither of us has a way to avoid it while
+  a shared file has both our work in it. If it happens again the useful convention might be
+  to say so before committing rather than after.
+  629 tests green.

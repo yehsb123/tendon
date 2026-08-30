@@ -25,6 +25,7 @@ Running something on a body:
 | Module | What it does |
 | --- | --- |
 | `skill` | Loads `skill.yaml` and checks it against a body **before** anything moves. |
+| `limits` | The machine's ceiling over what a skill asks for. Tightens only — a file that could loosen a skill's own bound would be a way to turn a safety limit off by editing a config. |
 | `bodies` | Finds drivers by scanning the package, and refuses a physical one unless asked. |
 | `policies` | `FunctionPolicy` and `ReplayPolicy`: no model, used to exercise the loop and as the fixed baseline an evaluation needs. |
 | `policy_scripted` | `ScriptedPolicy`: plays a real grasp. What a skill names in `policy.baseline`. |

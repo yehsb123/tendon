@@ -479,6 +479,7 @@ def create_app(
         from tendon.kernel.scheduler import Scheduler, StepRecord
         from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
         from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
+        from tendon.services.limits import LocalLimitsError, load_local_limits, tighten
         from tendon.services.memory_store import load_memory
         from tendon.services.policies import sine_sweep
         from tendon.services.skill import (
@@ -514,6 +515,17 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         capability = body.capability
+
+        # The machine's ceiling over whatever the skill asked for. `SECURITY.md`: a skill
+        # declares its own limits, so an installed skill proposes the bounds it runs under,
+        # and `tendon install` fetches from the Hub. Refused rather than run without: a site
+        # that wrote a ceiling believes it has one, and a 500 here is better than a robot
+        # moving under limits nobody chose.
+        try:
+            limits = tighten(loaded.limits, load_local_limits())
+        except LocalLimitsError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
         holder: dict[str, Any] = {}
 
         def make_policy():
@@ -551,7 +563,7 @@ def create_app(
 
             return Scheduler(
                 driver=body,
-                limits=loaded.limits,
+                limits=limits,
                 confidence_threshold=loaded.confidence_threshold,
                 handler=handler,
                 on_intent=lambda obs, intent: holder["session"].publish_intent(obs, intent),

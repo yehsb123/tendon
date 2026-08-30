@@ -189,7 +189,7 @@ def run(
 
     scheduler = Scheduler(
         driver=body,
-        limits=loaded.limits,
+        limits=_effective_limits(console, loaded),
         confidence_threshold=loaded.confidence_threshold,
         bus=bus,
         # Only when something is watching. The chunk and its confidence are the half of
@@ -234,6 +234,31 @@ def run(
         # whose recorder died collected nothing, and exiting zero says the opposite to
         # every script and CI job that only reads the status.
         raise typer.Exit(code=1)
+
+
+def _effective_limits(console: Console, loaded):
+    """The skill's limits under the machine's ceiling, if one is configured.
+
+    One function because there are three places a scheduler is built and a fourth will be
+    added by somebody who has not read `SECURITY.md`. The last time this project had the
+    same construction in two places, only one of them was fixed.
+
+    A ceiling that cannot be read stops the run. A site that wrote one believes it has a
+    bound, and proceeding without it would be proceeding under limits they did not choose.
+    """
+    from tendon.services.limits import LocalLimitsError, load_local_limits, tighten
+
+    try:
+        ceiling = load_local_limits()
+    except LocalLimitsError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print("[dim]fix the file or remove it; running without it is not the same[/dim]")
+        raise typer.Exit(code=1) from exc
+
+    limits = tighten(loaded.limits, ceiling)
+    if ceiling is not None and limits != loaded.limits:
+        console.print("[dim]local limits are tighter than the skill's; using the tighter[/dim]")
+    return limits
 
 
 def _baseline_policy(loaded, capability):
@@ -778,7 +803,7 @@ def evaluate_skill(
             policy = _baseline_policy(loaded, capability)
             scheduler = Scheduler(
                 driver=body,
-                limits=loaded.limits,
+                limits=_effective_limits(console, loaded),
                 confidence_threshold=loaded.confidence_threshold,
                 bus=bus,
             )

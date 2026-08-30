@@ -307,6 +307,12 @@ terminal.
 A body that moves real hardware is refused unless you pass `--physical`, and `doctor` says
 which bodies those are. Driver arguments go through `--driver-arg key=value`.
 
+A skill declares the limits it runs under, and skills are meant to be installed from
+elsewhere. `~/.tendon/limits.yaml` puts a ceiling over them: the effective bound is the
+stricter of the two, so a site can say what nothing here exceeds and no skill widens it by
+asking. It only tightens — a file that could loosen a skill's own bound would be a way to
+turn a safety limit off by editing a config.
+
 ## Status
 
 **v0.1 — simulation only.** The loop above runs end to end: the scheduler routes every

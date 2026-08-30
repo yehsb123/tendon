@@ -100,5 +100,22 @@ def test_the_document_does_not_claim_a_disconnect_stops_the_policy() -> None:
 def test_the_unimplemented_gaps_are_still_named() -> None:
     """The document's value is the list of things it says are missing. A revision that
     quietly dropped one would read as progress."""
-    for gap in ("authentication", "override a skill-declared", "deliberation tier"):
+    for gap in ("authentication", "has been verified against a real"):
         assert gap in SECURITY, gap
+
+
+def test_the_ceiling_over_a_skill_is_described_and_real() -> None:
+    """The gap this document tracked as required work before v0.4, now closed.
+
+    Both halves checked together: the document says a machine can cap what a skill asks
+    for, and the module that does it exists. A notice describing a control that is not
+    there is the failure mode this file was written for.
+    """
+    from tendon.kernel.types import SafetyLimits
+    from tendon.services.limits import tighten
+
+    assert "limits.yaml" in SECURITY
+    assert "stricter of the two" in SECURITY
+
+    capped = tighten(SafetyLimits(max_joint_velocity=99.0), SafetyLimits(max_joint_velocity=2.0))
+    assert capped.max_joint_velocity == 2.0

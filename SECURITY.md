@@ -25,8 +25,12 @@ a servo that browns out under load, or a person standing where the arm is about 
 So the instruction is the same and the reason is stronger: do not connect this to hardware
 you are not prepared to have moved unexpectedly, and do not stand where it can reach.
 
-Also still missing: authentication between the shell and the runtime, and a local policy
-able to override a skill-declared safety limit.
+Also still missing: authentication between the shell and the runtime.
+
+A local ceiling over a skill-declared limit used to be listed here too. It exists now —
+`~/.tendon/limits.yaml`, described under *skills are remote code* below — and is named there
+rather than deleted from this line, because a gap that disappears without explanation reads
+like it was never real.
 
 **What has changed since this notice was first written.** Two paragraphs used to stand here
 saying the `so101` driver was v0.4 work that did not exist yet, and that until the scheduler
@@ -116,9 +120,18 @@ protects.
 **Skills are remote code.** `tendon install` fetches weights and configuration from the
 Hugging Face Hub. A skill declares its own safety limits, which means an installed skill
 proposes the bounds it runs under. Treat a skill from an untrusted namespace the way you
-would treat any code you did not write, and review `skill.yaml` before running it. Local
-policy overriding a skill-declared limit is unimplemented and is tracked as required work
-before v0.4.
+would treat any code you did not write, and review `skill.yaml` before running it.
+
+**A machine can now put a ceiling over what a skill asks for.** `~/.tendon/limits.yaml`
+holds `SafetyLimits`, and the effective bound is the stricter of the two, field by field.
+The direction is the feature: a site says nothing here moves faster than 2 rad/s whatever a
+skill claims to need, and no skill widens that by asking. A local file that could *loosen* a
+skill's own bound would be a way to disable a safety limit by editing a config, so it cannot.
+
+An absent file is not a permission — it means no ceiling was configured and the skill's
+limits stand, which is what every installation did before this existed. A file that exists
+and cannot be parsed **stops the run**: a site that wrote one believes it has a bound, and
+proceeding without it would be proceeding under limits nobody chose.
 
 ## Scope
 
