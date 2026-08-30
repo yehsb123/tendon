@@ -25,6 +25,7 @@ should not have to discover the absence by looking for the code.
 from __future__ import annotations
 
 import asyncio
+import logging
 import queue as queue_module
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,11 @@ from pydantic import BaseModel
 from tendon import __version__
 
 __all__ = ["create_app"]
+
+#: For failures that must not stop an episode and must not disappear either. A robot
+#: mid-motion is not a reason to raise, and a write that silently never happened is not
+#: something anybody discovers until they need the thing that was not written.
+_LOG = logging.getLogger("tendon.api")
 
 #: Where skills are looked for when no explicit root is configured.
 _DEFAULT_SKILL_ROOT = Path("skills")
@@ -92,7 +98,62 @@ def _open_recorder(loaded, root: Path):
     return Recorder(root=root, repo_id=loaded.ref)
 
 
-def create_app(*, skill_root: Path | None = None, episode_root: Path | None = None) -> FastAPI:
+def _learn_and_keep(policy, memory_root, skill, body_id, observation, resolution) -> None:
+    """Teach the policy, then write down what it learned.
+
+    Saving belongs here rather than beside `note_interrupt`, and getting that wrong is
+    instructive: the handler fires when the *decision arrives*, and the scheduler teaches
+    the policy afterwards. Saving from the handler wrote an empty memory every time — the
+    file appeared, was valid, and held nothing, which is the most convincing kind of wrong.
+
+    Written on each correction rather than at the end of the episode. A correction is a
+    thing a person did, and an episode that fails afterwards should not take it with it.
+    Corrections arrive at human speed, nowhere near the control loop.
+    """
+    from tendon.services.memory_store import save_memory
+
+    if not policy.learn_from(observation, resolution):
+        # Nothing was learned — an approval, or a rejection with no replacement. Writing
+        # the file anyway would rewrite it on every interrupt for no change.
+        return
+
+    try:
+        save_memory(memory_root, skill, body_id, policy.memory)
+    except Exception as exc:  # noqa: BLE001 - isolation, not silence
+        # Not raised: this runs on the episode thread and a robot mid-motion is not a
+        # reason to throw. Not suppressed either. The first version of this swallowed
+        # everything and never wrote a byte — the body id contains a colon, illegal in a
+        # Windows filename — and nothing in the running system would have said so.
+        _LOG.warning(
+            "could not save what was taught for %s on %s: %s; it is still held for this "
+            "run and will be lost on restart",
+            skill,
+            body_id,
+            exc,
+        )
+
+
+def _record_decision(recorder, context, resolution, skill) -> None:
+    """Write an operator's decision into the episode.
+
+    Isolated because a recorder that cannot write must not cost the operator the decision
+    they just made — and reported, because a write that silently never happened is not
+    something anybody discovers until they need what was not written.
+    """
+    if recorder is None:
+        return
+    try:
+        recorder.note_interrupt(context, resolution)
+    except Exception as exc:  # noqa: BLE001 - isolation, not silence
+        _LOG.warning("could not record the interrupt for %s: %s", skill, exc)
+
+
+def create_app(
+    *,
+    skill_root: Path | None = None,
+    episode_root: Path | None = None,
+    memory_root: Path | None = None,
+) -> FastAPI:
     """Build the API.
 
     `skill_root` and `episode_root` are injected rather than read from globals so tests
@@ -102,10 +163,12 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
     operator's data.
     """
     from tendon.api.session import SessionRegistry
+    from tendon.services.memory_store import DEFAULT_MEMORY_ROOT
     from tendon.services.store import DEFAULT_ROOT
 
     root = skill_root if skill_root is not None else _DEFAULT_SKILL_ROOT
     episode_root = episode_root if episode_root is not None else DEFAULT_ROOT
+    memory_root = memory_root if memory_root is not None else DEFAULT_MEMORY_ROOT
 
     # What the operator has taught, kept across sessions rather than per episode.
     #
@@ -119,9 +182,10 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
     # Keyed on skill *and* body: a correction is a joint-space position, so it means
     # nothing on a body with different kinematics, and nothing about a different task.
     #
-    # In memory, so it lasts as long as `tendon serve` does. Not yet on disk — the
-    # corrections themselves are now in each episode's `interrupts` table, which is what a
-    # rebuild would read, and that is the v0.3 step rather than this one.
+    # Loaded from disk on first use and written on every correction, so an afternoon of
+    # teaching survives a restart. `services/memory_store.py` says why that file is
+    # separate from the episode sidecar: an episode is history and never changes, a memory
+    # is current knowledge and changes whenever somebody corrects something.
     memories: dict[tuple[str, str], Any] = {}
     registry = SessionRegistry()
 
@@ -350,13 +414,9 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
         from tendon.api.session import EpisodeSession
         from tendon.kernel.bus import Bus
         from tendon.kernel.scheduler import Scheduler, StepRecord
-        from tendon.services.adaptive import (
-            AdaptivePolicy,
-            CorrectionMemory,
-            StochasticPolicy,
-            UncertainRegion,
-        )
+        from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
         from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
+        from tendon.services.memory_store import load_memory
         from tendon.services.policies import sine_sweep
         from tendon.services.skill import (
             IncompatibleBody,
@@ -404,7 +464,10 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
                 # narrower than what the recorder is set up to store.
                 gripper=1.0 if capability.gripper.value != "none" else None,
             )
-            memory = memories.setdefault((loaded.ref, capability.body_id), CorrectionMemory())
+            key = (loaded.ref, capability.body_id)
+            if key not in memories:
+                memories[key] = load_memory(memory_root, loaded.ref, capability.body_id)
+            memory = memories[key]
 
             # Kept so the scheduler can hand corrections back to it. The policy is built
             # on the episode thread, so this is the only reference anybody else gets.
@@ -434,8 +497,8 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
                 # produced by a script, while the interface an actual operator uses threw
                 # every correction away the moment the motion finished. That is the claim
                 # of this project, missing at the one place a human touches it.
-                on_intervention=lambda obs, resolution: holder["policy"].learn_from(
-                    obs, resolution
+                on_intervention=lambda obs, resolution: _learn_and_keep(
+                    holder["policy"], memory_root, loaded.ref, capability.body_id, obs, resolution
                 ),
                 bus=bus,
             )
@@ -452,10 +515,17 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
                 None if recorder is None else lambda: recorder.start(loaded.ref, capability)
             ),
             after_episode=None if recorder is None else recorder.finish,
-            # `note_interrupt` calls itself the most valuable rows in the store —
-            # demonstration data almost never contains recovery from failure, and this is
-            # the only place it gets written down. Nothing in the project called it.
-            on_resolved=None if recorder is None else recorder.note_interrupt,
+            # Two things happen when an operator decides. `note_interrupt` writes it into
+            # the episode — the most valuable rows in the store, because demonstration data
+            # almost never contains recovery from failure. And the memory is persisted, so
+            # what they just taught survives a restart.
+            #
+            # Persisted here rather than at the end of the episode: a correction is a thing
+            # a person did, and an episode that crashes afterwards should not take it with
+            # it. Writing at human timescale is nowhere near the control loop.
+            on_resolved=lambda context, resolution: _record_decision(
+                recorder, context, resolution, loaded.ref
+            ),
         )
         holder["session"] = session
 

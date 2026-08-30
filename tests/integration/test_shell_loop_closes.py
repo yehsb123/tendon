@@ -65,9 +65,16 @@ def run_arm(tmp_path: Path, *, correct: bool) -> list[int]:
     One app for the whole series, because the correction memory lives on it — that is the
     thing under test. A fresh app per episode would reproduce the bug this checks for.
     """
+    # Each arm gets its own directories, memory included. The two arms sharing a memory
+    # would hand the control arm everything the taught arm learned, and the control would
+    # stop asking for the one reason that must not be possible — which is exactly what
+    # happened the first time the memory was made to survive a restart.
+    arm = tmp_path / ("taught" if correct else "told")
     client = TestClient(
         create_app(
-            skill_root=REPO / "skills", episode_root=tmp_path / ("taught" if correct else "told")
+            skill_root=REPO / "skills",
+            episode_root=arm / "episodes",
+            memory_root=arm / "memory",
         )
     )
 

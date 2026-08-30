@@ -175,10 +175,13 @@ about to ask. Otherwise a quiet episode is ambiguous: the policy applying what y
 it and the run happening to miss the uncertain region look the same from the operator's
 seat.
 
-The memory is kept per skill and body for as long as the server runs, so what you teach in
-one episode is there in the next. That is the whole shape of the claim: correct it, and it
-asks you less often. It does not yet survive a restart — the corrections are on disk, and
-rebuilding the memory from them is v0.3 work.
+The memory is kept per skill and body, and written to `~/.tendon/memory` as you teach it,
+so what you taught in one episode is there in the next — and still there after a restart.
+That is the whole shape of the claim: correct it, and it asks you less often.
+
+It is derived state, kept beside the episode store rather than inside it. An episode is
+history and is never edited; a memory is what the system currently knows. Deleting the
+memory costs what was taught and nothing else — the episodes it came from are untouched.
 
 While working on the shell itself, run it against a live runtime instead — the dev server
 reloads on edit and proxies `/api` and `/ws` through:

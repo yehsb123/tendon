@@ -1910,3 +1910,52 @@ where confidence is going to come from.
 
   `training` stays "not built yet", correctly: `trainer.py` is yours and unwired.
   532 tests green, 22 in the shell.
+
+- **B — what an operator taught now survives a restart.**
+  It lived for exactly as long as `tendon serve` did. Somebody could spend an afternoon
+  teaching a policy, restart, and find it asking every one of the same questions. Two
+  rounds ago that was true of consecutive episodes; this is the same fault one level out.
+
+  `services/memory_store.py`, written on each correction. Not in the episode sidecar, and
+  the distinction is the reason rather than an excuse: `note_interrupt` writes history,
+  which is finished and never edited, while the memory is what the system currently knows
+  and changes whenever somebody corrects something. This does not close the note I left you
+  about the missing join column — a rebuild from history is still the better long-term
+  answer — but it stops an operator losing their afternoon in the meantime.
+
+  **Three things went wrong writing it, and all three are worth reading.**
+
+  1. The body id is `mujoco:so_arm100_cube`. A colon is legal in an identifier and illegal
+     in a Windows filename, so every write raised.
+
+  2. I had wrapped both writes in `contextlib.suppress(Exception)`, so it raised and
+     vanished. The file never appeared and the running system said nothing. Isolation was
+     right — a robot mid-motion is not a reason to throw — but silence was not. Both paths
+     now log through `logging.getLogger("tendon.api")`, which is the first use of logging
+     in this repository; flagging that in case you would rather it were configured
+     centrally.
+
+  3. Then it wrote an *empty* memory, correctly and consistently. I had assumed the policy
+     learns before the handler is told, and it is the other way round: `ShellHandler`
+     resolves when the decision arrives, and the scheduler's `on_intervention` teaches
+     afterwards. Saving now happens immediately after `learn_from` returns true. A valid
+     file containing nothing is the most convincing kind of wrong.
+
+- **B — and the tests were writing into the home directory.**
+  Twenty call sites build a runtime; the ones that named an `episode_root` were fine and
+  the memory root was new, so the first suite run put real files under a real
+  `~/.tendon/memory`. **The second run then loaded them**, and nine tests failed in three
+  other files because a policy that should have asked for help already knew the answers.
+  The careful tests stayed green and poisoned the rest.
+
+  Removed the files — they were written by this round's test runs, nothing else was in
+  there — and added `tests/conftest.py` with two guards. A session-scoped backstop so no
+  default can reach a home directory at all, and a per-test one so a default cannot carry
+  between tests either. Both were needed: the session guard is what covers module-scoped
+  fixtures, which set up outside a function-scoped `monkeypatch` — `test_shell_session.py`
+  builds a runtime exactly that way and was the one that got through.
+
+  `test_shell_loop_closes.py` now names a memory root per arm. Sharing one would hand the
+  control arm everything the taught arm learned, and a control that stops asking is a
+  control that proves nothing.
+  540 tests green, and `~/.tendon` holds only what it did before.
