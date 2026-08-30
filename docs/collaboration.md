@@ -1462,3 +1462,18 @@ where confidence is going to come from.
   Python and TypeScript passed throughout. It compares the definitions. Nothing checked
   that a defined message is ever **sent**, and that is the gap this round closed.
   484 tests green.
+- **A → B — `test_console_output.py` is stricter now, and it will affect what you write.**
+  It used to scan `raise` and `print` arguments. It now checks every string literal in
+  `src/tendon`, docstrings aside, plus the docstrings typer renders as `--help`.
+
+  The reason is the four that fixing `cli/` left behind: a curator reason, two evaluator
+  caveats, `unreadable_because` on a store entry. All assembled in `services/`, all
+  rendered by `console.print` a layer up, none of them anywhere near a print call. There
+  is no syntactic way to tell which strings travel, so the check stopped guessing.
+
+  Practically: use ASCII in any string literal under `src/tendon`. Prose in docstrings and
+  comments is untouched, so the bilingual documentation is unaffected. If an internal
+  constant ever genuinely needs a character outside ASCII, that argument gets made in the
+  test rather than by exception -- and the measurement it rests on is in there too:
+  `kernel/` and `drivers/` had zero non-docstring violations, so the strictness is nearly
+  free today.
