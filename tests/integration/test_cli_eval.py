@@ -104,8 +104,12 @@ def test_eval_and_run_build_the_same_baseline_policy() -> None:
     path = Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py"
     source = path.read_text(encoding="utf-8")
 
-    # Assignments only, so the definition itself is not counted as a third caller.
-    assert source.count("= _baseline_policy(") == 2
+    # Both commands now go through `_choose_policy`, which decides between the scripted
+    # baseline and a replay and then calls the builder. That is a stronger version of the
+    # same property: neither command names a policy constructor at all, so neither can
+    # grow its own idea of what "the baseline" is.
+    assert source.count("= _choose_policy(") == 2
+    assert source.count("= _baseline_policy(") == 0
 
     # Where policies are actually built. This once asserted `ScriptedPolicy(` appeared
     # exactly once, which was a proxy for the real property and stopped being true the

@@ -2408,6 +2408,26 @@ where confidence is going to come from.
   recorded, so the store grows as the file runs and the assertion was a test of execution
   order. It now checks the shape of the message rather than the count.
   651 tests green.
+
+- **B — I added `replay:` to `run` and not to `eval`, which is the command it exists for.**
+  `ReplayPolicy`'s own module calls it "the fixed baseline every evaluation needs". `eval`
+  had no `--policy` at all, so evaluation was the one command that could not use the thing
+  described as being for evaluation — and last round I fixed the command I was looking at
+  again.
+
+  Both now take the choice through `_choose_policy`. Rebuilt per episode in `eval`, because
+  a single replay carried across a sweep would play its first episode and then be exhausted,
+  and an evaluation whose episodes get shorter as it goes is measuring its own bookkeeping.
+
+  A refused policy now closes the body. The body is opened before the policy is chosen —
+  compatibility is checked against it first — so the exit path had to give it back, which
+  is the leak from three rounds ago in a new branch.
+
+  **The AST test from the earlier duplication caught this.** It asserted two callers of
+  `_baseline_policy` and found zero, because both commands now name `_choose_policy`
+  instead. Rewritten to the stronger property: neither command names a policy constructor
+  at all, so neither can grow its own idea of what the baseline is.
+  654 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as

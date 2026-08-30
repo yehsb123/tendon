@@ -251,7 +251,9 @@ path to a skill directory works too.
 
 `--policy replay:<skill>#<episode>` plays a recording back instead of running the baseline.
 It is the one policy whose behaviour cannot drift, which is what a comparison needs: run it
-before a change and after, and the difference is the change.
+before a change and after, and the difference is the change. `tendon eval` takes the same
+option, and starts the recording again for each episode — evaluation is where a fixed
+baseline is actually for.
 
 ```
 $ tendon run grasp/cube-sim

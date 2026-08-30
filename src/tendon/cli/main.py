@@ -177,19 +177,13 @@ def run(
 
     capability = body.capability
 
-    if policy == "scripted":
-        running = _baseline_policy(loaded, capability)
-    elif policy.startswith("replay:") or policy == "replay":
-        running = _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
-    else:
-        console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
-        console.print(
-            "[dim]'scripted' and 'replay:<skill>#<episode>' run today. A LeRobot adapter for "
-            f"{escape(loaded.policy_base or 'the skill policy')} is Track A work "
-            "(docs/collaboration.md).[/dim]"
-        )
+    try:
+        running = _choose_policy(console, loaded, capability, policy, store)
+    except typer.Exit:
+        # The body was opened before the policy was chosen, because compatibility is
+        # checked against it first. A refused policy still has to give it back.
         body.close()
-        raise typer.Exit(code=1)
+        raise
 
     bus: Bus[StepRecord] = Bus()
     viewer = _attach_viewer(console, bus, loaded, view=view, save=view_save)
@@ -266,6 +260,30 @@ def _effective_limits(console: Console, loaded):
     if ceiling is not None and limits != loaded.limits:
         console.print("[dim]local limits are tighter than the skill's; using the tighter[/dim]")
     return limits
+
+
+def _choose_policy(console: Console, loaded, capability, policy: str, store: str):
+    """Build whichever policy `--policy` asked for.
+
+    One function because `run` and `eval` both take the choice and this project has shipped
+    the same bug twice from two copies of a policy construction. `eval` had no choice at all
+    until now, which was its own version of the problem: `ReplayPolicy` describes itself as
+    the fixed baseline *every evaluation* needs, and evaluation was the one command that
+    could not use it.
+    """
+    if policy == "scripted":
+        return _baseline_policy(loaded, capability)
+
+    if policy == "replay" or policy.startswith("replay:"):
+        return _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
+
+    console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
+    console.print(
+        "[dim]'scripted' and 'replay:<skill>#<episode>' run today. A LeRobot adapter for "
+        f"{escape(loaded.policy_base or 'the skill policy')} is Track A work "
+        "(docs/collaboration.md).[/dim]"
+    )
+    raise typer.Exit(code=1)
 
 
 def _replay_policy(console: Console, loaded, capability, spec: str, store: str):
@@ -810,6 +828,10 @@ def evaluate_skill(
     store: str = typer.Option(
         "", help="Where episodes are written. Defaults to ~/.tendon/episodes"
     ),
+    policy: str = typer.Option(
+        "scripted",
+        help="scripted | replay:<skill>#<episode>. The same choice `tendon run` takes.",
+    ),
 ) -> None:
     """Run a skill repeatedly and report what happened.
 
@@ -860,7 +882,10 @@ def evaluate_skill(
     failures: list[str] = []
     try:
         for index in range(count):
-            policy = _baseline_policy(loaded, capability)
+            # Rebuilt each episode so a replay starts from the beginning of the recording
+            # rather than continuing where the last one stopped. `ReplayPolicy.reset` does
+            # the same, and building it here keeps the two commands' loops identical.
+            running = _choose_policy(console, loaded, capability, policy, store)
             scheduler = Scheduler(
                 driver=body,
                 limits=_effective_limits(console, loaded),
@@ -874,7 +899,7 @@ def evaluate_skill(
             if recorder is not None:
                 recorder.start(loaded.ref, capability)
             try:
-                result = scheduler.run_episode(policy, max_steps=steps, seed=seed + index)
+                result = scheduler.run_episode(running, max_steps=steps, seed=seed + index)
             finally:
                 if recorder is not None:
                     recorder.finish()

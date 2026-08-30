@@ -119,6 +119,74 @@ def test_a_non_numeric_episode_is_refused(recorded: Path) -> None:
 # ------------------------------------------------------ and the help is honest
 
 
+# ------------------------------------------------------- and evaluation can use it
+
+
+def test_eval_can_replay(recorded: Path) -> None:
+    """The command `ReplayPolicy` was written for.
+
+    Its module calls it "the fixed baseline every evaluation needs", and `tendon eval` had
+    no `--policy` at all — evaluation was the one command that could not use the thing
+    described as being for evaluation.
+    """
+    result = RUNNER.invoke(
+        app,
+        [
+            "eval",
+            "grasp/cube-sim",
+            "--episodes",
+            "2",
+            "--steps",
+            "300",
+            "--policy",
+            "replay:grasp/cube-sim#0",
+            "--store",
+            str(recorded),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("replaying") == 2
+
+
+def test_each_evaluation_episode_starts_the_recording_again(recorded: Path) -> None:
+    """Rebuilt per episode rather than shared.
+
+    A single replay carried across a sweep would play its first episode and then be
+    exhausted, so every later episode would report zero steps — and an evaluation whose
+    episodes get shorter as it goes is measuring its own bookkeeping.
+    """
+    result = RUNNER.invoke(
+        app,
+        [
+            "eval",
+            "grasp/cube-sim",
+            "--episodes",
+            "3",
+            "--steps",
+            "300",
+            "--policy",
+            "replay:grasp/cube-sim#0",
+            "--store",
+            str(recorded),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count(f"{STEPS} steps") == 3
+
+
+def test_both_commands_take_the_choice_through_one_function() -> None:
+    """`run` and `eval` have shipped the same bug from two copies of a policy construction
+    before. Checked at the source so a third command cannot quietly grow its own."""
+    source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert source.count("def _choose_policy(") == 1
+    assert source.count("_choose_policy(console, loaded, capability, policy, store)") == 2
+
+
 def test_the_help_no_longer_names_a_format_nothing_writes() -> None:
     """`replay:<episode.json>` was in the help for months. Nothing in this project has ever
     written episode JSON, so somebody following it would have gone looking for a file that
