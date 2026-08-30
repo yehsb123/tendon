@@ -1158,3 +1158,19 @@ where confidence is going to come from.
   called by the shell, with `GET /api/sessions` listed as a deliberate exception for
   terminal use. The last three rounds each found something that had drifted into being
   unused, so the check is written down rather than remembered. 361 tests green.
+- **B — the claim at the top of the README had nothing holding it in place.**
+  `examples/04_improve` produces the figure the project leads with, and nothing checked
+  that it still does. The scheduler, the policy, the safety path and the interrupt machine
+  have all changed since that graph was measured, and any of those could have quietly
+  flattened the line while every other test stayed green.
+
+  `tests/integration/test_improve_example.py` imports the example and runs it at reduced
+  scale. It asserts the **shape** — the rate falls, corrections accumulate and never
+  decrease, the policy asks for help before it stops asking — and deliberately not the
+  numbers. Pinning 100% and 20% would make it a test of the random seed and the sweep
+  parameters, failing for reasons that mean nothing.
+
+  Verified the full example still reproduces exactly what the README shows: 100% over the
+  first ten episodes, 20% over the last, 52 corrections. Both READMEs now say those are
+  figures from one run rather than a guarantee, and point at what is actually tested.
+  366 tests green.

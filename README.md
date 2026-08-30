@@ -33,6 +33,11 @@ intervention rate over a trailing window of 10 episodes
   corrections stored : 52
 ```
 
+*Figures from one run at the default settings.* The shape is what is tested
+([`tests/integration/test_improve_example.py`](tests/integration/test_improve_example.py)):
+the rate falls, corrections accumulate, and the policy asks for help before it stops
+asking. Pinning the exact numbers would make the test a check on a random seed.
+
 A policy runs on an SO-ARM100 in MuJoCo. Where it is uncertain, confidence falls, and the
 scheduler hands over **before the body moves** rather than after something goes wrong. An
 operator corrects it. The correction is stored against the situation it was given in, and

@@ -33,6 +33,11 @@ intervention rate over a trailing window of 10 episodes
   저장된 교정        : 52
 ```
 
+*기본 설정으로 한 번 돌린 값입니다.* 테스트가 고정하는 것은 숫자가 아니라 모양입니다
+([`tests/integration/test_improve_example.py`](tests/integration/test_improve_example.py)) —
+개입률이 떨어지고, 교정이 쌓이고, 정책이 묻기를 멈추기 전에 먼저 묻습니다. 정확한 숫자를
+박으면 난수 시드를 검사하는 테스트가 됩니다.
+
 MuJoCo 안의 SO-ARM100에서 정책이 돕니다. 불확실한 지점에서 확신도가 떨어지고,
 스케줄러가 **몸이 움직이기 전에** 제어권을 넘깁니다. 뭔가 잘못된 뒤가 아닙니다.
 오퍼레이터가 교정하고, 그 교정은 주어진 상황과 함께 저장되고, 이후 에피소드는 그것을
