@@ -140,6 +140,23 @@ export interface Curation {
   interrupts_known: boolean;
 }
 
+/**
+ * The line this project is measured by: cumulative corrections against a trailing
+ * intervention rate.
+ *
+ * `points` is empty until a full window of episodes exists. A rate over three episodes is
+ * not a rate, and drawing one invites reading a trend off noise — so the view says how
+ * many more episodes are needed rather than drawing something misleading.
+ */
+export interface Progress {
+  skill: string;
+  body: string;
+  episodes: number;
+  corrections: number;
+  window: number;
+  points: { corrections: number; rate: number }[];
+}
+
 export interface SessionSnapshot {
   session_id: string;
   skill: string;
@@ -162,6 +179,7 @@ export const api = {
   skills: () => request<SkillSummary[]>("/api/skills"),
   episodes: () => request<Episode[]>("/api/episodes"),
   memory: () => request<Memory[]>("/api/memory"),
+  progress: () => request<Progress[]>("/api/progress"),
   curation: (namespace: string, name: string) =>
     request<Curation>(`/api/skills/${namespace}/${name}/curation`),
 

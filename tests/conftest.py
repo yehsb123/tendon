@@ -25,6 +25,33 @@ from pathlib import Path
 
 import pytest
 
+#: Every module-level default that points into a home directory, as (module, attribute).
+#:
+#: A list rather than four lines of `setattr`, because `tests/test_home_is_guarded.py`
+#: checks it against what is actually in `src/tendon/services/`. The guard was written one
+#: round and a third store was added the next without updating it, which put real files
+#: under a real `~/.tendon/progress` — the exact accident the guard exists to prevent,
+#: repeated by the person who had just prevented it.
+GUARDED_ROOTS = (
+    ("tendon.services.store", "DEFAULT_ROOT", "episodes"),
+    ("tendon.services.recorder", "DEFAULT_ROOT", "episodes"),
+    ("tendon.services.memory_store", "DEFAULT_MEMORY_ROOT", "memory"),
+    ("tendon.services.progress", "DEFAULT_PROGRESS_ROOT", "progress"),
+)
+
+
+def _redirect(patch: pytest.MonkeyPatch, root: Path) -> None:
+    """Point every guarded default under `root`."""
+    import importlib
+
+    for module_name, attribute, leaf in GUARDED_ROOTS:
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            # An optional extra is missing, so nothing can write through it either.
+            continue
+        patch.setattr(module, attribute, root / leaf, raising=False)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _home_is_off_limits(tmp_path_factory: pytest.TempPathFactory):
@@ -35,13 +62,9 @@ def _home_is_off_limits(tmp_path_factory: pytest.TempPathFactory):
     the unpatched default. That is not a corner case — `test_shell_session.py` builds one
     exactly that way, and it reached the real home directory on the run that added this.
     """
-    import tendon.services.memory_store as memory_store
-    import tendon.services.store as store
-
     root = tmp_path_factory.mktemp("home")
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(store, "DEFAULT_ROOT", root / "episodes")
-        patch.setattr(memory_store, "DEFAULT_MEMORY_ROOT", root / "memory")
+        _redirect(patch, root)
         yield
 
 
@@ -57,8 +80,4 @@ def _no_writes_to_the_home_directory(tmp_path: Path, monkeypatch: pytest.MonkeyP
     constants are read from, and a test that imports `DEFAULT_ROOT` directly should see the
     same value as one that lets `create_app` reach for it.
     """
-    import tendon.services.memory_store as memory_store
-    import tendon.services.store as store
-
-    monkeypatch.setattr(store, "DEFAULT_ROOT", tmp_path / "episodes")
-    monkeypatch.setattr(memory_store, "DEFAULT_MEMORY_ROOT", tmp_path / "memory")
+    _redirect(monkeypatch, tmp_path)

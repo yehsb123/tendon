@@ -305,6 +305,32 @@
   font-style: italic;
 }
 
+/* The graph the project is measured by. One line and two axes, drawn directly: a charting
+   dependency to render this would be larger than the shell. */
+.progress-chart {
+  display: block;
+  width: 100%;
+  max-width: 460px;
+  margin: var(--space-3) 0;
+}
+
+.progress-chart .axis {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.progress-chart .tick {
+  fill: var(--fg-muted);
+  font-size: 9px;
+}
+
+.progress-path {
+  fill: none;
+  stroke: var(--accent, currentColor);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
 /* An operator who thinks a correction was applied when it was refused is worse off than
    one who is told, so a rejected decision is loud rather than a toast that fades. */
 .hint-error {

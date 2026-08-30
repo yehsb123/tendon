@@ -183,6 +183,13 @@ It is derived state, kept beside the episode store rather than inside it. An epi
 history and is never edited; a memory is what the system currently knows. Deleting the
 memory costs what was taught and nothing else — the episodes it came from are untouched.
 
+**`Progress` draws the graph at the top of this file from your own runs.** Cumulative
+corrections along the bottom, intervention rate up the side, measured over a trailing
+window of ten episodes. It stays blank until there are ten: a rate over three episodes is
+not a rate, and the view says how many more are needed rather than drawing a line off
+noise. Until now that graph came from a script and a test — the running system recorded
+how often it asked nowhere, so a week of correcting a policy told you nothing.
+
 While working on the shell itself, run it against a live runtime instead — the dev server
 reloads on edit and proxies `/api` and `/ws` through:
 

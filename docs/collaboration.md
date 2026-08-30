@@ -1959,3 +1959,38 @@ where confidence is going to come from.
   control arm everything the taught arm learned, and a control that stops asking is a
   control that proves nothing.
   540 tests green, and `~/.tendon` holds only what it did before.
+
+- **B — the graph the roadmap measures v0.3 by is now drawn by the running system.**
+  *"Done when one graph exists. x-axis: cumulative human corrections. y-axis: intervention
+  rate. The line goes down."* It had been produced twice — by `examples/04_improve`, a
+  script, and by `test_shell_loop_closes.py`, which proves the fall is caused by the
+  teaching. **Neither leaves anything behind.** Nothing in the running system recorded how
+  often it asked, so an operator correcting a policy for a week could not tell whether any
+  of it was working. A strange gap for a project whose entire claim is a line on a chart.
+
+  `services/progress.py` appends one line per finished episode, `GET /api/progress` turns
+  it into the curve, and a `Progress` tab draws it — SVG, no charting dependency, because
+  it is one line and two axes.
+
+  Trailing window of ten, and **nothing at all until there are ten**. A cumulative average
+  keeps falling long after improvement stops, which makes the line look right for the wrong
+  reason; a rate over three episodes is not a rate. The view says how many more episodes
+  are needed rather than drawing something that invites reading a trend off noise.
+
+  Written from the log rather than from the store because the store still cannot say which
+  episodes were interrupted — your missing join column. When that lands this becomes
+  rebuildable, and still worth keeping: reading a hundred parquet files to draw a line is
+  not what a view should do on every load.
+
+- **B — and I walked straight into the trap I built last round.**
+  The conftest guard redirects every store's default away from the home directory. I added
+  a third store and did not add it to the guard, so the suite put real files under a real
+  `~/.tendon/progress`. One round after writing the guard, by the person who wrote it. On
+  inspection it had never covered `recorder.DEFAULT_ROOT` either.
+
+  Removed the files. The lesson is not "remember harder": `tests/test_home_is_guarded.py`
+  now scans `services/` for every module-level constant built from `Path.home()` and fails
+  if the conftest does not name it — and fails the other way too, if the conftest guards
+  something that no longer exists. A fourth store breaks a test whose message says what to
+  do, instead of breaking somebody's home directory a week later.
+  552 tests green.

@@ -133,6 +133,37 @@ def _learn_and_keep(policy, memory_root, skill, body_id, observation, resolution
         )
 
 
+def _record_progress(progress_root, skill, body_id, memories, result) -> None:
+    """Append what this episode cost in human attention.
+
+    Written after the episode rather than during it, and isolated: a log that cannot be
+    appended to must not turn a finished run into a failed one. Reported for the same
+    reason as the memory — a line that silently never appeared is a graph with a hole in
+    it that nobody can see.
+    """
+    from tendon.services import progress
+
+    memory = memories.get((skill, body_id))
+    try:
+        progress.append(
+            progress_root,
+            skill,
+            body_id,
+            progress.EpisodeRecord(
+                skill=skill,
+                body=body_id,
+                episode_id=result.episode_id,
+                ended_at=progress.now(),
+                steps=result.steps,
+                interventions=result.interventions,
+                corrections=result.corrections,
+                corrections_known=len(memory) if memory is not None else 0,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - isolation, not silence
+        _LOG.warning("could not record progress for %s on %s: %s", skill, body_id, exc)
+
+
 def _record_decision(recorder, context, resolution, skill) -> None:
     """Write an operator's decision into the episode.
 
@@ -153,6 +184,7 @@ def create_app(
     skill_root: Path | None = None,
     episode_root: Path | None = None,
     memory_root: Path | None = None,
+    progress_root: Path | None = None,
 ) -> FastAPI:
     """Build the API.
 
@@ -164,11 +196,13 @@ def create_app(
     """
     from tendon.api.session import SessionRegistry
     from tendon.services.memory_store import DEFAULT_MEMORY_ROOT
+    from tendon.services.progress import DEFAULT_PROGRESS_ROOT
     from tendon.services.store import DEFAULT_ROOT
 
     root = skill_root if skill_root is not None else _DEFAULT_SKILL_ROOT
     episode_root = episode_root if episode_root is not None else DEFAULT_ROOT
     memory_root = memory_root if memory_root is not None else DEFAULT_MEMORY_ROOT
+    progress_root = progress_root if progress_root is not None else DEFAULT_PROGRESS_ROOT
 
     # What the operator has taught, kept across sessions rather than per episode.
     #
@@ -350,6 +384,35 @@ def create_app(
             "interrupts_known": ranking.interrupts_known,
         }
 
+    @app.get("/api/progress")
+    async def progress_view(window: int = 10) -> list[dict[str, Any]]:
+        """Is it asking less often than it used to, per skill and body.
+
+        The graph `docs/roadmap.md` measures v0.3 by: cumulative corrections against a
+        trailing intervention rate. It had been produced twice, by a script and by a test,
+        and never by the running system — so an operator correcting a policy for a week
+        could not see whether any of it was working.
+
+        `points` is empty until a full window of episodes exists. A rate over three
+        episodes is not a rate, and drawing one invites reading a trend off noise.
+        """
+        from tendon.services import progress as progress_module
+
+        return [
+            {
+                "skill": skill,
+                "body": body,
+                "episodes": len(records),
+                "corrections": records[-1].corrections_known,
+                "window": window,
+                "points": [
+                    {"corrections": x, "rate": y}
+                    for x, y in progress_module.rate_curve(records, window=window)
+                ],
+            }
+            for skill, body, records in progress_module.logs(progress_root)
+        ]
+
     @app.get("/api/memory")
     async def memory() -> list[dict[str, Any]]:
         """What the operator has taught, per skill and body.
@@ -525,6 +588,12 @@ def create_app(
             # it. Writing at human timescale is nowhere near the control loop.
             on_resolved=lambda context, resolution: _record_decision(
                 recorder, context, resolution, loaded.ref
+            ),
+            # One line per finished episode. This is the only place that knows both how
+            # often the policy asked and how much it had been taught by then, which are
+            # the two axes of the graph the roadmap says v0.3 is measured by.
+            on_result=lambda result: _record_progress(
+                progress_root, loaded.ref, capability.body_id, memories, result
             ),
         )
         holder["session"] = session

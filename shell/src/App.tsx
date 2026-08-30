@@ -3,9 +3,10 @@ import { useState } from "react";
 import { Curate } from "./views/Curate";
 import { Episodes } from "./views/Episodes";
 import { Live } from "./views/Live";
+import { Progress } from "./views/Progress";
 import { Skills } from "./views/Skills";
 
-type View = "live" | "episodes" | "skills" | "curate" | "training";
+type View = "live" | "progress" | "episodes" | "skills" | "curate" | "training";
 
 /**
  * Shell root.
@@ -21,7 +22,7 @@ export function App() {
   return (
     <div className="app">
       <nav className="app-nav" aria-label="Views">
-        {(["live", "episodes", "skills", "curate", "training"] as const).map((v) => (
+        {(["live", "progress", "episodes", "skills", "curate", "training"] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -36,6 +37,7 @@ export function App() {
 
       <main className="app-main">
         {view === "live" ? <Live /> : null}
+        {view === "progress" ? <Progress /> : null}
         {view === "episodes" ? <Episodes /> : null}
         {view === "skills" ? <Skills /> : null}
         {view === "curate" ? <Curate /> : null}

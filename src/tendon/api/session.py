@@ -203,6 +203,7 @@ class EpisodeSession:
         before_episode: Callable[[], None] | None = None,
         after_episode: Callable[[], None] | None = None,
         on_resolved: Callable[[InterruptContext, InterruptResolution], None] | None = None,
+        on_result: Callable[[EpisodeResult], None] | None = None,
     ) -> None:
         """
         Args:
@@ -222,6 +223,7 @@ class EpisodeSession:
         self._seed = seed
         self._before_episode = before_episode
         self._after_episode = after_episode
+        self._on_result = on_result
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -250,6 +252,14 @@ class EpisodeSession:
             self.state.steps = result.steps
             self.state.interventions = result.interventions
             self.state.corrections = result.corrections
+
+            if self._on_result is not None:
+                # After the episode succeeded, not in the `finally` above: this is for
+                # recording what an episode *was*, and an episode that raised does not
+                # have one. `after_episode` is the one that must run either way, because
+                # it closes things.
+                with contextlib.suppress(Exception):
+                    self._on_result(result)
         except Exception as exc:  # noqa: BLE001 - surfaced, not swallowed
             self.state.error = f"{type(exc).__name__}: {exc}"
         finally:
