@@ -890,3 +890,18 @@ where confidence is going to come from.
   Send is disabled until something is actually changed. An unchanged correction is an
   approval wearing the wrong label, and it would be stored as a lesson that teaches
   nothing.
+- **B — the correction path now has tests, and it had none.** The Correct button sent
+  `rejected` for several commits and nothing went red, because no test followed a
+  correction from the decision through to the behaviour. `tests/integration/
+  test_correction_loop.py` walks the whole chain: policy unsure -> scheduler hands over ->
+  operator corrects -> correction reaches the policy -> the same situation stops asking.
+  325 tests green.
+
+  Also asserts the two ways this could pass while being wrong: an approval must store
+  nothing (otherwise the rate falls with no information added), and a correction that
+  breaches a safety limit must raise rather than be dropped.
+- **B — a test of mine was wrong and the code was right.** "The corrected action is what
+  the body executes" compared against `UNSURE_AT + offset`, a number derived from an
+  assumption about the policy. The proposed chunk is a mean over perturbed samples, so it
+  differs at every step and the fixed expectation was testing the fixture. Now the
+  operator records what it actually sent and the test compares against that.
