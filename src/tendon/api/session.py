@@ -210,6 +210,7 @@ class EpisodeSession:
         after_episode: Callable[[], None] | None = None,
         on_resolved: Callable[[InterruptContext, InterruptResolution], None] | None = None,
         on_result: Callable[[EpisodeResult], None] | None = None,
+        on_closed: Callable[[], None] | None = None,
     ) -> None:
         """
         Args:
@@ -218,6 +219,15 @@ class EpisodeSession:
                 be opened and closed around the run without this module knowing what a
                 recorder is — the episode happens on a thread nobody else can reach, so
                 there is no other moment for the caller to take.
+            on_closed: Called last, whatever happened, for releasing what the caller opened
+                before handing it over. The body is the reason: `create_app` opens one per
+                session and closed it only on the failure paths, so every episode that
+                *worked* leaked a MuJoCo model — and would have left a physical arm's serial
+                port open, which the next session then cannot acquire.
+
+                Separate from `after_episode` because that one sits inside the episode. A
+                policy factory that raises means there was no episode, and the body still
+                needs closing.
         """
         self.state = SessionState(session_id=uuid.uuid4().hex, skill=skill, body_id=body_id)
         self.events: queue.Queue = queue.Queue(maxsize=_EVENT_QUEUE_SIZE)
@@ -230,6 +240,7 @@ class EpisodeSession:
         self._before_episode = before_episode
         self._after_episode = after_episode
         self._on_result = on_result
+        self._on_closed = on_closed
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -271,6 +282,15 @@ class EpisodeSession:
         finally:
             self.state.running = False
             self.state.finished = True
+
+            if self._on_closed is not None:
+                # The outermost `finally`, which is the only place that runs whatever
+                # happened — including a policy factory that raised before an episode
+                # existed at all. `after_episode` sits inside the episode and would be
+                # skipped by exactly that case, which is how a body stays open.
+                with contextlib.suppress(Exception):
+                    self._on_closed()
+
             _offer(self.events, {"type": "finished", "state": self.snapshot()})
 
     def _on_step(self, record: StepRecord) -> None:

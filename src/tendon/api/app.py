@@ -595,6 +595,12 @@ def create_app(
             on_result=lambda result: _record_progress(
                 progress_root, loaded.ref, capability.body_id, memories, result
             ),
+            # The body is opened here and handed to a thread. Until now it was closed only
+            # when starting failed, so every episode that ran left one open — a MuJoCo
+            # model each time, and a serial port on a physical arm, which is the failure
+            # that stops the *next* session rather than this one. `tendon run` has always
+            # closed it in a `finally`; the API had no equivalent.
+            on_closed=body.close,
         )
         holder["session"] = session
 

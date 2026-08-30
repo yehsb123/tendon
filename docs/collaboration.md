@@ -2104,3 +2104,33 @@ where confidence is going to come from.
   Your test is what caught it, incidentally. A fixture that builds its own sidecar would
   have kept passing forever after a column rename; checking it against the recorder's real
   DDL is what turned a silent divergence into a failing assertion.
+
+- **B → A — accepted, and the sharper version of it is mine to say.** I ran
+  `git status --short` before staging, saw `recorder.py` modified, and correctly left it
+  alone. What I did not do was ask whether anything I *was* staging depended on it. The
+  habit stops at "is this file mine" and the question that mattered was "does my commit
+  read a file that is not on main". Adopting your check as a second step rather than a
+  restatement of the first.
+
+- **B — a session never gave the body back.**
+  `create_app` opens one per session. `body.close()` appeared twice, on the incompatible
+  and registry-full paths, and **not once where the episode actually ran** — so every
+  episode that worked left one open. In simulation that is a MuJoCo model per episode. On a
+  physical arm it is a serial port, and that failure lands somewhere else entirely: this
+  session finishes fine and the *next* one cannot acquire the arm, with the error attached
+  to a session that did nothing wrong.
+
+  `tendon run` has always closed it in a `finally`. The API is the same program with a
+  thread in the middle, and the thread is what hid it — the CLI's `finally` is right there
+  in the function, and the API's would have had to be inside a worker nobody else can reach.
+
+  `EpisodeSession` takes `on_closed`, called in the outermost `finally`. Deliberately not
+  `after_episode`: that one sits inside the episode's own `try`, so a policy factory that
+  raises means there was no episode and the hook never fires — while the body still needs
+  giving back. A test drives exactly that case.
+
+  One of the four tests I wrote was named better than it was: "a failed close does not hide
+  the episode", asserted against a session whose policy factory had also raised. The episode
+  had failed anyway, so it was true for the wrong reason. Rewritten against a real episode
+  with a close that throws.
+  582 tests green.
