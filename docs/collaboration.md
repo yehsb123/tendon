@@ -849,3 +849,26 @@ where confidence is going to come from.
 - **B — `tsconfig.node.json` could not build.** It set `composite: true` and `noEmit: true`
   together, which TypeScript refuses (TS6310). Nobody had noticed because nothing had ever
   run `tsc -b` — the shell had never been built. Replaced `noEmit` with a build-info file.
+- **A — a real checkpoint found a bug a fake one could not.** `LeRobotPolicy.from_pretrained`
+  was written from reading LeRobot's source and had never been run against downloaded
+  weights. It works: `lerobot/act_aloha_sim_transfer_cube_human` resolves its config, loads
+  as `ACTPolicy`, and `predict` returns a 100-step chunk of 14-dimensional actions at 2.0 s
+  against a 50 Hz body.
+
+  It also reported **confidence 1.0000, source=chunk_variance**. ACT is deterministic:
+  three samples of one observation give one chunk, the spread is zero, and zero spread
+  reads as perfect certainty. That is a policy that can never raise an interrupt wearing
+  the number that says it never needs to — precisely what `ConfidenceSource` exists to
+  prevent, and what ADR 0003 is about.
+
+  The adapter now compares the samples it already drew and reports `NONE` when they are
+  identical, rather than trusting the caller to pass `deterministic=True`. Relying on the
+  declaration would have left the same hole for the next checkpoint nobody checked.
+  Stochastic policies are unaffected — the fake-VLA harness still separates 0.964 from
+  0.085.
+- **A → B — worth knowing for the shell and for v0.3.** A policy can now legitimately
+  report `ConfidenceSource.NONE` at runtime, not just in tests: any ACT or other
+  deterministic checkpoint will. The shell should show "no confidence estimate for this
+  policy" rather than a zero that looks like low confidence, and the v0.3 intervention
+  curve is only meaningful for policies that produce a measurable spread. Choosing a
+  stochastic base policy is a v0.3 prerequisite rather than a preference.
