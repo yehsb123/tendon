@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-import type { Body, Compatibility, ConnectionStatus, SkillSummary } from "../api/client";
+import { api } from "../api/client";
+import type { Body, Compatibility, ConnectionStatus, Memory, SkillSummary } from "../api/client";
 import type { Intent, Observation } from "../api/types";
 import { CorrectionEditor } from "../panels/CorrectionEditor";
 import { IntentPreview } from "../panels/IntentPreview";
@@ -13,6 +14,64 @@ import { useSession } from "../state/session";
  * Answers one question at all times: what is it about to do, and should I let it?
  * Anything that does not serve that question belongs in another view.
  */
+/**
+ * What the policy has been taught for the skill and body in front of you.
+ *
+ * The shell could show that it asks less often. It could not show why, and from the
+ * operator's seat "it learned" and "it got lucky" look identical — which makes the one
+ * claim this project rests on unverifiable by the person best placed to check it.
+ *
+ * Re-read when an episode finishes, because that is when the number changes.
+ */
+function Taught({
+  skill,
+  body,
+  finished,
+}: {
+  skill: string | null;
+  body: string | null;
+  finished: boolean;
+}) {
+  const [memory, setMemory] = useState<Memory | null>(null);
+
+  useEffect(() => {
+    if (skill === null || body === null) {
+      setMemory(null);
+      return;
+    }
+
+    let cancelled = false;
+    void api.memory().then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        // Not an error worth a banner. This panel is an aid; the episode is the work.
+        setMemory(null);
+        return;
+      }
+      setMemory(result.value.find((m) => m.skill === skill && m.body === body) ?? null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [skill, body, finished]);
+
+  if (skill === null || body === null) return null;
+
+  // Nothing taught yet is worth saying out loud rather than hiding: an empty memory is
+  // why the policy is about to ask, and a blank space does not explain that.
+  const count = memory?.corrections ?? 0;
+
+  return (
+    <p className="taught" data-empty={count === 0 ? "true" : undefined}>
+      {count === 0
+        ? "Nothing taught yet — it will hand over wherever it is unsure."
+        : `${count} correction${count === 1 ? "" : "s"} remembered for ${skill}. ` +
+          "Near those, it acts instead of asking."}
+    </p>
+  );
+}
+
 export function Live() {
   const {
     status,
@@ -59,6 +118,8 @@ export function Live() {
         }
         running={session?.running ?? false}
       />
+
+      <Taught skill={chosenSkill} body={chosenBody} finished={session?.finished ?? false} />
 
       {runtimeVersion !== null && !(session?.running ?? false) ? (
         <Chooser

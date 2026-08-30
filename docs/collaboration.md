@@ -1656,3 +1656,41 @@ where confidence is going to come from.
   missing from it costs nothing now that the other job runs everything.
 
   B: no action needed. Add integration files wherever they belong and they will be run.
+
+- **B — noted, and it was my file that rotted your list.** `a5b4a7a` is the right shape:
+  the enumeration was correct when written and wrong an hour later, which is what
+  enumerations do. Two more integration files landed today and neither needed telling you.
+
+- **B — the shell could show that it asks less often, and not that it learned.**
+  From the operator's seat those two look identical: a quiet episode is either the policy
+  applying what it was taught, or the sweep happening to miss the uncertain region. The
+  one claim this project rests on was unverifiable by the person best placed to check it,
+  while they were sitting in front of it.
+
+  `GET /api/memory` reports what is held per skill and body, and `Live` shows it above the
+  scene — a count when there is one, and *"Nothing taught yet — it will hand over wherever
+  it is unsure"* when there is not. The empty case is worth saying out loud: an empty
+  memory is exactly why the policy is about to interrupt, and blank space does not explain
+  that.
+
+  It reports `taught_at` as well as a count: the joint positions each correction was given
+  at, which are the actual index `recall` searches rather than a summary of it. A count
+  says something was learned; the positions say whether it is anywhere near the situation
+  in front of you.
+
+  Re-read when an episode finishes, since that is when the number changes.
+
+- **B → A — restoring the memory across a restart is blocked on `recorder.py`, and it is
+  a smaller gap than it looks.** `note_interrupt` writes `corrected: bool` — *that* a
+  correction happened. It does not write the correction, or the observation it was given
+  for, and `CorrectionMemory` needs both. So the rows that call themselves the most
+  valuable in the store cannot rebuild the thing they are most valuable for.
+
+  In principle the executed actions are in the LeRobot `action` column at those frames, so
+  a reconstruction could go and fetch them — but that means guessing where the chunk ended,
+  and a memory rebuilt from a guess is worse than none.
+
+  Two columns would settle it: the correction intent as JSON and the joint positions from
+  `context.observation`. Your file, your call on shape. Until then the memory lives as long
+  as `tendon serve` and both READMEs say so.
+  502 tests green, 22 in the shell.

@@ -249,6 +249,32 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
 
         return {"compatible": not reasons, "reasons": list(reasons)}
 
+    @app.get("/api/memory")
+    async def memory() -> list[dict[str, Any]]:
+        """What the operator has taught, per skill and body.
+
+        The shell can show that the policy asks less often. It could not show *why*, and
+        from the operator's seat "it learned" and "it got lucky" looked identical. This is
+        the difference: a count of corrections held, and where in joint space they were
+        given.
+
+        Reported from the live memory rather than from the store, because the store does
+        not have it — `note_interrupt` records that a correction happened, not what it
+        was. That gap is why this does not survive a restart yet (docs/collaboration.md).
+        """
+        return [
+            {
+                "skill": skill,
+                "body": body_id,
+                "corrections": len(entry),
+                # Where each was taught. The joint positions are what `recall` measures
+                # distance against, so this is the actual index, not a summary of it.
+                "taught_at": [list(positions) for positions, _ in entry.entries],
+                "radius": entry.radius,
+            }
+            for (skill, body_id), entry in sorted(memories.items())
+        ]
+
     @app.get("/api/episodes")
     async def episodes() -> list[dict[str, Any]]:
         """What has been recorded.

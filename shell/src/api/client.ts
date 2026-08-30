@@ -102,6 +102,22 @@ export interface Episode {
   detail: string | null;
 }
 
+/**
+ * What the operator has taught, for one skill on one body.
+ *
+ * The shell could already show that the policy asks less often. It could not show why,
+ * and from the operator's seat "it learned" and "it got lucky" look the same. `taught_at`
+ * is the actual index the policy searches — joint positions, the thing recall measures
+ * distance against — not a summary of it.
+ */
+export interface Memory {
+  skill: string;
+  body: string;
+  corrections: number;
+  taught_at: number[][];
+  radius: number;
+}
+
 export interface SessionSnapshot {
   session_id: string;
   skill: string;
@@ -123,6 +139,7 @@ export const api = {
   bodies: () => request<Body[]>("/api/bodies"),
   skills: () => request<SkillSummary[]>("/api/skills"),
   episodes: () => request<Episode[]>("/api/episodes"),
+  memory: () => request<Memory[]>("/api/memory"),
 
   skill: (namespace: string, name: string) =>
     request<SkillDetail>(`/api/skills/${namespace}/${name}`),

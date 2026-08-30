@@ -169,6 +169,12 @@ into the episode's `interrupts` table. The third is the one that matters later �
 demonstration data almost never contains recovery from failure, and that table is the only
 place it is written down.
 
+`Live` shows what it has been taught for the skill in front of you — a count, and nothing
+at all is said plainly rather than left blank, because an empty memory is exactly why it is
+about to ask. Otherwise a quiet episode is ambiguous: the policy applying what you taught
+it and the run happening to miss the uncertain region look the same from the operator's
+seat.
+
 The memory is kept per skill and body for as long as the server runs, so what you teach in
 one episode is there in the next. That is the whole shape of the claim: correct it, and it
 asks you less often. It does not yet survive a restart — the corrections are on disk, and

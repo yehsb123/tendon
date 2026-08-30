@@ -293,6 +293,18 @@
   color: var(--fg-muted);
 }
 
+/* What the policy has been taught. Quiet: it is context for the decision an operator is
+   about to make, not the decision itself, and it must not compete with the interrupt. */
+.taught {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.taught[data-empty="true"] {
+  font-style: italic;
+}
+
 /* An operator who thinks a correction was applied when it was refused is worse off than
    one who is told, so a rejected decision is loud rather than a toast that fades. */
 .hint-error {
