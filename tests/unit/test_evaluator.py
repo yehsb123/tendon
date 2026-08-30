@@ -13,9 +13,11 @@ import pytest
 from tendon.kernel.types import ConfidenceSource
 from tendon.services.evaluator import (
     EpisodeOutcome,
+    SuccessCriterion,
     evaluate,
     intervention_curve,
     is_significant,
+    judge,
 )
 
 MEASURED = ConfidenceSource.CHUNK_VARIANCE
@@ -257,3 +259,78 @@ def test_no_variance_is_not_a_finding() -> None:
 
     assert not significant
     assert "variance" in why
+
+
+# ------------------------------------------------------------------------ success judging
+
+
+def test_a_criterion_is_parsed_from_its_suffix() -> None:
+    above = SuccessCriterion.parse("cube_height_above", 0.1)
+    assert (above.key, above.threshold, above.comparison) == ("cube_height", 0.1, "above")
+
+    below = SuccessCriterion.parse("tilt_below", 0.2)
+    assert (below.key, below.threshold, below.comparison) == ("tilt", 0.2, "below")
+
+
+def test_a_bare_key_defaults_to_above() -> None:
+    """The common case, and the one a reader assumes."""
+    assert SuccessCriterion.parse("cube_height", 0.1).comparison == "above"
+
+
+def test_a_criterion_is_met_or_not() -> None:
+    above = SuccessCriterion("cube_height", 0.1, "above")
+    assert above.met_by({"cube_height": 0.15}) is True
+    assert above.met_by({"cube_height": 0.05}) is False
+
+    below = SuccessCriterion("tilt", 0.2, "below")
+    assert below.met_by({"tilt": 0.1}) is True
+    assert below.met_by({"tilt": 0.3}) is False
+
+
+def test_a_missing_quantity_is_unknown_not_failure() -> None:
+    """A skill asking about cube height on a body that does not report it has not failed
+    the task. Nobody measured, and counting that as failure makes an unmeasurable setup
+    look like a broken policy."""
+    assert SuccessCriterion("cube_height", 0.1).met_by({"sim_time_s": 2.0}) is None
+
+
+def test_a_non_numeric_quantity_is_unknown() -> None:
+    assert SuccessCriterion("cube_height", 0.1).met_by({"cube_height": "high"}) is None
+
+
+def test_judge_requires_every_criterion() -> None:
+    criteria = [
+        SuccessCriterion("cube_height", 0.1, "above"),
+        SuccessCriterion("tilt", 0.2, "below"),
+    ]
+    assert judge({"cube_height": 0.2, "tilt": 0.1}, criteria) == (True, None)
+
+    verdict, reason = judge({"cube_height": 0.2, "tilt": 0.5}, criteria)
+    assert verdict is False
+    assert reason is not None and "tilt" in reason
+
+
+def test_judge_returns_unknown_when_anything_is_unmeasurable() -> None:
+    """A partial verdict is worse than none, because it would be counted as a result."""
+    criteria = [
+        SuccessCriterion("cube_height", 0.1, "above"),
+        SuccessCriterion("tilt", 0.2, "below"),
+    ]
+    verdict, reason = judge({"cube_height": 0.2}, criteria)
+    assert verdict is None
+    assert reason is not None and "tilt" in reason
+
+
+def test_a_skill_with_no_criteria_cannot_be_judged() -> None:
+    verdict, reason = judge({"cube_height": 0.5}, [])
+    assert verdict is None
+    assert reason is not None and "no success criteria" in reason
+
+
+def test_the_failure_reason_is_what_the_breakdown_groups_on() -> None:
+    """The reason string becomes a failure_mode label, so it has to be stable across
+    episodes rather than carrying per-run values."""
+    criteria = [SuccessCriterion("cube_height", 0.1, "above")]
+    _, first = judge({"cube_height": 0.01}, criteria)
+    _, second = judge({"cube_height": 0.09}, criteria)
+    assert first == second, "two failures of the same kind must group together"

@@ -38,11 +38,14 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from tendon.kernel.types import ConfidenceSource
 
 __all__ = [
     "EpisodeOutcome",
+    "SuccessCriterion",
+    "judge",
     "EvaluationResult",
     "InterventionPoint",
     "evaluate",
@@ -128,6 +131,74 @@ class InterventionPoint:
     intervention_rate: float
     success_rate: float
     episodes: int
+
+
+@dataclass(frozen=True)
+class SuccessCriterion:
+    """One condition a skill declares as success.
+
+    Read from `skill.yaml`, checked against `Observation.extra` at the end of an episode.
+    `cube_height_above: 0.1` becomes `SuccessCriterion("cube_height", 0.1, "above")`.
+
+    The value comes from the driver, because only the driver knows what the scene
+    contains. That keeps task-specific knowledge out of the kernel — a skill names a
+    quantity, a body supplies it, and neither has to know about the other.
+    """
+
+    key: str
+    threshold: float
+    comparison: str = "above"
+
+    @classmethod
+    def parse(cls, name: str, threshold: float) -> SuccessCriterion:
+        """Turn a `skill.yaml` key into a criterion.
+
+        `<key>_above` and `<key>_below` are the two supported forms. A bare key defaults
+        to `above`, which is the common case and the one a reader assumes.
+        """
+        for suffix, comparison in (("_above", "above"), ("_below", "below")):
+            if name.endswith(suffix):
+                return cls(name[: -len(suffix)], float(threshold), comparison)
+        return cls(name, float(threshold), "above")
+
+    def met_by(self, extra: dict[str, Any]) -> bool | None:
+        """Whether this held. None when the body did not report the quantity.
+
+        None is not failure. A skill asking about cube height on a body that does not
+        report it has not failed the task — nobody measured, and recording that as a
+        failure would make an unmeasurable setup look like a broken policy.
+        """
+        if self.key not in extra:
+            return None
+        try:
+            value = float(extra[self.key])
+        except (TypeError, ValueError):
+            return None
+        return value > self.threshold if self.comparison == "above" else value < self.threshold
+
+
+def judge(
+    final_extra: dict[str, Any], criteria: Sequence[SuccessCriterion]
+) -> tuple[bool | None, str | None]:
+    """Did the episode succeed, and if not, why.
+
+    Returns `(None, reason)` when any criterion could not be evaluated: a partial verdict
+    is worse than none, because it would be counted as a real result.
+
+    All criteria must hold. The failure label names the first that did not, which is what
+    the failure-mode breakdown groups on.
+    """
+    if not criteria:
+        return None, "skill declares no success criteria"
+
+    for criterion in criteria:
+        met = criterion.met_by(final_extra)
+        if met is None:
+            return None, f"body does not report {criterion.key!r}"
+        if not met:
+            return False, f"{criterion.key} not {criterion.comparison} {criterion.threshold:g}"
+
+    return True, None
 
 
 def evaluate(outcomes: Sequence[EpisodeOutcome], *, skill: str) -> EvaluationResult:

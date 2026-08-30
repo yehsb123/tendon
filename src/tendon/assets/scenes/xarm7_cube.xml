@@ -1,0 +1,100 @@
+<!--
+  tendon scene: a cube in front of a UFACTORY xArm7.
+
+  The second body, and the reason it exists is design decision 3. A HAL claimed across one
+  robot is an interface; claimed across two that disagree is a HAL. This one disagrees with
+  the SO-ARM100 on nearly everything a driver has to get right:
+
+      arm joints            5              7
+      gripper transmission  joint          tendon
+      gripper units         radians        0-255
+      open end of range     upper (1.75)   LOWER (0)
+      graspable object      16-104 mm      57-141 mm
+
+  The last two rows are the ones that would silently break a skill. `Action.gripper = 1.0`
+  has to mean open on both, and a 30 mm cube that the SO-ARM100 grasps cannot be held by
+  this gripper at all — it does not close past 57 mm. Hence a 70 mm cube here.
+
+  The arm is included from src/tendon/assets/robots/xarm7_wrist_cam.xml, a one-camera
+  modification of the Menagerie model (BSD-3-Clause). Unmodified original and attribution
+  in third_party/mujoco_menagerie/.
+
+  Distances [m], angles [rad], mass [kg].
+-->
+<mujoco model="tendon xarm7 cube">
+  <include file="../robots/xarm7_wrist_cam.xml"/>
+
+  <!--
+    After the include, not before. MuJoCo resolves meshdir against the top-level file
+    rather than the file that declared it, and an include overwrites whatever came before
+    it. Same trap as the SO-ARM100 scene; see that file for the long version.
+  -->
+  <compiler angle="radian" autolimits="true"
+            meshdir="../../../../third_party/mujoco_menagerie/ufactory_xarm7/assets"/>
+
+  <!--
+    Stated rather than inherited. The upstream xarm7 model sets no friction cone, so this
+    scene picks the same elliptic cone the SO-ARM100 model uses: comparing grasp behaviour
+    across two bodies is only meaningful if the solver is not also changing underneath.
+
+    500Hz physics against a 100Hz control tier, five substeps per control step.
+  -->
+  <option timestep="0.002" integrator="implicitfast" cone="elliptic" impratio="10"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="150" elevation="-20" offwidth="640" offheight="480"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="cube_material" rgba="0.85 0.35 0.2 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <camera name="scene" pos="1.2 -1.0 0.9" xyaxes="0.64 0.77 0 -0.36 0.30 0.88"/>
+
+    <!--
+      0.5 m along +x, which is inside this arm's reach and clear of its base. The xArm7
+      extends along +x from its own origin, where the SO-ARM100 extends along -y — another
+      thing a skill cannot assume and a driver does not need to know.
+    -->
+    <site name="cube_spawn" pos="0.5 0 0.035" size="0.004" rgba="0 1 0 0.3"/>
+
+    <body name="cube" pos="0.5 0 0.035">
+      <freejoint name="cube_free"/>
+      <!--
+        70 mm cube, half-extent 35 mm. Sized to this gripper, not to the other one: the
+        measured jaw gap is 57 mm fully closed and 141 mm fully open, so a 30 mm cube
+        would fall straight through a fully closed grasp. Friction and solver parameters
+        match the SO-ARM100 scene so the two bodies are compared on the same contact model.
+      -->
+      <geom name="cube" type="box" size="0.035 0.035 0.035" material="cube_material"
+            mass="0.1" friction="1 0.005 0.0001" solimp="2 1 0.01" solref="0.01 1"/>
+      <site name="cube_center" pos="0 0 0" size="0.004" rgba="1 0 0 0.3"/>
+    </body>
+  </worldbody>
+
+  <keyframe>
+    <!--
+      RESET BY NAME, NOT BY INDEX. The included model brings its own "home" keyframe at
+      index 0, written for a 13-value qpos. The cube's freejoint takes nq to 20, MuJoCo
+      pads the difference with zeros, and the cube lands at the world origin inside the
+      arm's base. Look "start" up with mj_name2id — the same hazard as the SO-ARM100 scene.
+
+      Arm pose is upstream's "home". The gripper opens at ctrl 0 on this body, so the
+      driver is constructed with gripper_opens_high=False and `Action.gripper = 1.0` still
+      means open.
+    -->
+    <key name="start"
+         qpos="0 -0.247 0 0.909 0 1.15644 0  0 0 0 0 0 0  0.5 0 0.035 1 0 0 0"
+         ctrl="0 -0.247 0 0.909 0 1.15644 0  0"/>
+  </keyframe>
+</mujoco>

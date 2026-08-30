@@ -92,6 +92,9 @@ class Skill:
     policy_base: str | None = None
     policy_adapter: str | None = None
     eval_episodes: int = 50
+    #: Success conditions, checked against `Observation.extra` at the end of an episode.
+    #: The body supplies the quantity; the skill names it. Neither knows about the other.
+    success_criteria: tuple[tuple[str, float], ...] = ()
     source: Path | None = None
 
     @property
@@ -148,6 +151,7 @@ def load_skill(path: str | Path) -> Skill:
         policy_base=_optional_str(_mapping(raw, "policy", path, optional=True).get("base")),
         policy_adapter=_optional_str(_mapping(raw, "policy", path, optional=True).get("adapter")),
         eval_episodes=int(_mapping(raw, "eval", path, optional=True).get("episodes", 50)),
+        success_criteria=_success(_mapping(raw, "eval", path, optional=True), path),
         source=path,
     )
 
@@ -274,3 +278,27 @@ def _threshold(block: dict[str, Any], path: Path) -> float:
     if not 0.0 <= threshold <= 1.0:
         raise SkillError(f"{path}: confidence_threshold must be between 0 and 1, got {threshold}")
     return threshold
+
+
+def _success(block: dict[str, Any], path: Path) -> tuple[tuple[str, float], ...]:
+    """Parse `eval.success` into (name, threshold) pairs.
+
+    Left as raw pairs rather than parsed criteria so that `skill.py` does not depend on
+    `evaluator.py` — a skill is a description, and how success is judged belongs with the
+    thing that judges it.
+    """
+    success = block.get("success")
+    if success is None:
+        return ()
+    if not isinstance(success, dict):
+        raise SkillError(f"{path}: eval.success must be a mapping of condition to threshold")
+
+    pairs: list[tuple[str, float]] = []
+    for name, threshold in success.items():
+        try:
+            pairs.append((str(name), float(threshold)))
+        except (TypeError, ValueError) as exc:
+            raise SkillError(
+                f"{path}: eval.success[{name!r}] must be a number, got {threshold!r}"
+            ) from exc
+    return tuple(pairs)

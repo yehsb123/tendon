@@ -48,11 +48,14 @@ _DEFAULT_SCENE = Path(__file__).resolve().parent.parent / "assets" / "scenes" / 
 # would start every episode in penetration.
 _RESET_KEYFRAME = "start"
 
-# The actuator that closes the gripper rather than moving an arm joint. Held separately
-# because `Action` models the gripper as its own scalar in [0, 1] instead of one more
-# joint value: a suction cup and a five-finger hand have no comparable joint, but both
-# have a meaningful "how closed".
-_GRIPPER_ACTUATOR = "Jaw"
+# Actuator names that mean "gripper" in the models tendon loads. `Jaw` is the SO-ARM100's
+# and `gripper` is the xArm7's. Held separately from the arm because `Action` models the
+# gripper as its own scalar in [0, 1] rather than one more joint value: a suction cup and a
+# five-finger hand have no comparable joint, but both have a meaningful "how closed".
+#
+# Deliberately a short list rather than a heuristic. Guessing that some unnamed actuator is
+# a gripper would make `Capability` wrong in a way nothing downstream can detect.
+_GRIPPER_NAME_CONVENTIONS = ("Jaw", "gripper", "grip", "hand")
 
 
 def _now() -> datetime:
@@ -108,7 +111,8 @@ class MujocoDriver(Driver):
         scene_path: str | Path | None = None,
         *,
         control_hz: float = 100.0,
-        gripper_actuator: str = _GRIPPER_ACTUATOR,
+        gripper_actuator: str | None = None,
+        gripper_opens_high: bool = True,
         render_cameras: tuple[str, ...] = (),
         render_size: tuple[int, int] = (480, 640),
         render_hz: float = 0.0,
@@ -119,8 +123,18 @@ class MujocoDriver(Driver):
                 tendon.
             control_hz: Rate this body accepts setpoints at [Hz]. Each `apply` advances
                 physics by 1/control_hz [s], however many solver substeps that takes.
-            gripper_actuator: Name of the actuator that closes the gripper. Excluded from
-                the arm's joint vector and surfaced through `Action.gripper` instead.
+            gripper_actuator: Name of the actuator that opens and closes the gripper.
+                Excluded from the arm's joint vector and surfaced through `Action.gripper`
+                instead. None looks for a conventional name — `Jaw` on the SO-ARM100,
+                `gripper` on the xArm7 — and reports no gripper if none matches.
+            gripper_opens_high: Whether the *upper* end of the gripper actuator's control
+                range is the open position. True on the SO-ARM100, where the jaw joint runs
+                to 1.75 rad open. **False on the xArm7**, where 0 opens the fingers to
+                141 mm and 255 closes them to 57 mm. Both were measured, not assumed.
+
+                This exists so `Action.gripper = 1.0` means open on every body. Without it
+                the same skill opens one gripper and closes another, and design decision 3
+                stops being true.
             render_cameras: Cameras to render when `render()` is called. Empty by
                 default: rendering costs milliseconds per frame per camera, and a run
                 that records no video should not pay for it. Naming a camera the scene
@@ -169,6 +183,7 @@ class MujocoDriver(Driver):
                 f"no simulation time"
             )
 
+        self._gripper_opens_high = bool(gripper_opens_high)
         self._index_actuators(gripper_actuator)
 
         self._cameras = tuple(
@@ -295,42 +310,133 @@ class MujocoDriver(Driver):
 
     # ------------------------------------------------------------------- setup
 
-    def _index_actuators(self, gripper_actuator: str) -> None:
-        """Split actuators into arm joints and the gripper, once, at load time.
+    def _index_actuators(self, gripper_actuator: str | None) -> None:
+        """Split actuators into arm joints and a gripper, once, at load time.
 
         Resolved here rather than per step because the mapping cannot change during a
         session and `observe` runs at the control rate.
+
+        This does more than split a list, because two real models disagree on almost
+        everything about a gripper. On an SO-ARM100 the gripper actuator drives a joint,
+        in radians, and the *upper* end of its range is open. On a UFACTORY xArm7 it drives
+        a **tendon**, over 0-255, and the *lower* end is open. Both are correct for their
+        hardware, and a HAL that does not absorb the difference makes `Action.gripper=1.0`
+        mean "open" on one body and "closed" on the other — at which point no skill
+        transfers and design decision 3 is decoration.
         """
         mj = self._mj
-        names = [
-            mj.mj_id2name(self._model, mj.mjtObj.mjOBJ_ACTUATOR, i) for i in range(self._model.nu)
+        model = self._model
+        names = [mj.mj_id2name(model, mj.mjtObj.mjOBJ_ACTUATOR, i) for i in range(model.nu)]
+
+        gripper_index = self._find_gripper(names, gripper_actuator)
+        self._gripper_actuator: int | None = gripper_index
+
+        # Arm joints are the *joint-transmission* actuators that are not the gripper.
+        # Selected by transmission type rather than by name: a tendon or site actuator has
+        # no joint to read back, and treating its `trnid` as a joint id silently indexes
+        # the wrong row of `qpos`. That is exactly what happened before this was fixed —
+        # the xArm7 gripper drives tendon 0, which read back as joint 0, the shoulder.
+        self._arm_actuators = [
+            i
+            for i in range(model.nu)
+            if i != gripper_index and int(model.actuator_trntype[i]) == mj.mjtTrn.mjTRN_JOINT
         ]
-        self._arm_actuators = [i for i, name in enumerate(names) if name != gripper_actuator]
-        found = [i for i, name in enumerate(names) if name == gripper_actuator]
-        self._gripper_actuator: int | None = found[0] if found else None
-
         if not self._arm_actuators:
-            raise DriverError(f"scene has no arm actuators; found only {names}")
+            raise DriverError(
+                f"scene has no joint-driven arm actuators; found {names} with transmission "
+                f"types {[int(model.actuator_trntype[i]) for i in range(model.nu)]}"
+            )
 
-        # Addresses for reading state back. actuator_trnid[i, 0] is the joint an actuator
-        # drives; qposadr and dofadr are where that joint's position and velocity live.
         self._arm_qpos = [
-            int(self._model.jnt_qposadr[self._model.actuator_trnid[i, 0]])
-            for i in self._arm_actuators
+            int(model.jnt_qposadr[model.actuator_trnid[i, 0]]) for i in self._arm_actuators
         ]
         self._arm_dof = [
-            int(self._model.jnt_dofadr[self._model.actuator_trnid[i, 0]])
-            for i in self._arm_actuators
+            int(model.jnt_dofadr[model.actuator_trnid[i, 0]]) for i in self._arm_actuators
         ]
 
-        if self._gripper_actuator is not None:
-            joint = self._model.actuator_trnid[self._gripper_actuator, 0]
-            self._gripper_qpos = int(self._model.jnt_qposadr[joint])
-            low, high = self._model.actuator_ctrlrange[self._gripper_actuator]
-            self._gripper_range = (float(low), float(high))  # [rad]
-        else:
+        if gripper_index is None:
             self._gripper_qpos = -1
-            self._gripper_range = (0.0, 1.0)
+            self._gripper_ctrl_open = 0.0
+            self._gripper_ctrl_closed = 1.0
+            self._gripper_joint_range = (0.0, 1.0)
+            return
+
+        self._gripper_qpos = self._gripper_readback_qpos(gripper_index)
+        low, high = (float(v) for v in model.actuator_ctrlrange[gripper_index])
+        if self._gripper_opens_high:
+            self._gripper_ctrl_open, self._gripper_ctrl_closed = high, low
+        else:
+            self._gripper_ctrl_open, self._gripper_ctrl_closed = low, high
+
+        if self._gripper_qpos >= 0:
+            joint = self._readback_joint(gripper_index)
+            jlow, jhigh = (float(v) for v in model.jnt_range[joint])
+            self._gripper_joint_range = (jlow, jhigh)
+        else:
+            self._gripper_joint_range = (0.0, 1.0)
+
+    def _gripper_open_closed_positions(self) -> tuple[float, float]:
+        """Joint positions corresponding to fully open and fully closed.
+
+        Which end of the joint's range is open follows the actuator direction, because a
+        gripper actuator drives its joint monotonically. Measured on both bodies: the
+        SO-ARM100 jaw opens toward 1.75 rad, the xArm7 driver joints open toward 0.
+        """
+        low, high = self._gripper_joint_range
+        return (high, low) if self._gripper_opens_high else (low, high)
+
+    def _find_gripper(self, names: list[str], requested: str | None) -> int | None:
+        """Locate the gripper actuator by name, or guess from a short list of conventions.
+
+        Guessing is bounded and explicit rather than clever. `Jaw` is what the SO-ARM100
+        calls it and `gripper` is what the xArm7 calls it; anything else has to be named,
+        because silently deciding that some actuator is a gripper would make the whole
+        `Capability` wrong in a way nothing downstream can detect.
+        """
+        if requested is not None:
+            found = [i for i, name in enumerate(names) if name == requested]
+            if not found:
+                raise DriverError(f"no actuator named {requested!r}; scene has {names}")
+            return found[0]
+
+        for convention in _GRIPPER_NAME_CONVENTIONS:
+            found = [i for i, name in enumerate(names) if name == convention]
+            if found:
+                return found[0]
+        return None
+
+    def _readback_joint(self, actuator: int) -> int:
+        """The joint whose position reports this actuator's state.
+
+        For a joint transmission that is the joint it drives. For a tendon it is the first
+        joint the tendon wraps — on the xArm7 the `split` tendon wraps `right_driver_joint`
+        and `left_driver_joint` symmetrically, so either one describes the opening.
+        """
+        mj = self._mj
+        model = self._model
+        kind = int(model.actuator_trntype[actuator])
+
+        if kind == mj.mjtTrn.mjTRN_JOINT:
+            return int(model.actuator_trnid[actuator, 0])
+
+        if kind == mj.mjtTrn.mjTRN_TENDON:
+            tendon = int(model.actuator_trnid[actuator, 0])
+            start = int(model.tendon_adr[tendon])
+            for k in range(start, start + int(model.tendon_num[tendon])):
+                if int(model.wrap_type[k]) == mj.mjtWrap.mjWRAP_JOINT:
+                    return int(model.wrap_objid[k])
+
+        return -1
+
+    def _gripper_readback_qpos(self, actuator: int) -> int:
+        """`qpos` address reporting the gripper's opening, or -1 when there is none.
+
+        -1 rather than a fabricated value. A site- or slidercrank-driven gripper has no
+        single joint that describes it, and `Proprioception.gripper_open` is then reported
+        as `None` — absent rather than invented.
+        """
+        joint = self._readback_joint(actuator)
+        return int(self._model.jnt_qposadr[joint]) if joint >= 0 else -1
 
     # ---------------------------------------------------------------- contract
 
@@ -389,13 +495,14 @@ class MujocoDriver(Driver):
         qvel = self._data.qvel
 
         gripper_open: float | None = None
-        if self._gripper_actuator is not None:
-            low, high = self._gripper_range
-            span = high - low
-            raw = float(qpos[self._gripper_qpos])  # [rad]
-            # Clipped because the joint can overshoot its actuator range under contact,
-            # while `Proprioception.gripper_open` is constrained to [0, 1] by the model.
-            gripper_open = float(np.clip((raw - low) / span, 0.0, 1.0)) if span else 0.0
+        if self._gripper_actuator is not None and self._gripper_qpos >= 0:
+            # Normalised so 0 is closed and 1 is open on every body, whichever end of the
+            # joint's own range that happens to be. Reported as None when no single joint
+            # describes the opening, rather than inventing a number.
+            open_at, closed_at = self._gripper_open_closed_positions()
+            span = open_at - closed_at
+            raw = float(qpos[self._gripper_qpos])  # [rad] or [m], per joint type
+            gripper_open = float(np.clip((raw - closed_at) / span, 0.0, 1.0)) if span else 0.0
 
         return Observation(
             step=self._step,
@@ -443,11 +550,13 @@ class MujocoDriver(Driver):
         applied_gripper: float | None = None
         if action.gripper is not None and self._gripper_actuator is not None:
             # Reported back in the same normalised [0, 1] the caller used, not in the
-            # joint's radians. A round trip through `Action` has to produce something that
-            # can be commanded again.
+            # actuator's own units. A round trip through `Action` has to produce something
+            # that can be commanded again — and those units differ per body: radians on
+            # the SO-ARM100 jaw, 0-255 on the xArm7 tendon.
             applied_gripper = float(np.clip(action.gripper, 0.0, 1.0))
-            low, high = self._gripper_range
-            self._data.ctrl[self._gripper_actuator] = low + applied_gripper * (high - low)
+            self._data.ctrl[self._gripper_actuator] = self._gripper_ctrl_closed + (
+                applied_gripper * (self._gripper_ctrl_open - self._gripper_ctrl_closed)
+            )
 
         for _ in range(self._substeps):
             self._mj.mj_step(self._model, self._data)

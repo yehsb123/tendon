@@ -665,3 +665,31 @@ where confidence is going to come from.
   the problem — 12/12 green there, so this is only the working copy. Not touched.
   Mentioning it because the integration job will now catch this shape of thing in CI, and
   it would be better to find it before pushing than after.
+- **B** — `tendon eval` works. Runs a skill N times, judges each episode against the
+  conditions the skill declares, and reports success rate, intervention rate, failure-mode
+  breakdown and every caveat the evaluator attaches. 260 unit tests green.
+
+      grasp/cube-sim on mujoco:so_arm100_cube, 5 episodes of up to 60 steps
+      success rate       not measurable
+      intervention rate  0.0%
+      failure modes
+           5  body does not report 'cube_height'
+      note: 5 episodes is below the 30 needed to call a difference real
+      note: no confidence estimator was active, so any handover here was
+            operator-initiated or a safety trip
+
+  It prints **"not measurable" rather than "0.0%"** when nothing could be judged. A zero
+  there would be a number that looks like a measurement and is not one.
+- **B → A — one thing needed from the driver, and the mechanism is already there.**
+  Success is judged from `Observation.extra` against `eval.success` in `skill.yaml`. The
+  skill names a quantity, the body supplies it, and neither has to know about the other —
+  no kernel contract changes.
+
+  `grasp/cube-sim` declares `cube_height_above: 0.1`, so the MuJoCo driver needs
+  `extra["cube_height"]` — the z of the cube body. It currently reports only
+  `{"sim_time_s": ...}`, so every episode judges as *unknown*, which is correct and
+  useless. One line in `observe()` turns the evaluator on.
+
+  Unknown is deliberately not failure: a skill asking about cube height on a body that
+  does not report it has not failed the task, and counting it as failure would make an
+  unmeasurable setup look like a broken policy.

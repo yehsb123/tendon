@@ -227,10 +227,137 @@ def train(skill: str) -> None:
     raise NotImplementedError("v0.3")
 
 
-@app.command()
-def eval(skill: str, episodes: int = 50) -> None:
-    """Run the evaluation set for a skill."""
-    raise NotImplementedError("v0.3")
+@app.command("eval")
+def evaluate_skill(
+    skill: str = typer.Argument(..., help="Path to a skill directory or skill.yaml"),
+    driver: str = typer.Option("mujoco", help="Which body to evaluate on"),
+    episodes: int = typer.Option(0, help="Override the episode count in skill.yaml"),
+    steps: int = typer.Option(300, help="Maximum control steps per episode"),
+    seed: int = typer.Option(0, help="First seed; each episode increments it"),
+) -> None:
+    """Run a skill repeatedly and report what happened.
+
+    Success is judged from `Observation.extra` at the end of each episode, against the
+    conditions the skill declares. When the body does not report the quantity, the verdict
+    is *unknown* rather than *failed* — nobody measured, and recording that as failure
+    would make an unmeasurable setup look like a broken policy.
+    """
+    console = Console()
+
+    from tendon.drivers import base as driver_base
+    from tendon.kernel.scheduler import Scheduler
+    from tendon.services.evaluator import EpisodeOutcome, SuccessCriterion, evaluate, judge
+    from tendon.services.policies import ScriptedPolicy, sine_sweep
+    from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
+
+    try:
+        loaded = load_skill(skill)
+    except SkillError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    with contextlib.suppress(ImportError):
+        import tendon.drivers.mujoco  # noqa: F401
+
+    try:
+        body = driver_base.load(driver)
+        require_compatible(loaded, body)
+    except (driver_base.DriverError, IncompatibleBody) as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    capability = body.capability
+    criteria = [SuccessCriterion.parse(name, t) for name, t in loaded.success_criteria]
+    count = episodes or loaded.eval_episodes
+
+    console.print(
+        f"[dim]{escape(loaded.ref)} on {escape(capability.body_id)}, "
+        f"{count} episodes of up to {steps} steps[/dim]"
+    )
+
+    outcomes: list[EpisodeOutcome] = []
+    unknown = 0
+    try:
+        for index in range(count):
+            policy = ScriptedPolicy(
+                sine_sweep(dof=capability.dof),
+                control_hz=capability.control_hz,
+                dof=capability.dof,
+                name=loaded.ref,
+            )
+            scheduler = Scheduler(
+                driver=body,
+                limits=loaded.limits,
+                confidence_threshold=loaded.confidence_threshold,
+            )
+            result = scheduler.run_episode(policy, max_steps=steps, seed=seed + index)
+
+            final = result.records[-1].observation.extra if result.records else {}
+            verdict, reason = judge(final, criteria)
+            if verdict is None:
+                unknown += 1
+
+            outcomes.append(
+                EpisodeOutcome(
+                    episode_id=result.episode_id,
+                    skill=loaded.ref,
+                    succeeded=bool(verdict),
+                    interventions=result.interventions,
+                    corrections=result.corrections,
+                    faulted=result.state.value == "faulted",
+                    failure_mode=reason,
+                    confidence_source=_episode_source(result),
+                )
+            )
+    finally:
+        body.close()
+
+    report = evaluate(outcomes, skill=loaded.ref)
+
+    table = Table(show_header=False, box=None, pad_edge=False)
+    if unknown == len(outcomes):
+        # Every episode unjudged. Printing "0.0% success" here would be a number that
+        # looks like a measurement and is not one.
+        table.add_row("success rate", "[yellow]not measurable[/yellow]")
+    else:
+        table.add_row("success rate", f"{report.success_rate:.1%}")
+    table.add_row("intervention rate", f"{report.intervention_rate:.1%}")
+    table.add_row("corrections", str(report.corrections))
+    table.add_row("faults", str(report.faults))
+    table.add_row("episodes", str(report.episodes))
+    console.print(table)
+
+    if report.failure_modes:
+        console.print()
+        console.print("[dim]failure modes[/dim]")
+        for mode, n in report.failure_modes.items():
+            console.print(f"  {n:>4}  {escape(mode)}")
+
+    if report.caveats:
+        console.print()
+        for caveat in report.caveats:
+            console.print(f"[yellow]note:[/yellow] {escape(caveat)}")
+
+    if not report.is_comparable:
+        console.print(
+            "[yellow]note:[/yellow] this result cannot be compared against another run — "
+            "see docs/decisions/0003-confidence-has-no-upstream-source.md"
+        )
+
+
+def _episode_source(result):
+    """Which estimator drove handovers in this episode.
+
+    Read from the run rather than assumed: an evaluation that mislabels the estimator
+    produces a rate that is not comparable to anything, while looking like it is.
+    """
+    from tendon.kernel.types import ConfidenceSource
+
+    for record in result.records:
+        intent = getattr(record, "intent", None)
+        if intent is not None:
+            return intent.confidence.source
+    return ConfidenceSource.NONE
 
 
 if __name__ == "__main__":
