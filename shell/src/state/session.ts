@@ -17,10 +17,12 @@ import {
   api,
   connect,
   type Body,
+  type Compatibility,
   type ConnectionStatus,
   type SessionSnapshot,
   type SocketHandle,
 } from "../api/client";
+import type { SkillSummary } from "../api/client";
 import type { InboundMessage } from "../api/socket";
 import type { Intent, InterruptContext, Observation } from "../api/types";
 
@@ -31,6 +33,13 @@ interface SessionStore {
   runtimeVersion: string | null;
   /** Bodies the runtime can open. Physical ones are marked and warned about. */
   bodies: Body[];
+  /** Skills found under the runtime's skill root. */
+  skills: SkillSummary[];
+  /** What the operator has chosen to run, and on what. */
+  chosenSkill: string | null;
+  chosenBody: string | null;
+  /** Whether that pairing can run, and every reason it cannot. Null until asked. */
+  compatibility: Compatibility | null;
 
   // episode
   session: SessionSnapshot | null;
@@ -45,6 +54,7 @@ interface SessionStore {
   decisionError: string | null;
 
   checkRuntime: () => Promise<void>;
+  choose: (skill: string | null, body: string | null) => Promise<void>;
   start: (skill: string, body: string) => Promise<void>;
   decide: (resolution: string, correction?: Intent, note?: string) => Promise<void>;
   /** Whether the correction editor is open. Separate from `pending`: an operator can
@@ -61,6 +71,10 @@ export const useSession = create<SessionStore>((set, get) => ({
   statusDetail: null,
   runtimeVersion: null,
   bodies: [],
+  skills: [],
+  chosenSkill: null,
+  chosenBody: null,
+  compatibility: null,
 
   session: null,
   step: 0,
@@ -80,12 +94,40 @@ export const useSession = create<SessionStore>((set, get) => ({
     const result = await api.health();
     if (result.ok) {
       set({ runtimeVersion: result.value.version, statusDetail: null });
-      const bodies = await api.bodies();
+      const [bodies, skills] = await Promise.all([api.bodies(), api.skills()]);
       if (bodies.ok) set({ bodies: bodies.value });
+      if (skills.ok) set({ skills: skills.value });
+
+      // Pick a default only when there is no ambiguity. Choosing one of several on the
+      // operator's behalf is how someone ends up running a skill they did not select.
+      const usable = bodies.ok ? bodies.value.filter((b) => b.available && b.simulated) : [];
+      const runnable = skills.ok ? skills.value.filter((s) => !s.error) : [];
+      if (usable.length === 1 && runnable.length === 1) {
+        await get().choose(runnable[0]?.ref ?? null, usable[0]?.name ?? null);
+      }
     } else {
       // Not connected is a state to display, not an error to throw. The panel says so.
       set({ runtimeVersion: null, status: "closed", statusDetail: result.error });
     }
+  },
+
+  async choose(skill, body) {
+    set({ chosenSkill: skill, chosenBody: body, compatibility: null });
+    if (skill === null || body === null) return;
+
+    // Split here rather than in the request, so a ref that is not `namespace/name`
+    // fails visibly instead of producing a URL that happens to route somewhere.
+    const [namespace, name] = skill.split("/");
+    if (!namespace || !name) {
+      set({ statusDetail: `skill ref ${skill} is not namespace/name` });
+      return;
+    }
+
+    const result = await api.compatibility(namespace, name, body);
+    // A failed check is not the same as an incompatible pairing. Treating it as
+    // incompatible would hide a runtime problem behind a wrong explanation.
+    set({ compatibility: result.ok ? result.value : null });
+    if (!result.ok) set({ statusDetail: result.error });
   },
 
   async start(skill, body) {

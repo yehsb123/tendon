@@ -1,14 +1,11 @@
 import { useEffect } from "react";
 
-import type { Body, ConnectionStatus } from "../api/client";
+import type { Body, Compatibility, ConnectionStatus, SkillSummary } from "../api/client";
 import type { Intent, Observation } from "../api/types";
 import { CorrectionEditor } from "../panels/CorrectionEditor";
 import { IntentPreview } from "../panels/IntentPreview";
 import { TrajectoryPreview } from "../panels/TrajectoryPreview";
 import { useSession } from "../state/session";
-
-const SKILL = "skills/grasp/cube-sim";
-const BODY = "mujoco";
 
 /**
  * The view an operator watches during a shift.
@@ -31,6 +28,11 @@ export function Live() {
     setCorrecting,
     observation,
     bodies,
+    skills,
+    chosenSkill,
+    chosenBody,
+    compatibility,
+    choose,
     checkRuntime,
     start,
     decide,
@@ -44,15 +46,30 @@ export function Live() {
 
   return (
     <div className="live">
-      <PhysicalWarning body={bodies.find((b) => b.name === BODY)} />
+      <PhysicalWarning body={bodies.find((b) => b.name === chosenBody)} />
 
       <ConnectionBanner
         status={status}
         detail={statusDetail}
         runtimeVersion={runtimeVersion}
-        onStart={() => void start(SKILL, BODY)}
+        onStart={
+          chosenSkill && chosenBody && compatibility?.compatible
+            ? () => void start(chosenSkill, chosenBody)
+            : undefined
+        }
         running={session?.running ?? false}
       />
+
+      {runtimeVersion !== null && !(session?.running ?? false) ? (
+        <Chooser
+          skills={skills}
+          bodies={bodies}
+          chosenSkill={chosenSkill}
+          chosenBody={chosenBody}
+          compatibility={compatibility}
+          onChoose={(skill, body) => void choose(skill, body)}
+        />
+      ) : null}
 
       <section className="live-scene" aria-label="Scene">
         <SceneView
@@ -110,6 +127,77 @@ export function Live() {
 }
 
 /**
+ * Choosing what to run, and on what.
+ *
+ * The pairing is checked against the runtime before Start is offered. An operator invited
+ * to begin a run that fails at load has been wasted twice: once waiting, once reading an
+ * error that a question could have prevented.
+ *
+ * The reasons are shown rather than a bare "incompatible". "needs 6 axes, body has 5" is
+ * something a person can act on; a greyed-out button is not.
+ */
+function Chooser({
+  skills,
+  bodies,
+  chosenSkill,
+  chosenBody,
+  compatibility,
+  onChoose,
+}: {
+  skills: SkillSummary[];
+  bodies: Body[];
+  chosenSkill: string | null;
+  chosenBody: string | null;
+  compatibility: Compatibility | null;
+  onChoose: (skill: string | null, body: string | null) => void;
+}) {
+  return (
+    <div className="chooser">
+      <label>
+        <span>skill</span>
+        <select
+          value={chosenSkill ?? ""}
+          onChange={(event) => onChoose(event.target.value || null, chosenBody)}
+        >
+          <option value="">choose…</option>
+          {skills.map((skill) => (
+            <option key={skill.ref} value={skill.ref} disabled={Boolean(skill.error)}>
+              {skill.ref}
+              {skill.error ? " (does not load)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
+        <span>body</span>
+        <select
+          value={chosenBody ?? ""}
+          onChange={(event) => onChoose(chosenSkill, event.target.value || null)}
+        >
+          <option value="">choose…</option>
+          {bodies.map((body) => (
+            <option key={body.name} value={body.name} disabled={!body.available}>
+              {body.name}
+              {body.simulated ? "" : " — real hardware"}
+              {body.available ? "" : " (unavailable)"}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {compatibility && !compatibility.compatible ? (
+        <ul className="chooser-reasons" role="alert">
+          {compatibility.reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * A body that moves in the room does not look like one in a window.
  *
  * Shown before anything else and never dismissible. An operator approving a motion needs
@@ -149,7 +237,8 @@ function ConnectionBanner({
   status: ConnectionStatus;
   detail: string | null;
   runtimeVersion: string | null;
-  onStart: () => void;
+  /** Absent until a compatible skill and body have been chosen. */
+  onStart: (() => void) | undefined;
   running: boolean;
 }) {
   if (status === "open") return null;
@@ -168,7 +257,10 @@ function ConnectionBanner({
       <span className="banner-mark" aria-hidden="true" />
       <span>{message[status]}</span>
       {detail ? <span className="banner-detail">{detail}</span> : null}
-      {runtimeVersion !== null && !running ? (
+      {/* Offered only when something can actually be started. A button that explains
+          its own refusal after being pressed is a button that should not have been
+          pressable. */}
+      {onStart !== undefined && !running ? (
         <button type="button" className="btn btn-quiet" onClick={onStart}>
           Start an episode
         </button>

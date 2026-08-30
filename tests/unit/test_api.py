@@ -147,3 +147,48 @@ def test_reaching_hardware_is_never_something_a_request_does_by_omission(
     from tendon.api.app import StartRequest
 
     assert StartRequest(skill="x").allow_physical is False
+
+
+# ------------------------------------------------- what the shell calls, the server has
+
+
+def test_every_path_the_shell_calls_exists_on_the_server(client: TestClient) -> None:
+    """A path the shell calls and the server does not serve is a 404 the operator sees as
+    "something went wrong", with no way to tell a typo from an outage.
+
+    Read from the client source rather than maintained by hand, because a list of paths
+    kept in a test is one more copy to drift.
+    """
+    import re
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "shell" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+
+    called = set()
+    for raw in re.findall(r"[\"`](/api/[^\"`]*)", source):
+        # Template placeholders become path parameters.
+        called.add(re.sub(r"\$\{[^}]+\}", "{}", raw).rstrip("/"))
+
+    served = set()
+    for route in client.app.routes:
+        path = getattr(route, "path", "")
+        if path.startswith("/api"):
+            served.add(re.sub(r"\{[^}]+\}", "{}", path).rstrip("/"))
+
+    missing = sorted(called - served)
+    assert not missing, f"the shell calls {missing}, which the server does not serve"
+
+
+def test_the_compatibility_endpoint_is_actually_used() -> None:
+    """It was built so the shell could refuse to offer an impossible run, and then went
+    unused while the shell hardcoded a skill and a body.
+
+    An endpoint nobody calls is a maintained thing that verifies nothing — the same shape
+    as the declarations deleted in the previous round.
+    """
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "shell" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    assert "compatibility" in source

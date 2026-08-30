@@ -1116,3 +1116,19 @@ where confidence is going to come from.
   checkpoint's runtime dependency is not in its name, which is the same gap already noted
   for `skill.yaml` and for physical bodies. Worth solving once, in whatever `tendon install`
   turns out to be, rather than four times in `pyproject.toml`.
+- **B — the compatibility endpoint existed and nobody called it.** It was built so the
+  shell could refuse to offer a run that fails at load, and then the shell hardcoded a
+  skill and a body and never asked. An endpoint nobody calls is a maintained thing that
+  verifies nothing — the same shape as the declarations deleted last round.
+
+  Live now has a chooser. The pairing is checked before Start is offered, and when it
+  cannot run the **reasons** are shown rather than a greyed-out button: "needs 6 axes,
+  body has 5" is something a person acts on, a disabled control is not. A default is
+  picked only when there is exactly one runnable skill and one usable body — choosing
+  among several on the operator's behalf is how someone runs a skill they did not select.
+- **B — a path that worked by coincidence.** `test_every_path_the_shell_calls_exists_on_
+  the_server` reads both sides and compares, and immediately found the shell putting a
+  whole `namespace/name` ref into a single path segment. It routed correctly *only*
+  because a ref contains exactly one slash — a property nobody declared. Split into two
+  segments, and a ref that is not `namespace/name` now fails visibly instead of producing
+  a URL that happens to land somewhere. 355 tests green.

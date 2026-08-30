@@ -73,6 +73,11 @@ export interface SkillSummary {
   error?: string;
 }
 
+export interface Compatibility {
+  compatible: boolean;
+  reasons: string[];
+}
+
 export interface SessionSnapshot {
   session_id: string;
   skill: string;
@@ -97,10 +102,25 @@ export const api = {
   startSession: (skill: string, body: string, maxSteps = 500) =>
     request<SessionSnapshot>("/api/sessions", {
       method: "POST",
+      // `allow_physical` is deliberately not sent. Starting a run that moves real
+      // hardware is not something this screen should be able to do by clicking Start;
+      // the runtime refuses with a reason and the operator sees it.
       body: JSON.stringify({ skill, body, max_steps: maxSteps }),
     }),
 
   session: (id: string) => request<SessionSnapshot>(`/api/sessions/${id}`),
+
+  /**
+   * Whether a skill can run on a body, and every reason it cannot.
+   *
+   * Asked before offering to start, so an operator is not invited to begin a run that
+   * fails at load. The reasons are the useful part — "needs 6 axes, body has 5" is what
+   * someone acts on.
+   */
+  compatibility: (namespace: string, name: string, body: string) =>
+    request<Compatibility>(
+      `/api/skills/${namespace}/${name}/compatibility/${body}`,
+    ),
 
   /**
    * Answer a pending interrupt.
