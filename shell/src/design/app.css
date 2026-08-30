@@ -1,0 +1,260 @@
+/**
+ * Layout.
+ *
+ * Colour and type come from tokens.css; nothing here defines a raw value. If a component
+ * needs a colour that is not a token, either the token set is incomplete or the component
+ * is inventing a signal the operator has not been taught.
+ */
+
+@import "./tokens.css";
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100dvh;
+}
+
+/* -------------------------------------------------------------------------- nav */
+
+.app-nav {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-nav-item {
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.app-nav-item[aria-current="page"] {
+  background: var(--bg-sunken);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+/* ------------------------------------------------------------------------- live */
+
+.app-main { min-height: 0; }
+
+.live {
+  display: grid;
+  grid-template-columns: 1fr minmax(20rem, 26rem);
+  grid-template-rows: auto 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  height: 100%;
+}
+
+.banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  font-weight: var(--weight-medium);
+}
+
+/* A shape as well as a colour, in every state. */
+.banner-mark {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.banner[data-status="reconnecting"] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.banner[data-status="closed"] {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+}
+.banner[data-status="closed"] .banner-mark { border-radius: 2px; }
+
+.live-scene {
+  background: var(--bg-scene);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.scene-empty {
+  color: #8b9196;
+  text-align: center;
+  padding: var(--space-8);
+  max-width: 34ch;
+}
+.scene-empty-hint { font-size: var(--text-sm); color: #6f7679; }
+
+/* ---------------------------------------------------------------- intent panel */
+
+.intent {
+  display: grid;
+  /* Fixed track sizes. The panel must not resize when confidence drops or reasons
+     appear: a layout that moves at the moment a decision is required costs exactly the
+     seconds this panel exists to save. */
+  grid-template-rows: auto 7.5rem 5.5rem auto;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+.intent[data-state="interrupted"] {
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-pending);
+}
+
+.intent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.intent-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+}
+
+.confidence {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.confidence-band {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.confidence[data-band="high"] .confidence-band { color: var(--conf-high); }
+.confidence[data-band="medium"] .confidence-band { color: var(--conf-medium); }
+.confidence[data-band="low"] .confidence-band { color: var(--conf-low); }
+.confidence[data-band="none"] .confidence-band { color: var(--fg-subtle); }
+
+.confidence-score {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+.intent-summary {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.intent-summary > div {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: var(--space-3);
+}
+.intent-summary dt {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+.intent-summary dd {
+  margin: 0;
+  font-weight: var(--weight-medium);
+}
+
+.intent-empty { margin: 0; color: var(--fg-muted); }
+
+.intent-reasons {
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-md);
+}
+.intent-reasons[data-empty="true"] { visibility: hidden; }
+
+.intent-reason {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.intent-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.intent-actions-idle {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-subtle);
+}
+
+/* ----------------------------------------------------------------------- button */
+
+.btn {
+  min-height: var(--touch-min);
+  min-width: 6rem;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.btn-quiet {
+  background: var(--bg-sunken);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+}
+.btn-quiet:hover { background: var(--bg); }
+
+.btn-accent {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border: 1px solid var(--accent-hover);
+}
+.btn-accent:hover { background: var(--accent-hover); }
+
+/* ------------------------------------------------------------------ placeholder */
+
+.placeholder {
+  padding: var(--space-12);
+  max-width: 60ch;
+  color: var(--fg-muted);
+}
+.placeholder h2 {
+  color: var(--fg);
+  text-transform: capitalize;
+  margin-top: 0;
+}
+.placeholder code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--bg-sunken);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}

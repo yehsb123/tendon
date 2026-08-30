@@ -1,0 +1,210 @@
+/**
+ * Design tokens.
+ *
+ * The constraints here come from the room, not from taste. An operator reads this at
+ * arm's length, on a tablet, under glare, with one hand free, and has a couple of seconds
+ * to decide whether to let a robot move.
+ *
+ * Four rules the values below implement:
+ *
+ *   1. Colour is never the only signal. Every state carries a shape or a label too.
+ *      Glare flattens hue, and colour vision deficiency is as common here as anywhere.
+ *   2. One accent, owned by the interrupt state. Anything else competing for attention
+ *      makes the thing that actually needs a human slower to find.
+ *   3. Motion is informative or absent. A trajectory animating along its path is
+ *      information; a panel sliding in is delay.
+ *   4. Light and dark are both first-class. A floor tablet at night and a desk monitor
+ *      at noon are the same product.
+ *
+ * Semantic colours follow industrial signalling convention rather than web convention:
+ * amber means a human is needed, red means something was stopped. They are not
+ * interchangeable, and swapping them would invert what an operator has already learned
+ * from every other machine on the floor.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ------------------------------------------------------------------ type */
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* Scale starts larger than a desktop tool would use. 16px is the floor, not the
+     body size: at arm's length on a tablet, 14px stops being readable. */
+  --text-xs: 0.8125rem;   /* 13px — timestamps, units, secondary metadata only */
+  --text-sm: 0.9375rem;   /* 15px — dense tables in the review views */
+  --text-base: 1.0625rem; /* 17px — body */
+  --text-lg: 1.25rem;     /* 20px — panel titles */
+  --text-xl: 1.625rem;    /* 26px — the pending decision */
+  --text-2xl: 2.25rem;    /* 36px — confidence figure, readable across a cell */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.55;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-bold: 650;
+
+  /* Tabular figures everywhere a number changes in place. Proportional digits make a
+     live confidence readout jitter, and jitter reads as instability in the robot. */
+  --numeric: tabular-nums;
+
+  /* ---------------------------------------------------------------- spacing */
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+
+  /* Minimum touch target. Larger than the usual 44px: gloves, and a moving robot in
+     peripheral vision while you aim. */
+  --touch-min: 56px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* ----------------------------------------------------------------- motion */
+
+  --duration-instant: 0ms;
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  /* Trajectory playback. Long enough to follow a path with your eye. */
+  --duration-trace: 900ms;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ------------------------------------------------------- palette :: light */
+
+  --bg: #f7f7f6;
+  --bg-raised: #ffffff;
+  --bg-sunken: #eeeeec;
+  --bg-scene: #1b1d1e; /* The 3D scene stays dark in both themes. Robots read
+                          better against dark, and a bright viewport at night
+                          costs an operator their night vision. */
+
+  --fg: #16181a;
+  --fg-muted: #5c6166;
+  --fg-subtle: #8b9196;
+  --fg-on-accent: #1a1200;
+
+  --border: #d9dad7;
+  --border-strong: #b4b7b3;
+
+  /* The one accent. Interrupt state owns it. */
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --accent-bg: #fef3e2;
+  --accent-border: #f0b352;
+
+  /* Stopped, refused, out of bounds. Not the same as needing a human. */
+  --danger: #b42318;
+  --danger-bg: #fdeceb;
+  --danger-border: #eaa6a1;
+
+  /* Running normally. Deliberately quiet — normal operation should not draw the eye. */
+  --ok: #2f6f4e;
+  --ok-bg: #e9f3ed;
+  --ok-border: #a8ccb8;
+
+  /* Confidence ramp. Three steps, not a gradient: an operator classifies, they do not
+     read a percentage off a colour. */
+  --conf-high: var(--ok);
+  --conf-medium: #8a6d1f;
+  --conf-low: var(--accent);
+
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.06);
+  --shadow-pending: 0 0 0 3px var(--accent-border), 0 8px 24px rgb(0 0 0 / 0.12);
+
+  --focus-ring: 0 0 0 3px var(--bg), 0 0 0 5px var(--fg);
+}
+
+/* --------------------------------------------------------------- palette :: dark */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131516;
+    --bg-raised: #1c1f20;
+    --bg-sunken: #0d0f10;
+    --bg-scene: #0a0b0c;
+
+    --fg: #e8eaeb;
+    --fg-muted: #a0a6a9;
+    --fg-subtle: #6f7679;
+    --fg-on-accent: #1a1200;
+
+    --border: #2c3032;
+    --border-strong: #454b4e;
+
+    --accent: #f59e0b;
+    --accent-hover: #fbbf24;
+    --accent-bg: #2a1f0a;
+    --accent-border: #7c5410;
+
+    --danger: #f87171;
+    --danger-bg: #2a1414;
+    --danger-border: #7f2f2a;
+
+    --ok: #5cb98a;
+    --ok-bg: #12241b;
+    --ok-border: #2c5a42;
+
+    --conf-medium: #d4b45e;
+
+    --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 12px rgb(0 0 0 / 0.3);
+    --shadow-pending: 0 0 0 3px var(--accent-border), 0 8px 24px rgb(0 0 0 / 0.5);
+
+    --focus-ring: 0 0 0 3px var(--bg), 0 0 0 5px var(--fg);
+  }
+}
+
+/* Explicit override, for a tablet mounted where the ambient sensor guesses wrong. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* ------------------------------------------------------------------ reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    /* Trajectory playback is information, not decoration, so it is shortened rather
+       than removed. Removing it would take away the thing the panel exists to show. */
+    --duration-trace: 200ms;
+  }
+}
+
+/* ------------------------------------------------------------------------- base */
+
+* { box-sizing: border-box; }
+
+html {
+  /* Stop a two-finger gesture from zooming the interface mid-decision. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  font-variant-numeric: var(--numeric);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}

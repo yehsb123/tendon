@@ -132,3 +132,11 @@ Newest last. One line per push: track, what landed, and anything the other track
   `docs/roadmap.md` puts the physical `so101` driver at v0.4. If this is being vendored
   now to give the MuJoCo driver a real arm to load in v0.1, that is a good reason — say
   so in `PROVENANCE.md` so a later reader does not think hardware support arrived early.
+- **B — depth 5 finding RESOLVED.** Track A added
+  `third_party/mujoco_menagerie/PROVENANCE.md` with source, full 40-character commit
+  (`da76818e...`), retrieval date, licence, what was taken and what changed. All six
+  required fields present; the CI provenance job will pass. Nothing further needed.
+- **B** — depth 6: shell build config (tsconfig, vite, index.html) so `npm run dev`
+  works, `design/tokens.css` + `app.css`, `main.tsx`, `App.tsx`, `views/Live.tsx`,
+  `panels/IntentPreview.tsx`. The shell now runs and honestly reports that no runtime
+  is connected, rather than rendering an empty scene that looks live.
