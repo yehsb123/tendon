@@ -118,6 +118,12 @@ def run(
     store: str = typer.Option(
         "", help="Where episodes are written. Defaults to ~/.tendon/episodes"
     ),
+    view: bool = typer.Option(
+        False, "--view", help="Open a Rerun viewer and stream this run into it."
+    ),
+    view_save: str = typer.Option(
+        "", help="Write a Rerun recording here (.rrd) instead of, or as well as, viewing."
+    ),
 ) -> None:
     """Run a policy on a body under the kernel.
 
@@ -179,11 +185,19 @@ def run(
         raise typer.Exit(code=1)
 
     bus: Bus[StepRecord] = Bus()
+    viewer = _attach_viewer(console, bus, loaded, view=view, save=view_save)
+
     scheduler = Scheduler(
         driver=body,
         limits=loaded.limits,
         confidence_threshold=loaded.confidence_threshold,
         bus=bus,
+        # Only when something is watching. The chunk and its confidence are the half of
+        # the picture the step stream does not carry, and plotting confidence against the
+        # threshold is one of the three things this logger exists for.
+        on_intent=(
+            None if viewer is None else lambda obs, intent: viewer.log_intent(intent, step=obs.step)
+        ),
     )
 
     console.print(
@@ -204,7 +218,13 @@ def run(
             if recorder is not None:
                 recorder.finish()
         finally:
-            body.close()
+            try:
+                # Flushed before the body closes: an unflushed recording is a file that
+                # exists and cannot be opened, which is worse than not asking for one.
+                if viewer is not None:
+                    viewer.close()
+            finally:
+                body.close()
 
     _report(console, result, bus, root)
 
@@ -237,6 +257,43 @@ def _baseline_policy(loaded, capability):
         # anything, and a jaw that closes on nothing is the more surprising default.
         gripper=_HELD_OPEN if capability.gripper.value != "none" else None,
     )
+
+
+def _attach_viewer(console: Console, bus, loaded, *, view: bool, save: str):
+    """Stream the run into Rerun, when somebody asked for it.
+
+    **Opt-in, unlike recording, and that difference is the point.** The recorder costs
+    0.04 ms per step and is always attached because of it — design decision 1 is only
+    structural because nobody would want it off. This costs about eighty times that, since
+    it encodes frames a person will look at, and `services/viz.py` says so in its own
+    docstring: attach it to a run being watched, not to every run being collected.
+
+    So there is a flag here and none for recording. A flag on the wrong one of these would
+    be the difference between a project that collects data and a project that means to.
+    """
+    if not view and not save:
+        return None
+
+    from tendon.services.viz import RerunLogger, VizError
+
+    try:
+        viewer = RerunLogger(
+            session_name=f"tendon/{loaded.ref}",
+            spawn=view,
+            save_path=save or None,
+            confidence_threshold=loaded.confidence_threshold,
+        )
+    except VizError as exc:
+        # Not fatal. The run is still worth doing and still recorded; what is missing is
+        # somewhere to watch it. Refusing would make an optional extra decide whether a
+        # body moves.
+        console.print(f"[yellow]not viewing: {escape(str(exc))}[/yellow]")
+        return None
+
+    viewer.attach_to(bus)
+    if save:
+        console.print(f"[dim]writing a Rerun recording to {escape(save)}[/dim]")
+    return viewer
 
 
 def _attach_recorder(console: Console, bus, loaded, store: str):
@@ -317,9 +374,13 @@ def _report(console: Console, result, bus, root: Path | None = None) -> None:
 
     slowest = bus.slowest()
     if slowest is not None:
+        # "Subscribers" rather than "recording": with `--view` attached there are two, and
+        # the expensive one is usually the viewer. Naming the total after the cheap half
+        # would put the recorder's name on the viewer's cost, which is exactly the reading
+        # that would get design decision 1 blamed for something it does not do.
         console.print(
-            f"[dim]recording cost {bus.mean_publish_cost() * 1000:.4f} ms per step "
-            f"(slowest subscriber: {escape(slowest[0])})[/dim]"
+            f"[dim]subscribers cost {bus.mean_publish_cost() * 1000:.4f} ms per step "
+            f"(slowest: {escape(slowest[0])})[/dim]"
         )
 
 

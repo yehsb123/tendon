@@ -1694,3 +1694,29 @@ where confidence is going to come from.
   `context.observation`. Your file, your call on shape. Until then the memory lives as long
   as `tendon serve` and both READMEs say so.
   502 tests green, 22 in the shell.
+
+- **B — `services/viz.py` had 27 tests and no caller.** Found by asking the question
+  systematically rather than one module at a time: for each service, how many files under
+  `cli/` or `api/` reference it. Every other service scored at least two. `viz` scored
+  zero, and so did `registry` and `policy_lerobot` — but those two are v0.4 and Track A's
+  adapter, which is a different situation from a finished, measured, tested module that
+  nothing reaches.
+
+  `tendon run --view` opens a Rerun viewer; `--view-save run.rrd` writes one to read
+  later. The logger goes on the same bus as the recorder, which is what the bus is for, and
+  `on_intent` feeds it the chunk and its confidence — the half of the picture the step
+  stream does not carry, and one of the three things the module says it exists for.
+
+  **A flag here and none for recording, deliberately.** The recorder costs 0.04 ms a step
+  and is always attached because of it; `viz.py`'s own docstring says to attach this to a
+  run being watched rather than to every run being collected. Measured just now on a
+  camera-free run: 0.37 ms a step, ten times the recorder. A flag on the wrong one of these
+  two is the difference between a project that collects data and one that means to, so the
+  tests check both halves — asking produces a recording, and not asking leaves the hot path
+  alone.
+
+  Renamed the cost line from "recording cost" to "subscribers cost". With a viewer attached
+  there are two subscribers and the dear one is the viewer; the old wording put the
+  recorder's name on the viewer's cost, which is precisely the reading that gets design
+  decision 1 blamed for something it does not do.
+  507 tests green.

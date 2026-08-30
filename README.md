@@ -239,6 +239,19 @@ There is no flag asking for that recording and none to turn it off. `tendon eval
 on the same terms, one dataset episode per evaluation episode — it is the command that
 produces thirty runs, so it is where most of the data comes from.
 
+Watching a run *is* a flag:
+
+```bash
+tendon run grasp/cube-sim --view                 # open a Rerun viewer
+tendon run grasp/cube-sim --view-save run.rrd    # or write one to read later
+```
+
+It plots commanded against applied on the same axes — the gap is the body refusing an
+instruction — with confidence against the threshold that would hand over, and where safety
+clamped. Recording costs 0.04 ms a step and is always on; this costs enough to be worth
+asking for, so it is asked for. A flag on the wrong one of those two is the difference
+between collecting data and meaning to.
+
 If the recorder cannot run — LeRobot is an optional extra — the command says so and keeps
 going rather than pretending; if it starts and then fails, the command exits non-zero,
 because a run that collected nothing should not report success.
