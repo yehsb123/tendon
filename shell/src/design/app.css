@@ -274,3 +274,44 @@
   padding: 0.1em 0.35em;
   border-radius: var(--radius-sm);
 }
+
+/* ------------------------------------------------------------------------ live extras */
+
+.banner-detail {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.banner .btn {
+  margin-left: auto;
+  min-width: auto;
+}
+
+.hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* An operator who thinks a correction was applied when it was refused is worse off than
+   one who is told, so a rejected decision is loud rather than a toast that fades. */
+.hint-error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.episode-summary {
+  margin: var(--space-3) 0 0;
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.episode-summary > div {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+}
+.episode-summary dt { color: var(--fg-muted); }
+.episode-summary dd { margin: 0; font-family: var(--font-mono); }

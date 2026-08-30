@@ -1,4 +1,4 @@
-import type { ConnectionStatus } from "../api/socket";
+import type { ConnectionStatus } from "../api/client";
 import { ConfidenceSource } from "../api/types";
 import type { Intent } from "../api/types";
 
@@ -24,9 +24,9 @@ export interface IntentPreviewProps {
   intent: Intent | null;
   status: ConnectionStatus;
   /** Present only when control has actually been handed over. */
-  onApprove?: () => void;
-  onReject?: () => void;
-  onCorrect?: () => void;
+  onApprove?: (() => void) | undefined;
+  onReject?: (() => void) | undefined;
+  onCorrect?: (() => void) | undefined;
 }
 
 export function IntentPreview({

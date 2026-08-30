@@ -1,5 +1,11 @@
+import { useEffect } from "react";
+
+import type { ConnectionStatus } from "../api/client";
 import { IntentPreview } from "../panels/IntentPreview";
-import type { ConnectionStatus } from "../api/socket";
+import { useSession } from "../state/session";
+
+const SKILL = "skills/grasp/cube-sim";
+const BODY = "mujoco";
 
 /**
  * The view an operator watches during a shift.
@@ -8,18 +14,73 @@ import type { ConnectionStatus } from "../api/socket";
  * Anything that does not serve that question belongs in another view.
  */
 export function Live() {
-  // The runtime does not exist yet (v0.1 is Track A work), so the shell shows the
-  // disconnected state honestly rather than rendering an empty scene that looks live.
-  const status: ConnectionStatus = "closed";
+  const {
+    status,
+    statusDetail,
+    runtimeVersion,
+    session,
+    step,
+    intent,
+    pending,
+    deciding,
+    decisionError,
+    checkRuntime,
+    start,
+    decide,
+  } = useSession();
+
+  useEffect(() => {
+    void checkRuntime();
+  }, [checkRuntime]);
+
+  const handedOver = pending !== null;
 
   return (
     <div className="live">
-      <ConnectionBanner status={status} />
+      <ConnectionBanner
+        status={status}
+        detail={statusDetail}
+        runtimeVersion={runtimeVersion}
+        onStart={() => void start(SKILL, BODY)}
+        running={session?.running ?? false}
+      />
+
       <section className="live-scene" aria-label="Scene">
-        <SceneUnavailable />
+        <SceneView step={step} connected={status === "open"} />
       </section>
+
       <aside className="live-side">
-        <IntentPreview intent={null} status={status} />
+        <IntentPreview
+          intent={intent}
+          status={status}
+          onApprove={handedOver ? () => void decide("approved") : undefined}
+          onReject={handedOver ? () => void decide("rejected") : undefined}
+          onCorrect={handedOver ? () => void decide("rejected", undefined, "needs a correction") : undefined}
+        />
+
+        {deciding ? <p className="hint">sending…</p> : null}
+        {decisionError ? (
+          <p className="hint hint-error" role="alert">
+            {decisionError}
+          </p>
+        ) : null}
+
+        {session ? (
+          <dl className="episode-summary">
+            <div>
+              <dt>episode</dt>
+              <dd>{session.session_id.slice(0, 8)}</dd>
+            </div>
+            <div>
+              <dt>step</dt>
+              <dd>{step}</dd>
+            </div>
+            <div>
+              <dt>interventions</dt>
+              <dd>{session.interventions}</dd>
+            </div>
+          </dl>
+        ) : null}
       </aside>
     </div>
   );
@@ -31,30 +92,61 @@ export function Live() {
  * An operator who cannot tell a frozen robot from a frozen UI reaches for the physical
  * stop, and that destroys the context the interrupt design exists to preserve.
  */
-function ConnectionBanner({ status }: { status: ConnectionStatus }) {
+function ConnectionBanner({
+  status,
+  detail,
+  runtimeVersion,
+  onStart,
+  running,
+}: {
+  status: ConnectionStatus;
+  detail: string | null;
+  runtimeVersion: string | null;
+  onStart: () => void;
+  running: boolean;
+}) {
   if (status === "open") return null;
 
   const message: Record<Exclude<ConnectionStatus, "open">, string> = {
     connecting: "Connecting to the runtime.",
-    reconnecting:
-      "Connection lost. The body is holding position and is not taking new intent.",
-    closed: "Not connected to a runtime. Nothing shown here is live.",
+    reconnecting: "Connection lost. The body is holding position and is not taking new intent.",
+    closed:
+      runtimeVersion === null
+        ? "No runtime. Start one with: tendon serve"
+        : `Runtime ${runtimeVersion} is up. No episode is running.`,
   };
 
   return (
     <div className="banner" role="status" data-status={status}>
       <span className="banner-mark" aria-hidden="true" />
-      {message[status]}
+      <span>{message[status]}</span>
+      {detail ? <span className="banner-detail">{detail}</span> : null}
+      {runtimeVersion !== null && !running ? (
+        <button type="button" className="btn btn-quiet" onClick={onStart}>
+          Start an episode
+        </button>
+      ) : null}
     </div>
   );
 }
 
-function SceneUnavailable() {
+function SceneView({ step, connected }: { step: number; connected: boolean }) {
+  if (!connected) {
+    return (
+      <div className="scene-empty">
+        <p>No scene. The Rerun viewer mounts here once a runtime is connected.</p>
+        <p className="scene-empty-hint">
+          Run <code>tendon serve</code>, then start an episode.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="scene-empty">
-      <p>No scene. The Rerun viewer mounts here once a runtime is connected.</p>
+      <p>Episode running — step {step}.</p>
       <p className="scene-empty-hint">
-        The MuJoCo driver is Track A work — see <code>docs/collaboration.md</code>.
+        The Rerun viewer mounts here. Until then the intent panel carries the decision.
       </p>
     </div>
   );

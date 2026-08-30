@@ -71,6 +71,23 @@ jobs:
       - run: python -m pip install --quiet -e ".[dev]"
       - run: python -m pytest tests/unit -q
 
+  shell:
+    name: shell builds and type-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: shell/package-lock.json
+      - run: npm ci
+        working-directory: shell
+      # tsc runs with exactOptionalPropertyTypes and noUncheckedIndexedAccess, so this
+      # catches the class of mistake that only shows up when an operator is looking at it.
+      - run: npm run build
+        working-directory: shell
+
   provenance:
     name: ported code carries provenance
     runs-on: ubuntu-latest

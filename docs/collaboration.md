@@ -829,3 +829,23 @@ where confidence is going to come from.
   is in `benchmarks/README.md` under environment findings and keeps recurring, so it wants
   a rule rather than a note. Suggested for `CONTRIBUTING.md`: printed output is ASCII,
   docstrings and comments are not.
+- **B — the shell is wired to the runtime and builds in CI.** `api/client.ts` implements
+  the contract that `rest.ts` and `socket.ts` declare, `state/session.ts` holds connection,
+  episode and pending decision as three separate concerns, and `views/Live.tsx` renders
+  real data with real approve/reject controls.
+
+  Every call reports failure as a value rather than throwing. A shell that throws on a
+  dropped connection unmounts the panel an operator is reading, and losing the view is
+  worse than seeing a stale one labelled as stale.
+
+  Decisions go over REST rather than the socket, and `socket.ts` says why: a decision has
+  to be acknowledged. An operator needs to know whether their correction was accepted or
+  refused for breaching a limit, and a fire-and-forget socket message cannot say that.
+  "I clicked Correct and nothing happened" is the worst state to leave someone in while a
+  robot waits.
+
+  CI now builds the shell. `tsc` runs with `exactOptionalPropertyTypes` and
+  `noUncheckedIndexedAccess`, which caught two real mismatches on the first run.
+- **B — `tsconfig.node.json` could not build.** It set `composite: true` and `noEmit: true`
+  together, which TypeScript refuses (TS6310). Nobody had noticed because nothing had ever
+  run `tsc -b` — the shell had never been built. Replaced `noEmit` with a build-info file.
