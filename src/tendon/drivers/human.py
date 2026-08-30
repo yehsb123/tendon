@@ -43,6 +43,14 @@ _STATE = "observation.state"
 _GRIPPER = "observation.gripper"
 _ACTION = "action"
 _IMAGE_PREFIX = "observation.images."
+# LeRobot has two camera conventions and public datasets use both. A multi-camera
+# recording names each one — `observation.images.wrist` — while a single-camera one often
+# writes a bare `observation.image` with no name at all. `lerobot/pusht` is the second kind,
+# and a driver that only knows the first reports a dataset with video in it as having no
+# cameras.
+_IMAGE_SINGULAR = "observation.image"
+#: What to call the camera in a dataset that did not name it.
+_UNNAMED_CAMERA = "image"
 
 
 def _now() -> datetime:
@@ -102,9 +110,12 @@ class HumanDriver(Driver):
                 f"a body this driver can present"
             )
 
-        self._cameras = tuple(
-            sorted(k[len(_IMAGE_PREFIX) :] for k in self._features if k.startswith(_IMAGE_PREFIX))
+        named = sorted(
+            k[len(_IMAGE_PREFIX) :] for k in self._features if k.startswith(_IMAGE_PREFIX)
         )
+        if _IMAGE_SINGULAR in self._features:
+            named.append(_UNNAMED_CAMERA)
+        self._cameras = tuple(named)
         self._dof = int(self._features[_STATE]["shape"][0])
         self._has_gripper = _GRIPPER in self._features
 
@@ -150,10 +161,20 @@ class HumanDriver(Driver):
     def capability(self) -> Capability:
         """Inferred from the dataset schema, because a recording cannot be asked.
 
-        One thing genuinely cannot be recovered: `GripperKind`. The format records that a
-        gripper channel exists and its value, not whether the hardware was a parallel jaw,
-        a suction cup or a hand. PARALLEL is reported as the most common case, and a skill
-        that needs to distinguish them cannot rely on a replayed body to tell it apart.
+        Two things genuinely cannot be recovered, and both are stated rather than guessed
+        at silently.
+
+        `GripperKind`. The format records that a gripper channel exists and its value, not
+        whether the hardware was a parallel jaw, a suction cup or a hand. PARALLEL is
+        reported as the most common case, and a skill that needs to distinguish them cannot
+        rely on a replayed body to tell it apart.
+
+        Units. `Proprioception.joint_positions` is documented as radians, and for a robot
+        arm it is. LeRobotDataset does not record units, so a dataset can carry anything:
+        replaying `lerobot/pusht` gives `[222.0, 97.0]`, which is a position in pixels on a
+        2D table. The values are faithful to what was recorded; what they mean is a
+        property of the body that recorded them, and a skill written for one body should
+        not be pointed at another's data and expected to make sense of it.
         """
         return Capability(
             body_id=f"human:{self._repo_id}#{self._episode}",
@@ -295,7 +316,12 @@ class HumanDriver(Driver):
         item = self._dataset[self._cursor]
         frames: dict[str, np.ndarray] = {}
         for camera in self._cameras:
-            pixels = np.asarray(item[f"{_IMAGE_PREFIX}{camera}"])
+            key = (
+                _IMAGE_SINGULAR
+                if camera == _UNNAMED_CAMERA and _IMAGE_SINGULAR in self._features
+                else f"{_IMAGE_PREFIX}{camera}"
+            )
+            pixels = np.asarray(item[key])
             if pixels.ndim == 3 and pixels.shape[0] in (1, 3, 4):
                 pixels = np.transpose(pixels, (1, 2, 0))  # CHW -> HWC
             if pixels.dtype != np.uint8:
