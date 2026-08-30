@@ -258,3 +258,68 @@ Two numbers the shell and the scheduler will both need: SmolVLA defaults to
 intent — matching the "0.5-1s" in `docs/architecture.md`. And it pads state and action to
 32 dimensions (`max_state_dim`, `max_action_dim`), so a 5-joint arm is padded, not
 truncated; whatever converts `Action` to a policy tensor has to know that.
+- **A** — recorder lands (`2df2814`). Driver → recorder → LeRobotDataset runs end to end:
+  two episodes, 55 frames, wrist camera, reopened and read back, with a DuckDB sidecar
+  carrying confidence and intervention flags. Design decision 1 executes for the first
+  time.
+- **A → B — the v0.1 kill condition was measured, and half of it fails.** 300 steps,
+  `apply` + `observe`, 100Hz so a 10ms budget:
+
+  | | mean | vs budget |
+  | --- | --- | --- |
+  | recorder off | 0.092 ms | — |
+  | recorder on, no camera | 0.118 ms | +0.3% |
+  | recorder on + wrist render | 22.716 ms | **+226%** |
+
+  Recording is free. Rendering synchronously inside the control loop is not, and no
+  amount of optimising the recorder changes that. It is a finding about the loop: on a
+  real robot a camera arrives asynchronously at ~30fps and never blocks control, so
+  rendering inline was the wrong model of a camera to begin with. Frames need their own
+  clock alongside deliberation and control. That belongs next to `kernel/scheduler.py`,
+  so it is handed over rather than fixed in `drivers/`.
+- **A — `Recorder.start` signature changed**, which matters because the scheduler will
+  call it. Now `start(skill, capability, *, fps=None, cameras=(), frame_size=(480,640))`
+  and it takes the whole `Capability`, not a `body_id`: the dataset schema is derived
+  from dof, gripper and cameras. A recorder given only a name would have to look the body
+  up, and `services` importing `drivers` is what the boundary test forbids. Also
+  `record(observation, action, *, frames=None, confidence=None, intervention=False)` and
+  `finish(success=None)` — `finish` no longer takes an episode id, since one recorder
+  holds one open episode.
+- **A → B — `pyproject.toml` extras are wrong for what the recorder needs.** `robot =
+  ["lerobot>=0.1"]` installs a lerobot that cannot open a dataset: `LeRobotDataset` needs
+  the `dataset` extra, which pins `av>=15,<16`. A bare `pip install av` gets 18.x and
+  fails with `module 'av' has no attribute 'option'`. Suggested: `robot =
+  ["lerobot[dataset]>=0.6"]`. Note also that `torchcodec` has no Windows wheel here, so
+  LeRobot falls back to pyav with a warning — works, but slower on read.
+
+### A → B — the finding that touches why tendon exists
+
+Read `src/lerobot/rollout/` in full. It is closer to tendon than anything in ADR 0002 was.
+
+| LeRobot | tendon decision it overlaps |
+| --- | --- |
+| `strategies/sentry.py` — continuous autonomous recording, auto-upload | 1, running is collecting |
+| `strategies/dagger.py` — RaC, operator takes over mid-policy, corrections tagged `intervention=True`, smooth handover so the operator does not inherit a jerk | 2, intervention is an interrupt |
+| `inference/rtc.py` + `ring_buffer.py` | the two clocks |
+| `strategies/highlight.py`, `episodic.py`, `robot_wrapper.py`, `interactive.py` | scheduler-adjacent machinery |
+
+DAgger's state machine is `AUTONOMOUS → PAUSED → CORRECTING`, against tendon's
+`RUNNING → PENDING → RESUMING`. Close enough that "nothing in between preserves context"
+in `docs/stack.md` is no longer accurate as written.
+
+**What survives, and it is sharper than before.** Grepped the whole of `rollout/` and
+`policies/pretrained.py`: **`confidence` does not appear anywhere.** Every LeRobot
+handover is human-initiated — a keyboard key or a foot pedal, pressed by someone already
+watching. Nothing in the stack lets the *system* raise its hand.
+
+So tendon's actual claim is narrower and more defensible than "handover with context":
+
+1. the handover is **triggered by the policy's own uncertainty**, not by a watching human
+2. it happens **before the body moves**, on a reviewable intent, rather than after a
+   mistake is visible
+3. curation, skill packaging, and a body abstraction that includes human video
+
+All three of those rest on a confidence estimate that no upstream policy provides. The
+gap reported earlier is not a detail to schedule — it is the load-bearing element. Worth
+an ADR in the shape of 0002: read the overlap honestly, state what remains ours, and say
+where confidence is going to come from.
