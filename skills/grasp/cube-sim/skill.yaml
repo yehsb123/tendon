@@ -1,0 +1,47 @@
+# The skill package format — design decision 4.
+#
+# Deliberately trivial as a task. This skill exists to exercise install, run, evaluate,
+# fork and publish end to end, not to be impressive. If the format cannot express
+# picking up a cube, it cannot express anything.
+
+apiVersion: tendon/v1alpha1
+kind: Skill
+
+metadata:
+  name: cube-sim
+  namespace: grasp
+  version: 0.1.0
+  summary: Pick up a cube in MuJoCo.
+  license: Apache-2.0
+
+# What the body must be able to do. Checked at load time, never mid-episode:
+# discovering an incompatibility while a robot is moving is too late.
+requires:
+  dof: 6
+  gripper: parallel
+  action_spaces: [joint_position]
+  cameras: [wrist]
+  control_hz: 50
+
+policy:
+  # No weights in this repo. Skills reference open weights on the Hub.
+  base: lerobot/smolvla_base
+  adapter: null          # a LoRA adapter appears here after `tendon train`
+
+# Enforced by kernel/safety on every action, including operator corrections.
+safety:
+  max_joint_velocity: 1.5     # rad/s
+  workspace_min: [-0.4, -0.4, 0.0]
+  workspace_max: [0.4, 0.4, 0.5]
+
+# Raise an interrupt below this confidence. A fixed threshold is the v0.1 answer and is
+# known to be wrong — confidence is not calibrated across skills. Per-skill calibration
+# is v0.3 work; until then an operator can move this number.
+interrupt:
+  confidence_threshold: 0.5
+
+eval:
+  episodes: 50
+  success:
+    cube_height_above: 0.1
+  report: [success_rate, intervention_rate, failure_modes]

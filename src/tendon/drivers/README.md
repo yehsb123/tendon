@@ -3,7 +3,8 @@
 Design decision 3. One module per body. Policies address intent; drivers translate.
 
 ```
-base.py       the driver contract every body implements
+base.py       registration, negotiation, faults (the protocol itself lives in
+              kernel/protocols.py - the kernel owns the contract)
 mujoco.py     simulation — the only driver v0.1 needs
 lerobot.py    anything LeRobot already supports
 so101.py      the SO-101 arm on the bench
