@@ -2,9 +2,13 @@
 
 > **한글 요약.** 여기 있는 숫자는 참고용이 아니라 **판정용**입니다. v0.1은 "레코더가
 > 제어 루프를 느리게 만들면 폐기"라는 조건을 달고 있어서, 주장하지 않고 측정했습니다.
-> 결론: **기록 자체는 예산의 0.3%로 사실상 공짜**, 그러나 **제어 루프 안에서 카메라를
-> 동기 렌더하면 예산의 220%** 로 100Hz 루프가 성립하지 않습니다. 이건 레코더 문제가
-> 아니라 루프 설계 문제입니다.
+>
+> 결론 세 가지입니다. **기록 자체는 예산의 0.4%로 사실상 공짜**입니다. **루프 안에서
+> 카메라를 렌더하면 199%** 로 성립하지 않지만, 카메라를 별도 클럭으로 빼면 **2.5%** 가
+> 되어 해결됩니다. 다만 그 과정에서 **아직 해결되지 않은 트레이드오프**가 드러났습니다.
+> 시뮬이 실시간보다 60배 빨라서 카메라가 못 따라가고, 300스텝에 프레임이 3장만 나옵니다.
+> 카메라를 쓰는 수집은 루프 속도를 실시간에 가깝게 늦추거나, 렌더 속도에 묶이는 것을
+> 받아들여야 합니다.
 
 A measurement here exists because a decision hangs on it. Anything measured out of
 curiosity belongs in a commit message, not in this directory.
@@ -33,43 +37,84 @@ the budget per step is 10 ms. The wrist camera renders at 240×320, deliberately
 the question is whether rendering fits at all, and a small frame is the most favourable
 case available.
 
-**Result** (300 steps, all times in milliseconds, three runs):
+**Result** (300 steps, all times in milliseconds):
 
-| | mean | p50 | p99 | max | of budget |
+| | mean | p50 | p99 | of budget | frames |
 | --- | --- | --- | --- | --- | --- |
-| recorder off | 0.100 | 0.093 | 0.215 | 0.315 | 1.0% |
-| recorder on, no camera | 0.126 | 0.108 | 0.448 | 1.282 | 1.3% |
-| recorder on + wrist render | 21.945 | 21.147 | 36.201 | 46.940 | **219.4%** |
+| recorder off | 0.105 | 0.103 | 0.138 | 1.0% | — |
+| recorder on, no camera | 0.146 | 0.134 | 0.413 | 1.5% | — |
+| + wrist render, inline | 19.882 | 19.281 | 30.949 | **198.8%** | — |
+| + wrist render, 30 Hz thread | 0.352 | 0.172 | 4.156 | 3.5% | 3 |
 
-Overhead attributable to recording: **+0.027 ms**, about 0.3% of the control period.
-Across three runs it measured +0.025, +0.031 and +0.027 ms — stable, and far below the
-point where anyone would notice.
+Overhead from recording alone: **+0.041 ms**, well under half a percent of the control
+period, and stable across runs (+0.025, +0.027, +0.031, +0.041 ms measured on different
+days). Overhead from rendering: **+19.8 ms inline, +0.247 ms on its own clock.**
 
 ### What this decides
 
-**Design decision 1 survives on the recording side.** Recording is not a cost, so the
-argument that a recorder which can be switched off will be switched off does not apply:
-there is nothing to gain by switching it off. `services/recorder.py` keeps the hot path
-free by only appending to in-memory buffers — LeRobot's writer batches and encodes on
-`save_episode`, and the DuckDB sidecar is written once per episode. Nothing touches the
-disk at control rate.
+**Recording is free, so design decision 1 holds.** The argument that a recorder which can
+be switched off will be switched off does not apply, because there is nothing to gain by
+switching it off. `services/recorder.py` keeps the hot path free by appending to in-memory
+buffers only: LeRobot's writer batches and encodes on `save_episode`, and the DuckDB
+sidecar is written once per episode. Nothing touches the disk at control rate.
 
-**Synchronous rendering does not fit, and cannot be optimised into fitting.** At 21.9 ms
-against a 10 ms budget it is not close, and p99 reaches 36 ms. Halving the frame size or
-tightening the recorder does not recover a factor of two.
+**Rendering inline does not fit, and cannot be optimised into fitting.** 19.9 ms against a
+10 ms budget, p99 at 31 ms. Halving the frame size does not recover a factor of two.
 
-That is a finding about the loop, not about the recorder. On a real robot a camera arrives
-asynchronously at ~30 fps over USB or ethernet and never blocks control; rendering inline
-was the wrong model of a camera in the first place. Frames need their own clock, the way
-the deliberation and control tiers already have separate clocks in
-`docs/architecture.md`. The fix belongs next to `kernel/scheduler.py`, which is why
-`drivers/mujoco.py` exposes `render()` as a separate call rather than folding pixels into
-`observe()`.
+That was a finding about the loop rather than about the recorder. On a real robot a camera
+arrives asynchronously at ~30 fps and never blocks control; rendering inline was the wrong
+model of a camera. So `drivers/mujoco.py` grew `render_hz`, which puts the camera on its
+own thread with its own `MjData` and `Renderer`, fed by a locked copy of `qpos`/`qvel`
+that the control loop publishes once per step. **That took the render cost from +19.8 ms
+to +0.247 ms — the loop is free of it.**
 
-**A concrete consequence for v0.2.** SmolVLA defaults to a 50-step action chunk. At 100 Hz
-that is 0.5 s of intent, and 0.5 s is also about 15 camera frames at 30 fps. So the camera
-clock and the deliberation clock are within a factor of two of each other, and neither is
-anywhere near the control clock. Three tiers, not two.
+**Two things had to be fixed before that number was real.** Both are worth knowing.
+
+*Writing images is a separate cost from producing them.* Once rendering moved off the
+loop, `add_frame` became the bottleneck at +4.2 ms per step, because LeRobot encodes and
+writes frames on the calling thread by default. `LeRobotDataset.create` takes
+`image_writer_threads` for exactly this:
+
+| writer threads | mean per step |
+| --- | --- |
+| 0 (synchronous) | 4.166 ms |
+| **4** | **0.352 ms** |
+| 8 | 0.533 ms |
+
+Four is what `Recorder` now uses per camera. Eight measured worse than four, so this is
+not a knob to turn up.
+
+*A camera thread does not run at the rate you ask for.* Measured directly: `render_hz=30`
+produces 20 Hz, `render_hz=10` produces 8 Hz. The renderer takes ~16 ms, and Windows
+timers have a 15.6 ms default resolution, so the remainder of each period rounds up. The
+rate is a ceiling, not a promise.
+
+### The trade-off this exposes, which is not solved
+
+Look at the last column: **3 frames across 300 control steps.**
+
+That is not a bug. Simulation steps about sixty times faster than real time, while the
+camera runs on wall-clock time exactly as a real one does. A 30 Hz camera against a loop
+that finishes 300 steps in 0.18 s genuinely has almost nothing new to show. An episode
+recorded that way pairs a moving arm with a nearly static video, which is worse than
+useless for training — it teaches that the image does not predict the action.
+
+There is no clever fix, only a choice:
+
+- **Pace the control loop toward real time while recording.** This is what a robot does
+  anyway, and it makes the frame rate correct. It gives up simulation speed.
+- **Accept that camera-bearing collection is render-bound.** At ~16 ms per frame, one
+  simulated second of 30 fps video costs about half a second of rendering, so collection
+  runs at best around 1.5x real time regardless of how fast the physics is.
+
+`MujocoDriver.frames_rendered` exists so a caller can tell which regime a run was in.
+Comparing it against the step count answers "how many of my recorded frames are actually
+different images?", and the answer is frequently not what the caller expects.
+
+**A number for v0.2.** SmolVLA defaults to a 50-step action chunk. At 100 Hz that is 0.5 s
+of intent, which is also about 15 camera frames at 30 fps. The camera clock and the
+deliberation clock are within a factor of two of each other, and neither is anywhere near
+the control clock. Three tiers, not two.
 
 ---
 

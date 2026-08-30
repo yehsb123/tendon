@@ -39,8 +39,12 @@ def measure(
     record: bool,
     cameras: tuple[str, ...] = (),
     control_hz: float = 100.0,
-) -> list[float]:
-    """Time one control step, repeatedly, and return the per-step durations in [ms].
+    render_hz: float = 0.0,
+) -> tuple[list[float], int]:
+    """Time one control step, repeatedly.
+
+    Returns the per-step durations in [ms] and how many distinct camera frames were
+    produced, which is the number that says whether a recorded video is actually moving.
 
     A control step is `apply` plus `observe` — what the scheduler does every tick —
     optionally followed by the recording call. The dataset is written to a temporary
@@ -54,6 +58,7 @@ def measure(
             control_hz=control_hz,
             render_cameras=cameras,
             render_size=FRAME_SIZE,
+            render_hz=render_hz,
         )
         recorder = None
         if record:
@@ -76,6 +81,7 @@ def measure(
         if recorder is not None:
             recorder.record(observation, warmup, frames=driver.render() if cameras else None)
 
+        frames_at_start = driver.frames_rendered if cameras else 0
         durations: list[float] = []
         for _ in range(steps):
             started = time.perf_counter()
@@ -91,21 +97,29 @@ def measure(
                 )
             durations.append((time.perf_counter() - started) * 1000.0)
 
+        # Read before `finish`. The camera thread keeps running through episode encoding,
+        # which takes seconds, and folding those frames in would report a frame rate the
+        # control loop never saw. A delta for the same reason: it also runs while the
+        # dataset is being created.
+        rendered = (driver.frames_rendered - frames_at_start) if cameras else 0
+
         if recorder is not None:
             recorder.finish(success=True)
         driver.close()
-        return durations
+        return durations, rendered
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
 
-def summarise(label: str, durations: list[float], budget_ms: float) -> float:
+def summarise(label: str, measured: tuple[list[float], int], budget_ms: float) -> float:
+    durations, rendered = measured
     ordered = sorted(durations)
     mean = statistics.mean(ordered)
+    frames = f"{rendered:5d} frames" if rendered else "          -"
     print(
         f"  {label:<30} mean {mean:7.3f}  p50 {ordered[len(ordered) // 2]:7.3f}  "
-        f"p99 {ordered[int(len(ordered) * 0.99)]:7.3f}  max {ordered[-1]:8.3f}   "
-        f"{mean / budget_ms * 100:5.1f}% of budget"
+        f"p99 {ordered[int(len(ordered) * 0.99)]:7.3f}   "
+        f"{mean / budget_ms * 100:6.1f}% of budget  {frames}"
     )
     return mean
 
@@ -125,14 +139,20 @@ def main() -> int:
     baseline = summarise("recorder off", measure(args.steps, record=False), budget_ms)
     recording = summarise("recorder on, no camera", measure(args.steps, record=True), budget_ms)
     rendering = summarise(
-        "recorder on + wrist render",
+        "  + wrist render, inline",
         measure(args.steps, record=True, cameras=("wrist",)),
+        budget_ms,
+    )
+    threaded = summarise(
+        "  + wrist render, 30Hz thread",
+        measure(args.steps, record=True, cameras=("wrist",), render_hz=30.0),
         budget_ms,
     )
 
     print()
-    print(f"  recording overhead           {recording - baseline:+7.3f} ms")
-    print(f"  recording + render overhead  {rendering - baseline:+7.3f} ms")
+    print(f"  recording overhead                  {recording - baseline:+7.3f} ms")
+    print(f"  render overhead, inline             {rendering - baseline:+7.3f} ms")
+    print(f"  render overhead, on its own clock   {threaded - baseline:+7.3f} ms")
     print()
 
     # The threshold is deliberately generous. "Measurably slows" is the wording in the
@@ -142,13 +162,19 @@ def main() -> int:
         print(f"  FAIL: recording alone exceeds {limit:.2f} ms. Design decision 1 is at risk.")
         return 1
     print(f"  PASS: recording alone stays under {limit:.2f} ms.")
+    if threaded - baseline > limit:
+        print(f"  FAIL: threaded rendering still exceeds {limit:.2f} ms.")
+        return 1
+    print(f"  PASS: rendering on its own clock stays under {limit:.2f} ms.")
     if rendering > budget_ms:
         # Plain ASCII, deliberately. Windows consoles in a Korean locale run cp949, which
         # cannot encode an em dash, and a benchmark that crashes while printing its own
         # conclusion is worse than one that never ran.
         print(
-            f"  NOTE: rendering inside the loop does not fit the {budget_ms:.1f} ms budget. "
-            f"That is a scheduler question, not a recorder one. See benchmarks/README.md."
+            f"  NOTE: rendering inline does not fit the {budget_ms:.1f} ms budget; "
+            f"render_hz moves it off the control clock. Frame counts above show the cost: "
+            f"a camera on wall-clock time cannot keep up with simulation running flat out. "
+            f"See benchmarks/README.md."
         )
     return 0
 

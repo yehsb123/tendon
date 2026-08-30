@@ -145,10 +145,25 @@ class Recorder:
         root: str | Path | None = None,
         repo_id: str = DEFAULT_REPO_ID,
         use_videos: bool = True,
+        image_writer_threads_per_camera: int = 4,
     ) -> None:
+        """
+        Args:
+            root: Where episodes are stored. Defaults to `~/.tendon/episodes`.
+            repo_id: Hub-shaped dataset identifier. LeRobot requires one even for a
+                dataset that is never pushed.
+            use_videos: Store camera streams as mp4 rather than as individual images.
+            image_writer_threads_per_camera: Threads LeRobot uses to write frames off the
+                calling thread. **Not a tuning knob — a correctness one.** Writing frames
+                synchronously costs 4.2 ms per step, which does not fit a 10 ms control
+                period; at four threads it costs 0.35 ms. Eight measured worse than four,
+                so more is not better. Zero writes synchronously and is only useful for
+                isolating this effect. See `benchmarks/README.md`.
+        """
         self._root = Path(root) if root is not None else DEFAULT_ROOT
         self._repo_id = repo_id
         self._use_videos = use_videos
+        self._writer_threads_per_camera = int(image_writer_threads_per_camera)
 
         # Typed `Any` rather than `Any | None`: whether a dataset is open is tracked by
         # `_episode_id`, checked at the top of every method that touches it. Encoding
@@ -222,6 +237,11 @@ class Recorder:
                 root=root,
                 robot_type=capability.body_id,
                 use_videos=self._use_videos,
+                # Threads, not processes. Processes would pay a pickling cost per frame
+                # for a 230 KB array, and the work being moved off the caller is I/O and
+                # encoding, which releases the GIL anyway.
+                image_writer_threads=self._writer_threads_per_camera * len(cameras),
+                image_writer_processes=0,
             )
 
         self._episode_id = episode_id

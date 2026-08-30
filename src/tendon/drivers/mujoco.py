@@ -199,6 +199,7 @@ class MujocoDriver(Driver):
         self._frame_lock = threading.Lock()
         self._state_snapshot: tuple[np.ndarray, np.ndarray, float] | None = None
         self._latest_frames: dict[str, np.ndarray] = {}
+        self._frames_rendered = 0
 
         self._reset_key = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_KEY, _RESET_KEYFRAME)
         if self._reset_key < 0:
@@ -282,6 +283,7 @@ class MujocoDriver(Driver):
                         frames[camera] = renderer.render()
                     with self._frame_lock:
                         self._latest_frames = frames
+                        self._frames_rendered += 1
                     self._render_ready.set()
 
                 # Sleep the remainder of the period, waking early if asked to stop. When a
@@ -490,6 +492,27 @@ class MujocoDriver(Driver):
             self._renderer.update_scene(self._data, camera=camera)
             frames[camera] = self._renderer.render()
         return frames
+
+    @property
+    def frames_rendered(self) -> int:
+        """How many distinct frames the camera thread has produced.
+
+        Exposed because "how many of my recorded frames are actually different images?"
+        is otherwise unanswerable, and the answer is frequently not what a caller expects.
+
+        The camera runs on wall-clock time, as a real one does, while simulation time runs
+        as fast as the machine allows. Stepping this body flat out is roughly sixty times
+        real time, so a 30 Hz camera yields one new image per two thousand control steps —
+        an episode recorded that way holds a nearly static video against a moving arm.
+
+        Two ways out, both the caller's to choose. Pace the control loop toward real time
+        while recording, which is what a robot does anyway. Or accept that camera-bearing
+        collection is render-bound: at ~22 ms per frame, 30 frames of simulated second cost
+        0.67 s, so it runs at best around 1.5x real time no matter how fast the physics is.
+        Comparing this count against the step count says which regime a run was in.
+        """
+        with self._frame_lock:
+            return self._frames_rendered
 
     def close(self) -> None:
         """Stop the camera thread and release the model, data and GL context.
