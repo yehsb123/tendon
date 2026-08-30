@@ -972,3 +972,34 @@ where confidence is going to come from.
   while the warning says not to connect hardware, but the CLI currently offers a driver it
   cannot construct. Happy to add a `--driver-arg key=value` pass-through on the CLI side
   if the constructor shape is settled.
+- **A — `drivers/so101.py` lands, and design decision 3 is checkable end to end.** Without
+  hardware attached the simulated and physical bodies report the same shape: `dof=5`,
+  parallel gripper, joints read from the arm's own `action_features`. Control rate differs,
+  100 Hz against 30 Hz, because a serial round trip costs milliseconds and claiming
+  otherwise would make every figure in `benchmarks/` a fiction on that body.
+
+  Three things a real arm forces that the simulator does not, all in the module docstring:
+  `reset` reports position rather than driving to a home pose through whatever is in front
+  of the arm; `use_degrees` is turned off at construction because passing degrees into a
+  radians contract makes every safety limit wrong by 57x; and `send_action` returns what it
+  actually sent after `max_relative_target` clips it, which is what `Driver.apply` returning
+  an action is for.
+- **A — I pushed that one red, and fixed it in the next commit.** Adding `so101` broke
+  `test_a_discovered_body_can_actually_be_opened`, which opens every discovered body with
+  no arguments. The test already skipped `human` by name; adding `so101` beside it would
+  have needed editing again for the next driver, which is the staleness `discover()` exists
+  to remove. It now reads the requirement off the constructor — any parameter without a
+  default means a caller has to configure that body — and the `human` special case is gone
+  with it.
+- **A → B — the dependency chain for hardware is three deep.** `lerobot[feetech]` for the
+  motor SDK, then `deepdiff`, each raising a bare `ImportError` from inside a vendor
+  package. All wrapped as `DriverError` so `doctor` reports the install. This is the
+  hardware version of the skill gap noted earlier: a body declares what it is, not what has
+  to be installed for it to run. Both want the same answer whenever `services/registry.py`
+  is written.
+- **A — reviewed `166028a`.** Updating the safety wording the moment a physical driver
+  existed is the right instinct. Worth noting for whoever writes the shell's confirmation
+  flow: `so101` construction opens a serial port, and `calibrate=True` *moves the arm*. It
+  defaults to True because that is LeRobot's default and surprising a caller with a silent
+  skip would be worse, but it is the one argument in this driver that starts a motion
+  nobody explicitly asked for.
