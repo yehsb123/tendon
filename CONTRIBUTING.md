@@ -115,6 +115,29 @@ this fails quietly, so it carries the burden of proof.
 goes red. A regression test that passes against the bug is worse than none, because it
 reports safety that does not exist.
 
+## Before pushing
+
+CI runs four jobs. Three of them can pass while the fourth fails, so run all of it:
+
+```bash
+ruff check src tests          # lint
+ruff format src tests         # formatting — rewrites files, so run it before committing
+pytest tests/unit             # 108 tests, no GPU, no simulator
+```
+
+`ruff format --check` fails CI on formatting alone, with every test green. That is the
+job most likely to surprise you, because nothing is broken — the file is just shaped
+differently than ruff would shape it.
+
+Two lint rules bite most often here:
+
+- **`zip()` needs an explicit `strict=`.** Choose it per call site rather than applying
+  one everywhere. `strict=True` where a length mismatch would be a real bug — it turns a
+  silent truncation into an exception. `strict=False` where the sequences differ by
+  design, such as pairing a series with its own offset (`zip(xs, xs[1:], strict=False)`).
+- **100 columns includes docstrings.** Markdown tables in a module docstring hit this
+  constantly. Reflow them as prose rather than widening the limit.
+
 ## Commit messages
 
 Write the subject in English, then the same line in Korean underneath, then a body that
