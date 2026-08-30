@@ -121,9 +121,10 @@ class EpisodeResult:
     state: InterruptState = InterruptState.RUNNING
     #: Present when the machine faulted, naming what the saved context lacked.
     fault_reason: tuple[str, ...] = ()
-    #: Every limit that went unevaluated at least once, deduplicated. Surfaced so a caller
-    #: knows the episode ran partly unverified rather than having to infer it.
-    unchecked: tuple[str, ...] = ()
+    #: Limits that could not be evaluated, and on how many steps. A limit unevaluable on
+    #: the first step only — velocity needs a previous action — is a different situation
+    #: from one unevaluable throughout, and a bare list says neither.
+    unchecked: dict[str, int] = field(default_factory=dict)
     #: True when a finite policy ran out of actions. A normal ending; distinguished
     #: from hitting `max_steps` because a replay that finished and a replay that was cut
     #: short are different results.
@@ -164,7 +165,7 @@ class Scheduler:
         """
         result = EpisodeResult(episode_id=uuid.uuid4().hex)
         machine = InterruptMachine()
-        unchecked: set[str] = set()
+        unchecked: dict[str, int] = {}
 
         policy.reset()
         observation = self.driver.reset(seed=seed)
@@ -197,7 +198,8 @@ class Scheduler:
                     break
 
                 checked = self._check(action, previous, dt_s)
-                unchecked.update(checked.unchecked)
+                for limit in checked.unchecked:
+                    unchecked[limit] = unchecked.get(limit, 0) + 1
 
                 if not checked.allowed:
                     if checked.clamped is not None:
@@ -248,7 +250,7 @@ class Scheduler:
         result.fault_reason = machine.fault_reason
         result.interventions = machine.interventions
         result.corrections = machine.corrections
-        result.unchecked = tuple(sorted(unchecked))
+        result.unchecked = dict(sorted(unchecked.items(), key=lambda kv: -kv[1]))
         result.subscriber_failures = self.bus.failures if self.bus is not None else ()
         return result
 

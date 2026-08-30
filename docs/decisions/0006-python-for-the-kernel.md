@@ -4,14 +4,6 @@
 **Date:** 2026-08-30
 **Prompted by:** the obvious question — a robot control system in Python?
 
-> **한 줄 요약 (KO).** 타당한 지적입니다. 파이썬은 GIL과 GC 때문에 하드 실시간에
-> 부적합합니다. 하지만 **커널은 제어 루프가 아니라 오케스트레이션 층**입니다. 실제
-> 고주파 제어는 드라이버 뒤(MuJoCo의 C, 로봇 펌웨어)에서 일어나고, 커널은 ~10Hz로
-> "무엇을 할지"만 정합니다. 그리고 조합할 생태계(LeRobot·MuJoCo·PyTorch·Rerun)가
-> 전부 파이썬입니다 — C++로 쓰면 이 프로젝트의 전략 자체가 불가능해집니다. 다만
-> 경계는 명확히 합니다: 1kHz 하드 실시간이 필요해지면 그건 드라이버 층이고, HAL이
-> 이미 그걸 허용합니다.
-
 ## The objection
 
 Python has a global interpreter lock and a garbage collector. Both introduce

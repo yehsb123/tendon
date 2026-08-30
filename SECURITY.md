@@ -1,9 +1,5 @@
 # Security and safety
 
-> **한글 요약.** 이 프로젝트는 소프트웨어 취약점보다 **물리적 안전**이 먼저입니다.
-> v0.1은 시뮬레이션 전용이고, 실물 로봇에 쓰면 안 됩니다. 안전 문제를 발견하면
-> 공개 이슈로 올리지 말고 비공개로 알려주세요.
-
 Most projects put software vulnerabilities first. This one moves mass, so the order is
 reversed.
 

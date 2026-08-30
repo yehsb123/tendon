@@ -118,7 +118,7 @@ CI runs four jobs. Three of them can pass while the fourth fails, so run all of 
 ```bash
 ruff check src tests          # lint
 ruff format src tests         # formatting — rewrites files, so run it before committing
-pytest tests/unit             # 108 tests, no GPU, no simulator
+pytest tests/unit             # the whole unit suite; no GPU, no simulator
 ```
 
 `ruff format --check` fails CI on formatting alone, with every test green. That is the
@@ -134,27 +134,41 @@ Two lint rules bite most often here:
 - **100 columns includes docstrings.** Markdown tables in a module docstring hit this
   constantly. Reflow them as prose rather than widening the limit.
 
+## Documentation is written in English
+
+Every document in the repository is in English, and stays in one language throughout.
+
+A translated summary pinned to the top of an English document is worse than no
+translation. It says the author needed help reading their own document, it duplicates a
+claim that will drift from the body when one of them is edited, and a reader who wanted
+the other language now has two sources of truth for the same paragraph.
+
+Where a second language is genuinely wanted, it gets its own file — `README.ko.md` sits
+beside `README.md`, complete and self-contained, and the two link to each other. That is a
+translation. A quoted block at the top of a document is a note-to-self left in public.
+
+The same applies to code: docstrings and comments are English, without exception.
+
 ## Commit messages
 
-Write the subject in English, then the same line in Korean underneath, then a body that
-carries both. Whoever reads this repository later should not need a translation to
-understand why something changed.
+Commit messages carry both languages, mixed as prose rather than split into labelled
+blocks. Someone reading `git log` should get the reasoning without a translation step, and
+the reasoning is usually the only thing worth having.
 
 ```
-feat: enforce safety limits on operator corrections
-feat: 오퍼레이터 교정에도 안전 한계 적용
+fix: safety limits now apply to operator corrections
+fix: 오퍼레이터 교정에도 안전 한계를 적용
 
-EN | Corrections arriving from the shell now pass through kernel/safety on the
-same path as policy actions.
+셸에서 들어온 교정도 정책 액션과 동일한 경로로 kernel/safety를 거칩니다.
+A human may correct a policy but may not exceed a hard limit — safety that lives
+inside the thing being supervised is not safety.
 
-KO | 셸에서 들어온 교정도 정책 액션과 동일하게 kernel/safety를 거칩니다.
-
-EN | A human may correct a policy but may not exceed a hard limit. Safety that
-lives inside the thing being supervised is not safety.
-
-KO | 사람이 정책을 교정할 수는 있어도 하드 리밋을 넘을 수는 없습니다. 감독 대상
-안에 들어있는 안전장치는 안전장치가 아닙니다.
+교정이 한계를 넘고 클램프도 불가능하면 `UnsafeCorrection`을 raise합니다. Silently
+dropping it would leave the operator believing their correction was applied, which is
+worse than refusing.
 ```
+
+Subject line: English first, Korean second, both on their own line.
 
 Do not add AI co-author trailers.
 

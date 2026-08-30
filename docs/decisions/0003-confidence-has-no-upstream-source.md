@@ -4,12 +4,6 @@
 **Date:** 2026-08-30
 **Found by:** Track A, reading LeRobot 0.6.2 at `4aaff99`
 
-> **한 줄 요약 (KO).** 인터럽트를 발생시키는 주 트리거가 "확신도 낮음"인데, LeRobot을
-> 비롯한 어떤 정책도 확신도를 알려주지 않습니다. 즉 tendon이 직접 만들어야 할 것이
-> 4개가 아니라 **5개**입니다. 당장은 액션 청크 분산으로 시작하되, 그 값이 보정되지
-> 않았다는 사실을 숨기지 않기 위해 `Confidence.source`를 붙입니다. 추정기가 없으면
-> `NONE`이고, 그때는 확신도 기반 인터럽트가 아예 발생하지 않습니다.
-
 ## Context
 
 `docs/stack.md` says tendon builds four things: the Embodiment HAL, the interrupt

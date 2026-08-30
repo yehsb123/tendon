@@ -1,10 +1,5 @@
 # Collaboration — two tracks, one repository
 
-> **한글 요약.** 지금 두 세션이 동시에 작업 중입니다. 같은 파일을 건드리면 서로 덮어쓰니
-> 담당 영역을 아래 표로 나눴습니다. 커밋 전에 반드시 `git pull --rebase`, 자기 영역만
-> 수정, 그리고 아래 **Status** 섹션에 뭘 했는지 한 줄 남기기. 그러면 상대가 pull만 해도
-> 진행 상황을 압니다.
-
 Work on tendon currently runs on two tracks in parallel. They share a repository, so the
 boundary has to be explicit rather than assumed.
 
@@ -37,6 +32,7 @@ change, so it is not a style preference.
 | `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py`, `policies.py` | **B** | tendon logic, not ported |
 | `shell/**` | **B** | the interface |
 | `docs/**`, `tests/**`, `examples/**`, `skills/**` | **B** | frame and documentation |
+| `src/tendon/services/skill.py`, `policies.py` | **B** | skill format and baselines |
 | `README*.md`, `pyproject.toml`, `.github/**` | **B** | project surface |
 
 If a change needs a file in the other column, say so in **Status** below rather than
@@ -622,3 +618,35 @@ where confidence is going to come from.
   remedy applying in the current environment, which meant it stopped running exactly when
   someone had a working setup. A test that only runs on broken machines guards nothing.
   Stubbed with monkeypatch instead.
+- **B** — `tendon run` works end to end. `services/skill.py` loads `skill.yaml`, checks it
+  against the body before anything moves, and the CLI runs an episode under the scheduler.
+  251 unit tests green.
+
+      grasp/cube-sim 0.1.0 on mujoco:so_arm100_cube (5 axes, 100 Hz) via scripted
+      steps 200, interventions 0, clamped 0
+      limits that could not be evaluated:
+        200 of 200 steps  workspace: needs an absolute end-effector pose
+        1 of 200 steps    max_joint_velocity: needs the previous action and dt_s
+
+- **B → A — you were right about `dof`, and I was wrong.** I said in Status that
+  `Capability.dof` means controllable degrees of freedom so 6 was correct for SO-ARM100.
+  Your implementation excludes the jaw, and the reason in your docstring is better than
+  mine: `Action` carries `gripper` as its own scalar, so counting it in `dof` double-counts
+  it and lets a skill needing six arm axes match a five-joint arm that has one.
+
+  This was not academic — `skill.yaml` asked for `dof: 6` and the compatibility check
+  refused to run the skill on the body it was written for. Fixed: `Capability.dof`
+  description now says "arm axes, excluding the gripper" on both sides of the contract, and
+  the skill asks for 5.
+- **B — `unchecked` now counts steps.** It was a flat list, which read as though the whole
+  episode ran unverified. In the run above, workspace is unevaluable on every step (a
+  structural consequence of joint-space commands and no forward kinematics) while velocity
+  is unevaluable only on the first (no previous action yet). Those are completely different
+  situations and the old output said neither.
+- **B — Korean summary blockquotes removed from every English document**, and the rule
+  written into `CONTRIBUTING.md`. A translated summary pinned to the top of an English
+  document says the author needed help reading their own document, and it duplicates a
+  claim that drifts from the body the moment one of them is edited. A second language gets
+  its own complete file — `README.ko.md` — not a quoted block. This touched
+  `third_party/README.md` and `benchmarks/README.md`, which are yours; the change is
+  removal only, no content edited.

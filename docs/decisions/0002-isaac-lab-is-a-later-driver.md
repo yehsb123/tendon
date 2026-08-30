@@ -4,11 +4,6 @@
 **Date:** 2026-08-30
 **Evidence:** direct reading of `isaac-sim/IsaacLab` at `release/3.0.0-beta2` (commit `bffdce9`)
 
-> **한 줄 요약 (KO).** Isaac Lab은 지금 쓰기엔 너무 무겁고 버전 결합이 빡빡해서
-> v0.1~v0.3은 MuJoCo로 간다. 다만 Newton 백엔드가 Isaac Sim 없이(kit-less) 돌아가므로,
-> 정식 릴리스되면 드라이버로 붙인다. 그리고 Isaac Lab이 이미 하는 일과 tendon이 할 일이
-> 겹치지 않는다는 것을 이 문서로 확인했다.
-
 ---
 
 ## Context

@@ -45,7 +45,15 @@ class Capability(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     body_id: str = Field(description="Stable identifier, e.g. mujoco:so101 or so101:tty0")
-    dof: int = Field(gt=0, description="Controllable degrees of freedom")
+    dof: int = Field(
+        gt=0,
+        description=(
+            "Controllable arm axes, excluding the gripper. The gripper is described by "
+            "`gripper` and commanded through `Action.gripper`, so counting it here would "
+            "double-count it and let a skill needing six arm axes match a five-joint arm "
+            "that happens to have a jaw."
+        ),
+    )
     gripper: GripperKind = GripperKind.NONE
     control_hz: float = Field(gt=0, description="Rate the driver accepts setpoints at")
     cameras: tuple[str, ...] = ()

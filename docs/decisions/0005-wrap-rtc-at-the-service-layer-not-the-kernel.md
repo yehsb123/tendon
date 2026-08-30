@@ -5,13 +5,6 @@
 **Follows:** [ADR 0004](0004-lerobot-already-does-half-of-this.md), which said to evaluate
 building on `rollout/` before writing more of the scheduler
 
-> **한 줄 요약 (KO).** ADR 0004에서 "스케줄러 직접 짜기 전에 LeRobot `rollout/`을 먼저
-> 검토하라"고 했고, 읽어봤습니다. `rtc.py`는 두 클럭 문제를 제대로 풀었지만 torch와
-> `PreTrainedPolicy`에 강하게 묶여 있어서 커널이 그대로 쓸 수 없습니다. 커널이 torch를
-> import하는 순간 계층 경계가 무너집니다. 그래서 **커널 스케줄러는 얇게 직접 짜고,
-> RTC는 서비스 층에서 `Policy` 어댑터로 감쌉니다.** 그리고 `ring_buffer.py`는 두 클럭과
-> 무관합니다 — 텔레메트리 버퍼입니다.
-
 ## What was read
 
 **`rollout/inference/rtc.py`** (602 lines). A real-time chunking engine: a background

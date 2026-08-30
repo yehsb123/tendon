@@ -5,12 +5,6 @@
 **Found by:** Track A, reading `src/lerobot/rollout/` at LeRobot 0.6.2
 **Verified:** independently, against the same source
 
-> **한 줄 요약 (KO).** LeRobot에 이미 사람 개입 기능(DAgger)이 있습니다. 문맥 보존,
-> 교정 기록, 부드러운 핸드오버까지 다 있습니다. 그래서 stack.md에 쓴 "그 사이엔
-> 아무것도 없다"는 틀린 문장이 됐습니다. 다만 **LeRobot의 모든 개입은 사람이 먼저
-> 시작합니다.** 정책이 스스로 불확실하다고 손을 드는 기능은 없습니다. tendon의 주장은
-> 여기로 좁아지고, 좁아진 만큼 더 방어 가능합니다.
-
 ## What was claimed
 
 `docs/stack.md` said, of the interrupt protocol:

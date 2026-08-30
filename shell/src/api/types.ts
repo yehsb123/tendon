@@ -31,7 +31,8 @@ export enum GripperKind {
  */
 export interface Capability {
   body_id: string;
-  /** Controllable degrees of freedom. */
+  /** Controllable arm axes, excluding the gripper — that is `gripper` plus
+   *  `Action.gripper`. Counting the jaw here would double-count it. */
   dof: number;
   gripper: GripperKind;
   /** Rate the driver accepts setpoints at [Hz]. */

@@ -1,10 +1,5 @@
 # third_party — what was ported, and what was surveyed instead
 
-> **한글 요약.** 이 폴더에는 **복사해 온 코드·에셋**만 들어갑니다. 각 디렉토리는
-> `LICENSE`와 `PROVENANCE.md`를 반드시 갖고, CI가 이를 검사합니다. 아래 후반부는
-> 복사하지 않고 **의존하기로 한 오픈소스 조사 결과**입니다. 무엇을 주는지, tendon이
-> 어디서 쓰는지, 실제로 소스를 열어 확인한 사실을 적었습니다.
-
 `docs/stack.md` states the rule: depend where possible, port only what cannot be depended
 on. This file records both sides of that decision, because a survey that lives only in
 someone's head gets repeated.

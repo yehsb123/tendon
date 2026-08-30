@@ -17,7 +17,10 @@ metadata:
 # What the body must be able to do. Checked at load time, never mid-episode:
 # discovering an incompatibility while a robot is moving is too late.
 requires:
-  dof: 6
+  # Arm axes only. SO-ARM100 has five plus a jaw, and the jaw is `gripper` below —
+  # `Capability.dof` excludes it so that a skill needing six arm axes cannot match a
+  # five-joint arm that happens to have one.
+  dof: 5
   gripper: parallel
   action_spaces: [joint_position]
   cameras: [wrist]
