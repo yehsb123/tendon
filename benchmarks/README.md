@@ -24,6 +24,68 @@ laptop, its result cannot be reproduced by whoever has to question it later.
 
 ---
 
+## How these experiments are run
+
+> **한글.** 실험이 두 개이고 둘 다 명령 하나로 재현됩니다. 판정 기준을 스크립트 안에
+> 넣어서, 결과가 나쁘면 종료 코드 1로 실패합니다. 출력만 하는 벤치마크는 아무도 두 번
+> 돌리지 않기 때문입니다.
+
+```bash
+python benchmarks/capture_grasp.py        # can this body do the task? renders proof
+python benchmarks/recorder_overhead.py    # does recording slow the control loop?
+```
+
+Both take about ten seconds and need only the `sim` and `robot` extras.
+
+| | What it asks | How it answers | Passes when |
+| --- | --- | --- | --- |
+| `capture_grasp.py` | Can the body pick up the cube? | Drives IK-solved poses through a five-stage sequence, renders both cameras | cube height > 0.1 m |
+| `recorder_overhead.py` | Does recording fit in a control period? | Times `apply` + `observe` [+ `record`] over 300 steps, four configurations | recording costs < 10% of the period |
+
+### The method, and why it is this one
+
+**One control step is the unit.** Everything is measured as `apply` + `observe`, with and
+without `record` — exactly what the scheduler does every tick. Timing anything larger
+would hide which part costs what, and timing anything smaller would measure a function
+rather than a loop.
+
+**A/B against the same body, in one process.** Each configuration builds its own driver
+and its own dataset in a temporary directory that is deleted afterwards. Runs therefore do
+not append to each other's store and end up measuring a growing file rather than a fixed
+one. The overhead figures are differences between configurations measured minutes apart on
+the same machine, not against a remembered baseline.
+
+**One untimed step first.** The renderer allocates its GL context lazily and the dataset
+writer opens files on first use. Both are startup costs, and folding them into a
+steady-state mean would make the first run of anything look like a regression.
+
+**Percentiles, not just the mean.** Real-time control is specified by its worst case, not
+its average — a loop that meets its deadline 999 times in 1000 still drops a robot on the
+thousandth. So p99 is reported alongside the mean, and it is p99 that shows inline
+rendering is not merely slow but unreliable: 19.9 ms mean against 31 ms at p99.
+
+**The threshold lives in the script.** `recorder_overhead.py` exits 1 if recording alone
+exceeds a tenth of the control period, and `capture_grasp.py` exits 1 if the cube ends
+below the height `skill.yaml` calls success. A benchmark that only prints is a benchmark
+nobody runs twice, and a threshold in prose is one nobody checks.
+
+**Numbers here are re-measured, not remembered.** Every figure in this file was produced by
+the committed version of the script. Where a run-to-run range matters it is given —
+recording overhead measured +0.025, +0.027, +0.031 and +0.041 ms across four sessions —
+rather than quoting the most flattering one.
+
+### What is deliberately not measured
+
+**Absolute throughput.** How many episodes per hour this machine collects says more about
+this machine than about tendon. What matters is the *ratio* between configurations, which
+transfers.
+
+**Anything needing a GPU.** Policy inference and LoRA training are v0.3 work and will need
+their own benchmarks with their own hardware assumptions. Keeping this directory
+CPU-only means every number here can be checked by anyone who cloned the repository.
+
+---
+
 ## 0. What is actually being measured
 
 ```bash
