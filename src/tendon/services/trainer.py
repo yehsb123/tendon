@@ -176,6 +176,7 @@ class Trainer:
         steps: int = 2000,
         batch_size: int = DEFAULT_BATCH_SIZE,
         lora_rank: int = DEFAULT_LORA_RANK,
+        target_modules: str | list[str] | None = None,
         grad_clip_norm: float = 1.0,
         log_every: int = 100,
     ) -> TrainingRun:
@@ -189,6 +190,13 @@ class Trainer:
             steps: Optimiser steps. The nightly budget, not a convergence criterion.
             batch_size: Frames per step.
             lora_rank: Adapter rank.
+            target_modules: Which submodules the adapter attaches to, as a regex or a list
+                of names. None uses the policy's own default, which only the VLA families
+                declare: SmolVLA, pi-0, pi-0.5 and MolmoAct. ACT and Diffusion Policy do
+                not, and `wrap_with_peft` refuses rather than guessing, because attaching
+                LoRA to the wrong layers trains something that converges and does not
+                transfer. `skill.yaml` names `lerobot/smolvla_base`, which is why the
+                default path needs nothing here.
             grad_clip_norm: Gradient clipping, matching LeRobot's own training loop.
             log_every: Print interval.
 
@@ -216,9 +224,31 @@ class Trainer:
         except Exception as exc:
             raise TrainerError(f"could not load base policy {base_policy!r}: {exc}") from exc
 
+        # `from_pretrained` does not record where the weights came from, and
+        # `wrap_with_peft` validates against exactly that: without it the run is refused
+        # with "Training from scratch using PEFT is unlikely to yield good results". The
+        # check is right — an adapter over random weights learns nothing transferable —
+        # and the value it wants is the id we just loaded from.
+        if not getattr(policy.config, "pretrained_path", None):
+            policy.config.pretrained_path = base_policy
+
         # The whole reason full fine-tuning is off the table. `wrap_with_peft` freezes the
         # base and returns a model where only adapter parameters require gradients.
-        policy = policy.wrap_with_peft(peft_cli_overrides={"r": lora_rank})
+        overrides: dict[str, Any] = {"r": lora_rank}
+        if target_modules is not None:
+            overrides["target_modules"] = target_modules
+        try:
+            policy = policy.wrap_with_peft(peft_cli_overrides=overrides)
+        except ValueError as exc:
+            # Verified against `lerobot/act_aloha_sim_transfer_cube_human`, which raises
+            # exactly this: only the VLA families ship default targets. Re-raised with the
+            # way out, because the upstream message names a CLI flag that does not exist
+            # here.
+            raise TrainerError(
+                f"{base_policy} does not declare where LoRA should attach: {exc} "
+                f"Pass target_modules= to fine_tune. Only SmolVLA, pi-0, pi-0.5 and "
+                f"MolmoAct define a default."
+            ) from exc
         policy.to(device)
         policy.train()
 
