@@ -133,6 +133,22 @@ def _learn_and_keep(policy, memory_root, skill, body_id, observation, resolution
         )
 
 
+def _effective(loaded):
+    """The limits that will actually be enforced for this skill on this machine.
+
+    One function because two routes need it and they must not disagree: the session route
+    decides what the scheduler enforces, and the detail route tells an operator what that
+    is. A view answering "what is this motion not allowed to do" with the number the file
+    asked for rather than the number in force is the more dangerous of the two to get wrong.
+
+    Raises `LocalLimitsError` for a ceiling that exists and cannot be read. Both callers
+    refuse rather than fall back: a site that wrote one believes it has a bound.
+    """
+    from tendon.services.limits import load_local_limits, tighten
+
+    return tighten(loaded.limits, load_local_limits())
+
+
 def _record_progress(progress_root, skill, body_id, memories, result) -> None:
     """Append what this episode cost in human attention.
 
@@ -299,6 +315,7 @@ def create_app(
 
     @app.get("/api/skills/{namespace}/{name}")
     async def skill_detail(namespace: str, name: str) -> dict[str, Any]:
+        from tendon.services.limits import LocalLimitsError
         from tendon.services.skill import SkillError, load_skill
 
         try:
@@ -306,13 +323,27 @@ def create_app(
         except SkillError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+        try:
+            effective = _effective(loaded)
+        except LocalLimitsError as exc:
+            # Not falling back to the declared limits. This view exists to say what a
+            # motion is not allowed to do, and answering with the skill's own numbers while
+            # a broken ceiling sits on disk would be answering confidently and wrongly.
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
         return {
             "ref": loaded.ref,
             "version": loaded.version,
             "summary": loaded.summary,
             "license": loaded.license,
             "confidence_threshold": loaded.confidence_threshold,
-            "safety": loaded.limits.model_dump(),
+            # What will actually be enforced, not what the file asked for. The two differ
+            # whenever this machine has a ceiling, and a view whose whole purpose is
+            # "what is this motion not allowed to do" must not answer with the looser
+            # number. `declared` is kept so an operator can see that something narrowed it.
+            "safety": effective.model_dump(),
+            "declared": loaded.limits.model_dump(),
+            "capped": effective != loaded.limits,
             "success_criteria": [
                 {"condition": condition, "threshold": threshold}
                 for condition, threshold in loaded.success_criteria
@@ -479,7 +510,7 @@ def create_app(
         from tendon.kernel.scheduler import Scheduler, StepRecord
         from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
         from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
-        from tendon.services.limits import LocalLimitsError, load_local_limits, tighten
+        from tendon.services.limits import LocalLimitsError
         from tendon.services.memory_store import load_memory
         from tendon.services.policies import sine_sweep
         from tendon.services.skill import (
@@ -522,7 +553,7 @@ def create_app(
         # that wrote a ceiling believes it has one, and a 500 here is better than a robot
         # moving under limits nobody chose.
         try:
-            limits = tighten(loaded.limits, load_local_limits())
+            limits = _effective(loaded)
         except LocalLimitsError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 

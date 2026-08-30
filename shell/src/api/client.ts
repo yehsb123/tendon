@@ -84,8 +84,18 @@ export interface SkillDetail {
   summary: string;
   license: string;
   confidence_threshold: number;
-  /** Declared bounds. A null value means that limit is not set for this skill. */
+  /**
+   * The bounds that will actually be enforced. A null value means that limit is not set.
+   *
+   * Not the same as what the skill asked for. This machine may have a ceiling in
+   * `~/.tendon/limits.yaml`, and a view whose purpose is "what is this motion not allowed
+   * to do" has to answer with the number in force rather than the number requested.
+   */
   safety: Record<string, number | number[] | null>;
+  /** What the skill's own file asked for, before any local ceiling. */
+  declared: Record<string, number | number[] | null>;
+  /** True when a local ceiling narrowed something. */
+  capped: boolean;
   success_criteria: { condition: string; threshold: number }[];
   eval_episodes: number;
 }

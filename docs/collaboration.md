@@ -2303,6 +2303,31 @@ where confidence is going to come from.
   show the suite has not quietly shrunk, so the summary line is worth more than the tidier
   hook.
   629 tests green.
+
+- **B — last round's ceiling made the shell lie, and I found it by asking what my own
+  change had broken.** The scheduler started checking against the tightened limits and
+  `/api/skills/{ns}/{name}` went on reporting the numbers in `skill.yaml`. The `Skills`
+  view exists so somebody deciding whether to approve a motion can read what that motion is
+  not allowed to do, and it was answering with the looser figure.
+
+  Wrong in the direction that matters. A view wrong in the safe direction is a nuisance;
+  this one showed more freedom than the system would permit.
+
+  It now reports what will be enforced, keeps `declared` so an operator comparing the screen
+  against the file sees why they differ, and says a ceiling narrowed it. Both routes go
+  through one `_effective`, and a test counts the call sites — the session route decides
+  what is enforced and the detail route describes it, so a second copy is how the
+  description would stop matching the thing it describes.
+
+  A broken ceiling now fails the detail route too, rather than falling back to the declared
+  limits. Falling back would answer the question confidently and wrongly while the operator
+  had no way to tell their bound was not in force.
+
+  Two small things I got wrong writing the test, both repeats: counting `_effective(` caught
+  the definition as a third call site, and forbidding `tighten(loaded.limits` outright
+  banned its one legitimate use inside the helper. The first is the same mistake as the
+  `ScriptedPolicy(` count several rounds ago.
+  634 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as

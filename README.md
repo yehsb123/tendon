@@ -313,6 +313,11 @@ stricter of the two, so a site can say what nothing here exceeds and no skill wi
 asking. It only tightens — a file that could loosen a skill's own bound would be a way to
 turn a safety limit off by editing a config.
 
+The shell's `Skills` view shows the limits **in force**, not the ones the file asked for,
+and says when a ceiling narrowed them. A screen whose purpose is "what is this motion not
+allowed to do" answering with the looser number would be wrong in the direction that
+matters.
+
 ## Status
 
 **v0.1 — simulation only.** The loop above runs end to end: the scheduler routes every

@@ -100,6 +100,16 @@ export function Skills() {
   );
 }
 
+/** The limits a skill asked for, as one readable line. */
+function describe(limits: Record<string, number | number[] | null>): string {
+  const set = Object.entries(limits).filter(([, value]) => value !== null);
+  if (set.length === 0) return "no limits at all";
+
+  return set
+    .map(([key, value]) => `${key} ${Array.isArray(value) ? `[${value.join(", ")}]` : value}`)
+    .join(", ");
+}
+
 function Detail({ detail }: { detail: SkillDetail }) {
   const limits = Object.entries(detail.safety).filter(([, value]) => value !== null);
 
@@ -133,6 +143,15 @@ function Detail({ detail }: { detail: SkillDetail }) {
       </dl>
 
       <h4>Safety limits</h4>
+      {detail.capped ? (
+        // The numbers below are not the ones in `skill.yaml`. Said before them rather than
+        // after: somebody comparing this screen against the file needs to know why they
+        // differ before they conclude one of the two is wrong.
+        <p className="skill-note">
+          Narrowed by this machine's ceiling. The skill asked for{" "}
+          {describe(detail.declared)}; what is enforced is below.
+        </p>
+      ) : null}
       {limits.length === 0 ? (
         // Worth saying loudly. A skill with no declared bounds is checked against nothing,
         // and an empty list would read as "nothing to see here".
