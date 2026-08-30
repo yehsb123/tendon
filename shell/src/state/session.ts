@@ -162,6 +162,27 @@ function applyMessage(
       set({ pending: null });
       break;
 
+    case "finished": {
+      const current = get().session;
+      // Ignored until now, so an episode that had ended still looked like one that was
+      // running: the step counter froze, no interrupt ever arrived, and nothing said why.
+      // A stopped robot that the screen shows as working is the worst kind of stale.
+      set({
+        session: current === null
+          ? null
+          : { ...current, ...(message.state as Partial<SessionSnapshot>), finished: true, running: false },
+        pending: null,
+        intent: null,
+      });
+      break;
+    }
+
+    case "error":
+      // The runtime had a specific objection. Showing it beats a view that simply stops
+      // updating with no explanation.
+      set({ statusDetail: message.detail, decisionError: message.detail });
+      break;
+
     default:
       break;
   }

@@ -2,9 +2,13 @@
 
 ```
 types.ts      mirrors src/tendon/kernel/types.py — the shared vocabulary
-rest.ts       episodes, skills, training runs, evaluation results
-socket.ts     live intent, confidence, interrupt raise and resolve
+socket.ts     the live message contract, matching what the runtime sends
+client.ts     the implementation: fetch, reconnecting socket, failures as values
 ```
+
+There was a `rest.ts` declaring endpoints nobody called and types nobody imported. It was
+removed rather than filled in: a declaration for an endpoint that does not exist costs
+maintenance and verifies nothing, and the one that does exist is `client.ts`.
 
 ## The mirror has to be exact
 

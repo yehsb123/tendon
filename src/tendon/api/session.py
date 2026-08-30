@@ -126,8 +126,21 @@ class ShellHandler:
         with self._lock:
             if self._pending is None:
                 return False
+            step = self._pending.step
             self._decision = resolution
         self._answered.set()
+
+        # Published so every viewer stays in sync. With one shell this is redundant; with
+        # two it is the difference between both seeing the decision and one of them still
+        # showing controls for a question that has been answered.
+        _offer(
+            self._events,
+            {
+                "type": "resolved",
+                "step": step,
+                "resolution": resolution.resolution.value,
+            },
+        )
         return True
 
 

@@ -235,3 +235,54 @@ def test_a_finished_session_does_not_block_the_next() -> None:
 
     registry.add(a_session())
     assert len(registry.all()) == 2
+
+
+# ------------------------------------------------- every message type has both ends
+
+
+def test_deciding_publishes_resolved_for_other_viewers() -> None:
+    """With one shell this is redundant; with two it is the difference between both seeing
+    the decision and one still showing controls for a question already answered."""
+    events: queue.Queue = queue.Queue()
+    handler = ShellHandler(events, timeout_s=5.0)
+    threading.Thread(target=lambda: handler.resolve(a_context(step=4)), daemon=True).start()
+    time.sleep(0.05)
+
+    handler.decide(InterruptResolution(resolution=Resolution.APPROVED))
+    time.sleep(0.05)
+
+    published = []
+    while not events.empty():
+        published.append(events.get_nowait())
+
+    resolved = [e for e in published if e["type"] == "resolved"]
+    assert resolved, "an operator decided and no viewer was told"
+    assert resolved[0]["step"] == 4
+    assert resolved[0]["resolution"] == "approved"
+
+
+def test_every_message_the_runtime_sends_is_one_the_shell_handles() -> None:
+    """The drift this test exists to catch was real and in both directions.
+
+    The runtime sent `finished` and `error` that the shell ignored — an episode that had
+    ended still looked like one that was running. The shell waited on `resolved`, which
+    the runtime never sent. Nothing failed; the screen was simply wrong.
+    """
+    import re
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+
+    sent = set()
+    for name in ("app.py", "session.py"):
+        source = (repo / "src" / "tendon" / "api" / name).read_text(encoding="utf-8")
+        sent.update(re.findall(r'"type":\s*"([a-z]+)"', source))
+
+    handled_source = (repo / "shell" / "src" / "state" / "session.ts").read_text(encoding="utf-8")
+    handled = set(re.findall(r'case "([a-z]+)"', handled_source))
+
+    unhandled = sent - handled
+    assert not unhandled, (
+        f"the runtime sends {sorted(unhandled)} and the shell ignores them; a message "
+        "nobody handles is a screen that goes quietly stale"
+    )

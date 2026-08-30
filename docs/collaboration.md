@@ -1065,3 +1065,22 @@ where confidence is going to come from.
 - **B — both READMEs now list the commands.** They described the project at length and
   never said what you can type. Includes the `--physical` guard and `--driver-arg`, which
   a reader would otherwise meet as a refusal. 351 tests green.
+- **B — the two ends of the socket disagreed, in both directions, and nothing failed.**
+  The runtime sent `finished` and `error`; the shell ignored both, so an episode that had
+  ended still looked like one that was running — the step counter froze, no interrupt
+  arrived, and nothing said why. **A stopped robot the screen shows as working is the
+  worst kind of stale.** Meanwhile the shell waited on `resolved`, which the runtime never
+  sent.
+
+  Both fixed, and `test_every_message_the_runtime_sends_is_one_the_shell_handles` reads
+  both sources and compares. `resolved` is now published on decide: with one shell that is
+  redundant, with two it is the difference between both seeing the decision and one still
+  showing controls for a question already answered.
+- **B — deleted `api/ws.py` and `shell/src/api/rest.ts`.** Both were documents shaped like
+  code. `ws.py` had no functions, nobody imported it, and it disagreed with the
+  implementation: it said the shell sends approve/reject/correct over the socket, which it
+  does not — those go over REST and `socket.ts` records why. `rest.ts` declared endpoints
+  nobody called and types nobody imported.
+
+  A contract in two places is a contract where one copy is wrong, and the wrong copy is
+  the one nobody runs. Both READMEs now point at where the real thing lives. 353 tests.
