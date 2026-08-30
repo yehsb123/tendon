@@ -45,7 +45,10 @@ sim   = ["mujoco>=3.1", "gymnasium>=0.29"]
 # The kernel and the MuJoCo driver stay on 3.10, so only this extra is affected. Raising
 # requires-python for the whole project to satisfy one optional extra would push the
 # constraint onto everyone, including contributors who never install it.
-robot = ["lerobot>=0.6.2"]
+# The [dataset] extra is required, not optional: LeRobotDataset needs it, and it
+# pins av>=15,<16. A bare install resolves av 18.x, which imports and then fails
+# with "module av has no attribute option" the first time a dataset is opened.
+robot = ["lerobot[dataset]>=0.6.2"]
 train = ["torch>=2.3", "transformers>=4.44", "peft>=0.12", "accelerate>=0.33"]
 view  = ["rerun-sdk>=0.17"]
 dev   = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]

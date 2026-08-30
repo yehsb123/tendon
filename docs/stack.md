@@ -22,7 +22,7 @@ grew by one because of what the source said, not because the scope did.
 | # | Ours | Why nobody else has it |
 | --- | --- | --- |
 | 1 | **Embodiment HAL** (`drivers/base.py`) | LeRobot abstracts *robots*; we abstract *bodies*, including human video as a read-only body |
-| 2 | **Interrupt protocol** (`kernel/interrupt.py`) | The field has E-stop (cuts power) and teleop (full manual). Nothing in between preserves context |
+| 2 | **Policy-initiated handover** (`kernel/interrupt.py`) | LeRobot `rollout/strategies/dagger.py` already does human-initiated intervention with context preserved. What does not exist anywhere is the *system* raising its own hand. See [ADR 0004](decisions/0004-lerobot-already-does-half-of-this.md) |
 | 3 | **Curation metrics** (`services/curator.py`) | Everyone collects; nobody agrees on what makes an episode worth training on |
 | 4 | **The shell** (`shell/`) | Robotics researchers do not build interfaces; interface designers do not know robotics |
 | 5 | **Confidence estimation** (`services/`) | `PreTrainedPolicy` returns a bare action tensor; no policy reports how sure it is. See [ADR 0003](decisions/0003-confidence-has-no-upstream-source.md) |

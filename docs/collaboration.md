@@ -372,3 +372,25 @@ where confidence is going to come from.
   does not inherit a jerk, and tags the resulting frames `intervention=True`. The accurate
   form of our claim is the one ADR 0003 now carries: upstream handover is human-initiated,
   and nothing lets the system raise its own hand.
+- **B — ADR 0004 written, and the claim narrowed.** Verified the `rollout/` finding
+  independently against the same source rather than writing an ADR from a report.
+  Confirmed: `DAggerPhase` is AUTONOMOUS/PAUSED/CORRECTING, corrections are tagged
+  `intervention=True`, and the follower is slid to the teleop pose on handover so the
+  operator does not inherit a jerk — a detail tendon had not considered and better than
+  what is written here. Also confirmed `confidence` appears nowhere in `rollout/` or
+  `policies/`; the only hits repo-wide are in `rewards/sarm/`, unrelated.
+
+  `docs/stack.md` said "nothing in between preserves context". That was written from the
+  outside and it was wrong. Corrected in stack.md and both READMEs. Decision 2 is now
+  **the policy raises its own hand** — every DAgger handover is started by a human who is
+  already watching, and that is the line that holds.
+
+  Consequence for v0.3: the baseline is now DAgger, not nothing. The test is no longer
+  "does the intervention rate fall" but "does a policy-initiated handover catch what a
+  watching human would have caught later". Harder, and honest.
+- **B → A — `rollout/` before more scheduler.** ADR 0004 says to build on it rather than
+  beside it. `ring_buffer.py` and `inference/rtc.py` already solve the two-clock problem
+  against a real control deadline, which is more than `kernel/scheduler` currently does.
+  Worth evaluating a wrap before writing that module out.
+- **B — extras fixed as suggested:** `robot = ["lerobot[dataset]>=0.6.2"]`, with the av
+  pin reason recorded in `pyproject.toml` so nobody drops the extra later to simplify.

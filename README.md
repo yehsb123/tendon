@@ -38,10 +38,15 @@ There is no separate "data collection mode". Every execution is recorded as an e
 curated automatically, and fed back into training. Where `journalctl` keeps logs,
 tendon keeps **experience**.
 
-### 2. Human intervention is an interrupt, not an exception
-An E-stop cuts power: context is destroyed, nothing is learned. In tendon, low confidence
-raises an **interrupt** — control is handed to a human with state preserved, the correction
-is recorded, and execution resumes. Intervention becomes a training signal instead of a loss.
+### 2. The policy raises its own hand
+An E-stop cuts power: context is destroyed, nothing is learned. LeRobot's DAgger strategy
+does better — a human takes over mid-policy and the correction is recorded — but **every
+handover there is started by a person who is already watching.**
+
+In tendon the *policy* asks. Low confidence raises an **interrupt**: control is handed
+over with state preserved, the correction is recorded, execution resumes. That is the
+difference between supervision that scales and supervision that needs one operator per
+robot. See [ADR 0004](docs/decisions/0004-lerobot-already-does-half-of-this.md).
 
 ### 3. A body is a driver
 Policies never address a specific robot. Drivers translate a uniform intent into whatever
