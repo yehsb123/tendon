@@ -9,13 +9,21 @@ reversed.
 
 ## Current status: do not run this on physical hardware
 
-**tendon is pre-alpha and simulation-only.** No physical driver is implemented, safety
-enforcement is not implemented, and the interrupt path is unwritten. Nothing here has been
-verified against a real body.
+**tendon is pre-alpha and simulation-only.** Nothing here has been verified against a
+real body.
 
-The `so101` driver named in `docs/roadmap.md` is v0.4 work. Until it exists, and until
-`kernel/safety` is implemented and tested, connecting this to a robot means running a
-policy with no limit enforcement at all.
+As of the current commit: `kernel/safety` **is** implemented and tested, including the
+cases it cannot evaluate — a joint-space command carries no workspace information, and the
+verdict reports that as `unchecked` rather than passing silently. But **nothing calls it
+yet**, because `kernel/scheduler` is unwritten. A limit that exists and is never invoked
+protects nobody, so treat this as unenforced until the scheduler lands.
+
+Also still missing: any physical driver, and the interrupt path.
+
+The `so101` driver named in `docs/roadmap.md` is v0.4 work. Until it exists, and until the
+scheduler actually routes every action through `kernel/safety`, connecting this to a robot
+means running a policy with no limit enforcement at all — the limits being written down
+changes nothing on its own.
 
 This notice will be revised, not removed, when that changes.
 

@@ -129,9 +129,21 @@ export interface SafetyLimits {
   workspace_max: number[] | null;
 }
 
+/**
+ * The result of a safety check. Three things, not two.
+ *
+ * `unchecked` names limits that could not be evaluated from the information available —
+ * a joint-space command cannot be tested against a workspace without forward kinematics,
+ * which the kernel deliberately does not have.
+ *
+ * The shell must show this. An operator told an action is "allowed" when a limit was
+ * never evaluated has been told something false, and is the person who pays for it.
+ */
 export interface SafetyVerdict {
   allowed: boolean;
   violated: string[];
+  /** Limits that could not be evaluated, and what was missing. */
+  unchecked: string[];
   /** Present when the action was admissible after clamping. */
   clamped: Action | null;
 }

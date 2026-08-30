@@ -63,4 +63,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# src layout: tests import tendon without an editable install, so a bare
+# checkout can run the unit suite. CI depends on this.
+pythonpath = ["src"]
 asyncio_mode = "auto"
+markers = [
+    "hardware: needs a GPU or a physical robot; skipped by default",
+]

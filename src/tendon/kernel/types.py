@@ -160,10 +160,26 @@ class SafetyLimits(BaseModel):
 
 
 class SafetyVerdict(BaseModel):
+    """The result of a safety check.
+
+    Carries three things, not two. `unchecked` names the limits that could not be
+    evaluated from the information available — a joint-space command cannot be tested
+    against a workspace without forward kinematics, which the kernel deliberately does
+    not have.
+
+    A caller that ignores `unchecked` is choosing to proceed unverified. That is
+    sometimes correct, but it should be a decision rather than an assumption, which is
+    why an unevaluated limit is reported instead of quietly passing.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     allowed: bool
     violated: tuple[str, ...] = ()
+    unchecked: tuple[str, ...] = Field(
+        default=(),
+        description="Limits that could not be evaluated, and what was missing",
+    )
     clamped: Action | None = Field(
         default=None, description="Present when the action was admissible after clamping"
     )

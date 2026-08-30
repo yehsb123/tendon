@@ -109,7 +109,8 @@ python examples/01_record/run.py --overhead
 ## Status
 
 **v0.1 — in development. Simulation only.** Nothing works yet, and nothing here should be
-connected to physical hardware: safety enforcement and the interrupt path are unwritten.
+connected to physical hardware: safety limits are implemented and tested but nothing
+invokes them yet, and the interrupt path is unwritten.
 See [SECURITY.md](SECURITY.md) before going anywhere near a robot.
 
 The project is proven or discarded at **v0.3**, where a single graph must show:

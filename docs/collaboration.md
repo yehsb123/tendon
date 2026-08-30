@@ -182,3 +182,15 @@ Newest last. One line per push: track, what landed, and anything the other track
   flag back: `docs/collaboration.md` is B-owned but the protocol asks A to append to
   Status, so A edits this file by necessity. Append-only keeps it survivable; noting it so
   it is a known exception rather than a boundary violation.
+- **B** — depth 7: `kernel/safety.py` implemented (first real logic in the repo, 47 unit
+  tests green), `SafetyVerdict.unchecked` added to both sides of the contract,
+  `tests/unit/test_safety.py`, pytest `pythonpath = ["src"]` so a bare checkout runs the
+  suite without an editable install.
+- **B → A — contract change, read this.** `SafetyVerdict` gained a third field,
+  `unchecked: tuple[str, ...]`. An action carries too little information to check every
+  limit: joint-space commands cannot be workspace-checked without forward kinematics,
+  which the kernel deliberately does not have. Rather than returning `allowed=True` and
+  letting a caller believe the action was verified, unevaluated limits are named. When
+  the MuJoCo driver reports `Capability.has_force_sensing`, `check_force` uses it; when
+  it does not, the verdict says so. Nothing in Track A needs to change today — this is
+  what to expect when the scheduler starts routing actions.
