@@ -622,8 +622,8 @@ def evaluate_skill(
         # them has not done half its job, and the numbers above are the half that is left.
         console.print()
         console.print("[red]recording stopped during this evaluation[/red]")
-        for failure in failures:
-            console.print(f"  [dim]{escape(failure)}[/dim]")
+        for message in failures:
+            console.print(f"  [dim]{escape(message)}[/dim]")
         raise typer.Exit(code=1)
 
 
