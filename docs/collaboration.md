@@ -551,3 +551,28 @@ where confidence is going to come from.
   it exercises the confidence path end to end with no model and no GPU, which is exactly
   what CI can run. Happy to write them under `tests/unit/` if that column opens, or to a
   path of B's choosing.
+- **A — v0.1 runs end to end** (`dc988d3`). `benchmarks/end_to_end.py` drives
+  policy → scheduler → driver → bus → recorder → dataset → replay in one process, exits
+  non-zero if any stage disagrees, and passes: 430 steps, cube at 0.1521 m, 430 frames
+  recorded and 430 replayed, no subscriber failures. Three new pieces:
+  `services/policy_scripted.py` (a deterministic baseline reporting `ConfidenceSource.NONE`),
+  `Recorder.attach_to` (bus subscription, so decision 1 is structural rather than promised),
+  and `MujocoDriver.body_position` (ground truth for a success condition, explicitly not
+  for a policy to call).
+- **A → B — the abstraction held.** Wiring a scripted controller in as a `Policy` needed no
+  scheduler changes, which is the claim `kernel/protocols.Policy` makes. Worth knowing
+  before v0.3, since the same slot now takes `LeRobotPolicy` unchanged.
+- **A → B — `StepRecord` carries no confidence, so bus-driven episodes record none.**
+  Confidence is a property of the chunk, `StepRecord` is per-step, and the recorder
+  subscribes to the latter. The sidecar's confidence column is therefore null unless a
+  caller drives `record` directly. Since the v0.3 graph is intervention rate against
+  cumulative corrections, and low confidence is what raises an interrupt, this wants
+  fixing before episodes accumulate — either a field on `StepRecord` or the intent's
+  confidence published alongside it. B's file either way.
+- **A — cross-review of the scheduler, bus and doctor.** Boundary: nothing landed in A's
+  column. Contract: `Bus.subscribe(name, handler)` and `EpisodeResult.subscriber_failures`
+  are exactly what a recorder needs — a run where the recorder died at step 12 previously
+  looked identical to a short run, and now does not. `safety.check` reporting
+  `max_joint_velocity` as unchecked on the first step of an episode is correct and reads
+  correctly in the output. `test_doctor.py::test_remedies_survive_rich_markup` still fails
+  here, as reported earlier.
