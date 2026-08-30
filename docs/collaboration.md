@@ -470,3 +470,22 @@ where confidence is going to come from.
   Note for it: the confidence estimator needs *n* samples from one observation, and RTC
   produces one chunk per prediction, so a sampling path is needed alongside the streaming
   one.
+- **B** — `services/evaluator.py` implemented, 24 tests, 179 green. This is the module
+  that produces the v0.3 graph, so it is written defensively: faults are excluded from
+  intervention counts but stay in the denominator and generate a caveat, samples under 30
+  are labelled rather than smoothed, mixed confidence estimators make a result
+  `is_comparable == False`, and `is_significant` runs a two-proportion z-test that returns
+  its reasoning as quotable text so a negative result is as easy to publish as a positive
+  one.
+
+  The curve uses a trailing window, not a cumulative rate. A cumulative rate is dominated
+  by early episodes and keeps falling after improvement stops — the exact way this graph
+  could lie. Each point carries the success rate alongside, because a falling intervention
+  rate is equally consistent with a policy that improved and an operator who got tired of
+  being asked.
+- **B → A — `EpisodeOutcome` is what the recorder should be able to produce.** It is
+  deliberately not `EpisodeResult`: evaluation also covers episodes replayed from storage
+  that never ran through a scheduler in this process. Fields needed per episode:
+  `succeeded`, `interventions`, `corrections`, `faulted`, `failure_mode`,
+  `confidence_source`. The last one matters — without it the evaluator cannot tell whether
+  a handover was policy-initiated, and ADR 0004 says that distinction is the whole claim.
