@@ -244,8 +244,17 @@ def _baseline_policy(loaded, capability):
     is a channel wider than the action and every episode dies at step 0 — and `eval` kept
     the old constructor. The bug was repaired and still present, in the command that runs
     thirty episodes instead of one.
+
+    Which policy depends on what the skill declares. `policy.baseline` names something that
+    attempts the task; without it there is nothing to attempt and the fallback is a joint
+    sweep. That distinction is the difference between evaluating a skill and evaluating a
+    motion that happens to run on the same body — `tendon eval grasp/cube-sim` reported an
+    intervention rate and failure modes for a sweep that never reached for the cube.
     """
     from tendon.services.policies import ScriptedPolicy, sine_sweep
+
+    if loaded.policy_baseline:
+        return _named_baseline(loaded, capability)
 
     return ScriptedPolicy(
         sine_sweep(dof=capability.dof),
@@ -256,6 +265,29 @@ def _baseline_policy(loaded, capability):
         # only sweeps one joint. Held open: this policy has no notion of grasping
         # anything, and a jaw that closes on nothing is the more surprising default.
         gripper=_HELD_OPEN if capability.gripper.value != "none" else None,
+    )
+
+
+#: Baselines a skill can name in `policy.baseline`. Deliberately a small closed set rather
+#: than an import path: a skill file naming a Python object would let a downloaded skill
+#: choose what code runs, and skills are meant to be shareable (v0.4).
+_BASELINES = {"cube-pick"}
+
+
+def _named_baseline(loaded, capability):
+    """Build the baseline a skill asked for by name."""
+    from tendon.services.policy_scripted import CUBE_PICK, ScriptedPolicy
+
+    if loaded.policy_baseline not in _BASELINES:
+        raise typer.BadParameter(
+            f"{loaded.ref} asks for baseline {loaded.policy_baseline!r}, which this tendon "
+            f"does not have. Known: {sorted(_BASELINES)}"
+        )
+
+    return ScriptedPolicy(
+        name=f"{loaded.ref}/baseline",
+        stages=CUBE_PICK,
+        control_hz=capability.control_hz,
     )
 
 

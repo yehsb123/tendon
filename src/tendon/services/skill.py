@@ -92,6 +92,14 @@ class Skill:
     #: Hub reference for the base policy. Not resolved here.
     policy_base: str | None = None
     policy_adapter: str | None = None
+    #: What to run when no model is available. A skill that declares one can be evaluated
+    #: without weights, which is the only way to have a fixed baseline at all.
+    #:
+    #: Without it, `tendon eval` falls back to a joint sweep — and a sweep evaluated
+    #: against a grasp's success conditions is evaluating something else entirely. That is
+    #: what `tendon eval grasp/cube-sim` did: it reported an intervention rate and failure
+    #: modes for a motion that never reached for the cube.
+    policy_baseline: str | None = None
     eval_episodes: int = 50
     #: Success conditions, checked against `Observation.extra` at the end of an episode.
     #: The body supplies the quantity; the skill names it. Neither knows about the other.
@@ -193,6 +201,7 @@ def load_skill(path: str | Path, *, root: Path | None = None) -> Skill:
         confidence_threshold=_threshold(_mapping(raw, "interrupt", path, optional=True), path),
         policy_base=_optional_str(_mapping(raw, "policy", path, optional=True).get("base")),
         policy_adapter=_optional_str(_mapping(raw, "policy", path, optional=True).get("adapter")),
+        policy_baseline=_optional_str(_mapping(raw, "policy", path, optional=True).get("baseline")),
         eval_episodes=int(_mapping(raw, "eval", path, optional=True).get("episodes", 50)),
         success_criteria=_success(_mapping(raw, "eval", path, optional=True), path),
         source=path,

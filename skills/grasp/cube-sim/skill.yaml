@@ -30,6 +30,10 @@ policy:
   # No weights in this repo. Skills reference open weights on the Hub.
   base: lerobot/smolvla_base
   adapter: null          # a LoRA adapter appears here after `tendon train`
+  # What runs when there are no weights. Without this, evaluation falls back to a joint
+  # sweep and then judges it against the success conditions below — which measures a
+  # motion that never reaches for the cube.
+  baseline: cube-pick
 
 # Enforced by kernel/safety on every action, including operator corrections.
 safety:

@@ -256,6 +256,11 @@ If the recorder cannot run — LeRobot is an optional extra — the command says
 going rather than pretending; if it starts and then fails, the command exits non-zero,
 because a run that collected nothing should not report success.
 
+A skill says how to attempt itself without a model, in `policy.baseline`. Without that,
+evaluation falls back to a joint sweep — and `tendon eval grasp/cube-sim` was judging a
+sweep against *was the cube lifted*, reporting failure modes for a motion that never
+reached for it. A skill knew what success meant and had no way to say what should be tried.
+
 `tendon curate` reads episodes back from the store and ranks them — jerk, idle time,
 gripper churn, length against the population — with the reasons beside each score, because
 a bare number gives a reviewer nothing to disagree with. It never deletes and never filters

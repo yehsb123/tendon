@@ -230,6 +230,38 @@ def test_require_compatible_raises_with_every_reason() -> None:
     assert "test:body" in str(excinfo.value)
 
 
+# ---------------------------------------------------------- the baseline field
+
+
+def test_a_skill_can_say_how_to_attempt_it_without_a_model(tmp_path: Path) -> None:
+    """`policy.baseline` exists because evaluation had no way to ask.
+
+    `tendon eval grasp/cube-sim` judged a sine sweep against the skill's success condition
+    — was the cube lifted — and reported failure modes for a motion that never reached for
+    it. The skill knew what success meant and had no way to say what should be attempted.
+    """
+    path = tmp_path / "skill.yaml"
+    path.write_text(MINIMAL + "policy:\n  baseline: cube-pick\n", encoding="utf-8")
+
+    assert load_skill(path).policy_baseline == "cube-pick"
+
+
+def test_a_skill_without_one_says_nothing_rather_than_guessing(tmp_path: Path) -> None:
+    """None, not a default. A skill with nothing to attempt should not be given something
+    to attempt on its behalf."""
+    path = tmp_path / "skill.yaml"
+    path.write_text(MINIMAL, encoding="utf-8")
+
+    assert load_skill(path).policy_baseline is None
+
+
+def test_the_shipped_skill_declares_one() -> None:
+    """The skill this repository ships is the one the milestone is measured on, and it is
+    a grasp. Evaluating it with a sweep is what prompted the field."""
+    repo = Path(__file__).resolve().parents[2]
+    assert load_skill(repo / "skills/grasp/cube-sim").policy_baseline == "cube-pick"
+
+
 # ------------------------------------------------------------- finding a skill
 #
 # Everything else in the project calls a skill `namespace/name`: the API serves

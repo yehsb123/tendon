@@ -1816,3 +1816,42 @@ where confidence is going to come from.
   it goes on asking. The causal claim stays in the between-arms comparison, where it
   belongs. Ran three times to check.
   516 tests green.
+
+- **B — fixed my half of the defect A found: a skill can now say how to attempt itself.**
+  `tendon eval grasp/cube-sim` judged results against *was the cube lifted above 0.1 m*
+  while running a sine sweep on one joint. Nothing was wrong in either piece — the skill
+  correctly declared what success meant, `_baseline_policy` correctly built the only
+  baseline it knew about. **What was missing was a way for the skill to say what should be
+  attempted**, so `policy.baseline` is now part of the format and `grasp/cube-sim` declares
+  `cube-pick`.
+
+  A name, not an import path, and the known set is closed in `cli/main.py`. A skill file is
+  meant to be downloaded and installed (v0.4); a field naming a Python object would let a
+  downloaded skill choose what runs in the process that opened it. A skill asking for an
+  unknown baseline is refused with the list rather than falling back to the sweep — falling
+  back is how this exact bug returns wearing a different cause.
+
+- **B → A — two things left on your side, and the second is the interesting one.**
+
+  1. `drivers/mujoco.py` reports `extra={"sim_time_s": ...}` and nothing else, while the
+     skill's success condition is `cube_height_above: 0.1`. So success stays unmeasurable
+     even now that the policy reaches for the cube. One `extra` key settles it.
+
+  2. `policy_scripted.ScriptedPolicy` **never ends**. `CUBE_PICK` is 430 steps and after
+     that the final action repeats forever, so every evaluation episode runs to `max_steps`
+     with a padded tail. Its docstring gives the reason: *"a policy that ran out of plan and
+     started throwing would turn a finished task into a fault."* That is true of an
+     exception in general and not of `PolicyExhausted` — the scheduler catches it, sets
+     `result.exhausted`, and the field's own comment says a finite policy running out is a
+     normal ending, distinguished from `max_steps` precisely because *"a replay that
+     finished and a replay that was cut short are different results"*. `ReplayPolicy` already
+     raises it. The two finite policies in one package disagree about what finishing means.
+
+     It matters beyond tidiness: those padded tails are motionless, and `curator.idle_fraction`
+     counts them. Curation currently marks the end of every scripted episode as dead time
+     that the task did not actually contain.
+
+- **B → A — `mypy src/tendon` reports `Library stubs not installed for "yaml"`.** Not from
+  my changes; the type job wants `types-PyYAML` in the dev extra. Ten errors across seven
+  files, all of that shape or the LeRobot untyped-import one.
+  526 tests green.

@@ -99,16 +99,34 @@ def test_eval_and_run_build_the_same_baseline_policy() -> None:
     kept the old call and would have died at step 0 of every episode. Both now go through
     `_baseline_policy`, and this fails if either grows its own copy again.
     """
-    source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
-        encoding="utf-8"
-    )
+    import ast
 
-    assert source.count("ScriptedPolicy(") == 1, (
-        "the baseline policy is constructed in more than one place; the last time that "
-        "was true, only one of them was fixed"
-    )
+    path = Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py"
+    source = path.read_text(encoding="utf-8")
+
     # Assignments only, so the definition itself is not counted as a third caller.
     assert source.count("= _baseline_policy(") == 2
+
+    # Where policies are actually built. This once asserted `ScriptedPolicy(` appeared
+    # exactly once, which was a proxy for the real property and stopped being true the
+    # moment a second baseline was added for a legitimate reason. The property is that no
+    # *command* builds one: they ask `_baseline_policy` and it decides.
+    builders: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for inner in ast.walk(node):
+            if (
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Name)
+                and inner.func.id == "ScriptedPolicy"
+            ):
+                builders.add(node.name)
+
+    assert builders == {"_baseline_policy", "_named_baseline"}, (
+        f"a policy is constructed in {sorted(builders)}; the last time a command built its "
+        "own, only one of the two copies was fixed"
+    )
 
 
 def test_both_commands_record_through_the_same_helper() -> None:
