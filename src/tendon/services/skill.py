@@ -109,7 +109,7 @@ class Skill:
 SKILL_ROOT = Path("skills")
 
 
-def _resolve(path: str | Path) -> Path:
+def _resolve(path: str | Path, root: Path | None = None) -> Path:
     """Find a `skill.yaml` from either a path or a `namespace/name` reference.
 
     A path is tried first and wins, so nothing that used to work changes. The reference
@@ -129,20 +129,20 @@ def _resolve(path: str | Path) -> Path:
     # Only a bare `namespace/name` is worth retrying. Anything with a suffix or more
     # segments was meant as a path, and reporting the path the caller typed is more
     # useful than reporting somewhere they never mentioned.
+    base = root if root is not None else SKILL_ROOT
     parts = Path(path).parts
     if len(parts) == 2 and not Path(path).suffix:
-        under_root = SKILL_ROOT / parts[0] / parts[1] / "skill.yaml"
+        under_root = base / parts[0] / parts[1] / "skill.yaml"
         if under_root.exists():
             return under_root
         raise SkillError(
-            f"no skill file at {candidate}, and no skill {parts[0]}/{parts[1]} "
-            f"under {SKILL_ROOT}{os.sep}"
+            f"no skill file at {candidate}, and no skill {parts[0]}/{parts[1]} under {base}{os.sep}"
         )
 
     raise SkillError(f"no skill file at {candidate}")
 
 
-def load_skill(path: str | Path) -> Skill:
+def load_skill(path: str | Path, *, root: Path | None = None) -> Skill:
     """Read and validate a `skill.yaml`.
 
     Validation is strict about structure and permissive about extra keys: a skill written
@@ -151,8 +151,15 @@ def load_skill(path: str | Path) -> Skill:
 
     A misspelled *known* key is the dangerous case — `max_joint_velocty` would silently
     leave a limit unset — so the safety block is checked for near-misses explicitly.
+
+    Args:
+        root: Where a `namespace/name` reference is looked up. Defaults to `SKILL_ROOT`,
+            which is relative to the working directory. Passed explicitly by the API,
+            whose `skill_root` injection was silently ineffective for sessions: the
+            discovery routes honoured it and `POST /api/sessions` went to the global, so a
+            test pointing the app at a fixture directory still ran whatever was in `skills/`.
     """
-    path = _resolve(path)
+    path = _resolve(path, root)
 
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))

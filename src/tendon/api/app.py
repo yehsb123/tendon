@@ -106,6 +106,23 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
 
     root = skill_root if skill_root is not None else _DEFAULT_SKILL_ROOT
     episode_root = episode_root if episode_root is not None else DEFAULT_ROOT
+
+    # What the operator has taught, kept across sessions rather than per episode.
+    #
+    # `examples/04_improve` says why in its own comment: one memory across every episode,
+    # because what somebody taught in episode 3 has to still be there in episode 30. The
+    # shell built a fresh `AdaptivePolicy` for each session, so a correction survived
+    # exactly as long as the episode it was made in — and the intervention rate could
+    # never fall no matter how patient the operator was. The claim this interface exists
+    # to demonstrate could not be demonstrated through it.
+    #
+    # Keyed on skill *and* body: a correction is a joint-space position, so it means
+    # nothing on a body with different kinematics, and nothing about a different task.
+    #
+    # In memory, so it lasts as long as `tendon serve` does. Not yet on disk — the
+    # corrections themselves are now in each episode's `interrupts` table, which is what a
+    # rebuild would read, and that is the v0.3 step rather than this one.
+    memories: dict[tuple[str, str], Any] = {}
     registry = SessionRegistry()
 
     app = FastAPI(
@@ -270,7 +287,12 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
         from tendon.api.session import EpisodeSession
         from tendon.kernel.bus import Bus
         from tendon.kernel.scheduler import Scheduler, StepRecord
-        from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
+        from tendon.services.adaptive import (
+            AdaptivePolicy,
+            CorrectionMemory,
+            StochasticPolicy,
+            UncertainRegion,
+        )
         from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
         from tendon.services.policies import sine_sweep
         from tendon.services.skill import (
@@ -281,7 +303,11 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
         )
 
         try:
-            loaded = load_skill(request.skill)
+            # `root=` rather than the default: the discovery routes above already resolve
+            # under the injected root, and this one went to the module global. An app
+            # pointed at a fixture directory still started sessions from whatever was in
+            # `skills/`, which made the injection look effective while doing nothing here.
+            loaded = load_skill(request.skill, root=root)
         except SkillError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -315,9 +341,11 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
                 # narrower than what the recorder is set up to store.
                 gripper=1.0 if capability.gripper.value != "none" else None,
             )
+            memory = memories.setdefault((loaded.ref, capability.body_id), CorrectionMemory())
+
             # Kept so the scheduler can hand corrections back to it. The policy is built
             # on the episode thread, so this is the only reference anybody else gets.
-            holder["policy"] = AdaptivePolicy(inner)
+            holder["policy"] = AdaptivePolicy(inner, memory=memory)
             return holder["policy"]
 
         bus: Bus[StepRecord] = Bus()

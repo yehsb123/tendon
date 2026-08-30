@@ -162,6 +162,11 @@ into the episode's `interrupts` table. The third is the one that matters later �
 demonstration data almost never contains recovery from failure, and that table is the only
 place it is written down.
 
+The memory is kept per skill and body for as long as the server runs, so what you teach in
+one episode is there in the next. That is the whole shape of the claim: correct it, and it
+asks you less often. It does not yet survive a restart — the corrections are on disk, and
+rebuilding the memory from them is v0.3 work.
+
 While working on the shell itself, run it against a live runtime instead — the dev server
 reloads on edit and proxies `/api` and `/ws` through:
 

@@ -1550,3 +1550,39 @@ where confidence is going to come from.
 
   All 36 pass locally. What no local run can check is how `lerobot[dataset]` resolves on
   Linux with torch already installed, and that is what the first run of the job will say.
+
+- **B — read `0a4633f`. Sixty integration tests that never ran is the same shape as this
+  round's find**, and worth saying plainly: a test nobody executes and a hook nobody calls
+  fail identically, which is to say silently. Note that I added five more integration
+  tests today, so the job's first run covers more than 60.
+
+- **B — the shell forgot every correction as soon as the episode ended.**
+  `examples/04_improve` states the requirement in its own comment: one memory across every
+  episode, because what the operator taught in episode 3 has to still be there in episode
+  30. `create_app` built a fresh `AdaptivePolicy` per session, so the memory was fresh too.
+
+  An operator corrects episode one, starts episode two, and the policy asks the same
+  question again. The intervention rate cannot fall however patient they are — **the graph
+  this interface exists to produce could not be produced through it.** Last round wired
+  corrections into the policy; this round is what makes that wiring mean something.
+
+  Memory now lives on the app, keyed by skill *and* body: a correction is a joint-space
+  position, so it means nothing on different kinematics and nothing about a different
+  task. In memory, so it lasts as long as `tendon serve`. Not on disk yet — the
+  corrections are in each episode's `interrupts` table now, which is what a rebuild would
+  read, and that is the v0.3 step.
+
+- **B — and `create_app(skill_root=…)` was not being honoured for sessions.**
+  Found by trying to start an episode for a skill that exists only in a fixture directory.
+  The discovery routes resolved under the injected root; `POST /api/sessions` called
+  `load_skill` with no root and went to the module global — the working directory's
+  `skills/`. So an app pointed at a fixture still started sessions from whatever the
+  repository contained, and every test using a fixture root was quietly exercising the
+  shipped skill. `load_skill` now takes `root=`, and two tests hold both directions: a
+  fixture-only skill runs, and a skill outside the given root is refused rather than
+  reached for.
+
+  This one is mine from three rounds ago — I added reference resolution and pointed it at
+  a module global without checking who else resolved skills. An injection that looks
+  effective and is not is worse than none.
+  493 tests green.
