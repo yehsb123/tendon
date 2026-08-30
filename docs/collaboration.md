@@ -140,3 +140,45 @@ Newest last. One line per push: track, what landed, and anything the other track
   works, `design/tokens.css` + `app.css`, `main.tsx`, `App.tsx`, `views/Live.tsx`,
   `panels/IntentPreview.tsx`. The shell now runs and honestly reports that no runtime
   is connected, rather than rendering an empty scene that looks live.
+- **A** — first landing (`ccad807`): `third_party/mujoco_menagerie/trs_so_arm100/` at
+  `da76818` with `PROVENANCE.md` (CI provenance job now passes), plus
+  `src/tendon/assets/robots/so_arm100_wrist_cam.xml` and
+  `src/tendon/assets/scenes/so_arm100_cube.xml`. The v0.1 MuJoCo driver has an arm and a
+  task to load. Cube size, spawn position and camera pose are all derived from measured
+  geometry; the numbers and the three MJCF traps found are in the commit body.
+- **A → B — new path, ownership not in the table.** `src/tendon/assets/**` is new. Taken
+  as A on the reasoning that scenes are MuJoCo API surface, but it is B's call. Two
+  things it needs from B, both in B-owned files:
+  1. `pyproject.toml` — the wheel currently ships no `.xml` or `.stl`, so an installed
+     tendon cannot find the scene. `[tool.hatch.build.targets.wheel]` needs the assets,
+     and `third_party/` needs a decision: ship it or resolve it from a source checkout.
+  2. `.gitignore` — MuJoCo drops `MUJOCO_LOG.TXT` in the working directory on load.
+     Deleted by hand this time.
+- **A → B — four findings from reading LeRobot 0.6.2 at `4aaff99`.** Listed by how
+  expensive each is to discover late:
+  1. **`Intent.confidence` has no source.** `PreTrainedPolicy` exposes `select_action`
+     and `predict_action_chunk`, both returning a bare tensor. No LeRobot policy reports
+     confidence. Since `InterruptReason.LOW_CONFIDENCE` is what makes design decision 2
+     fire, confidence estimation is a fifth thing tendon has to build, and `docs/stack.md`
+     lists four. Worth an ADR before v0.2 rather than a scramble at v0.3.
+  2. **`requires-python` conflict.** LeRobot 0.6.2 declares `>=3.12`; tendon declares
+     `>=3.10`. The `robot` extra is uninstallable on 3.10 and 3.11, silently, at
+     resolution time.
+  3. **`apply()` discards what the body actually did.** `Driver.apply` returns `None` and
+     the docstring forbids substituting an action. But `Robot.send_action` returns the
+     action after hardware clipping, precisely because real bodies do substitute. Right
+     now that difference is unrecorded, so an episode says the policy commanded what the
+     motors refused. Either `apply` returns the applied action or `Observation` carries it.
+  4. **`Policy` protocol still absent.** `kernel/protocols.py` defines `Driver` only, so
+     `Scheduler.run_episode` has nothing to call. `predict_action_chunk` is the natural
+     shape to wrap — it already returns a chunk, which is what `Intent` is.
+- **A — note on `skill.yaml`:** `requires.dof: 6` matches the SO-ARM100 actuator count,
+  but that is 5 arm joints plus the jaw. If `dof` was meant as arm axes, the cube-sim
+  skill will not load on the body it was written for. `Capability.dof` says "controllable
+  degrees of freedom", which reads as 6 — worth stating explicitly either way.
+- **A — cross-review of `f9c1033` and depth 5.** Boundary: nothing landed in A's column.
+  Contract: `test_boundaries.py` unaffected by this push, which adds no Python. CI
+  provenance job checked locally against the vendored directory and passes. One thing to
+  flag back: `docs/collaboration.md` is B-owned but the protocol asks A to append to
+  Status, so A edits this file by necessity. Append-only keeps it survivable; noting it so
+  it is a known exception rather than a boundary violation.
