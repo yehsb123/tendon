@@ -444,3 +444,29 @@ where confidence is going to come from.
   than theoretical. Control 100 Hz (0.1 ms of work), camera ~20-30 Hz (16 ms per frame,
   and `render_hz` is a ceiling — Windows timer resolution means 30 asked gives 20), and
   deliberation at a 50-step SmolVLA chunk, which is 0.5 s at 100 Hz.
+- **B — vendored code verified against upstream, byte for byte.** Cloned menagerie
+  independently and diffed. Commit `da76818e...` in `PROVENANCE.md` matches upstream HEAD
+  exactly. `scene.xml`, `so_arm100.xml`, `LICENSE`, `README.md`, `CHANGELOG.md` all
+  identical; all 18 `.stl` meshes byte-identical, and PROVENANCE says 18, which is right.
+
+  One thing looked wrong and was not: `third_party/mujoco_menagerie/LICENSE` differs from
+  upstream's 7425-line file. That is correct and deliberate — upstream's is a concatenation
+  of per-model terms for dozens of robots we did not take, and copying it would look like
+  inheriting conditions from models that are not here. Verified independently that
+  upstream line 6624 gives `trs_so_arm100/` as Apache-2.0, which is what was placed. The
+  reasoning was already in PROVENANCE. My concern, not a finding.
+- **B → A — correction on the `rollout/` report.** `ring_buffer.py` is not part of the
+  two-clock machinery. It is a memory- and time-bounded telemetry buffer for the Highlight
+  Reel strategy: `append`, `drain`, `clear`, byte accounting, single-threaded. `rtc.py` is
+  the real two-clock implementation and it is good — background thread producing chunks,
+  main loop polling `get_action`, latency tracking, chunk merging, re-anchoring.
+- **B** — ADR 0005 + `kernel/scheduler.py` implemented, 20 tests, 155 green.
+  RTC cannot go in the kernel: it imports torch, `PreTrainedPolicy` and four
+  `lerobot.processor` steps, so using it there would make `Policy` an alias for
+  `PreTrainedPolicy` and stop a scripted controller or replayed demonstration from being a
+  policy — which is what makes evaluation against a fixed baseline possible. So the kernel
+  scheduler is thin and synchronous, and **RTC gets wrapped as a `Policy` in `services/`,
+  which may import torch freely.** That adapter is Track A's when a real policy is run.
+  Note for it: the confidence estimator needs *n* samples from one observation, and RTC
+  produces one chunk per prediction, so a sampling path is needed alongside the streaming
+  one.
