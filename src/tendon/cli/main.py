@@ -280,9 +280,54 @@ def shell(
 
 
 @app.command()
-def episodes() -> None:
-    """List recorded episodes."""
-    raise NotImplementedError("v0.1")
+def episodes(
+    store: str = typer.Option("", help="Where episodes live. Defaults to ~/.tendon/episodes"),
+) -> None:
+    """List what has been recorded.
+
+    Reads the layout on disk rather than opening datasets through LeRobot, so it works on
+    a machine that cannot currently record — which is exactly when someone wants to know
+    what they already have.
+    """
+    from tendon.services.store import DEFAULT_ROOT, human_size, list_datasets
+
+    console = Console()
+    root = Path(store) if store else DEFAULT_ROOT
+    datasets = list_datasets(root)
+
+    if not datasets:
+        # Not an error. It is the normal state before anything has run, and saying so is
+        # more useful than an empty table.
+        console.print(f"[dim]nothing recorded under {escape(str(root))}[/dim]")
+        console.print("[dim]run an episode: tendon run skills/grasp/cube-sim[/dim]")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("skill")
+    table.add_column("episodes", justify="right")
+    table.add_column("size", justify="right")
+    table.add_column("last written")
+
+    for dataset in datasets:
+        table.add_row(
+            escape(dataset.ref),
+            "?" if dataset.episodes is None else str(dataset.episodes),
+            human_size(dataset.size_bytes),
+            dataset.modified.astimezone().strftime("%Y-%m-%d %H:%M"),
+        )
+
+    console.print(table)
+
+    # Reported rather than skipped: something on disk that cannot be read is a more useful
+    # thing to know about than a shorter list.
+    unreadable = [d for d in datasets if not d.readable]
+    if unreadable:
+        console.print()
+        for dataset in unreadable:
+            console.print(
+                f"[yellow]{escape(dataset.directory)}:[/yellow] "
+                f"{escape(dataset.unreadable_because or '')}"
+            )
 
 
 @app.command()

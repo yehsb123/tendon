@@ -33,7 +33,7 @@ change, so it is not a style preference.
 | `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py`, `policies.py` | **B** | tendon logic, not ported |
 | `shell/**` | **B** | the interface |
 | `docs/**`, `tests/**`, `examples/**`, `skills/**` | **B** | frame and documentation |
-| `src/tendon/services/skill.py`, `policies.py`, `bodies.py` | **B** | skill format, baselines, driver lookup |
+| `src/tendon/services/skill.py`, `policies.py`, `bodies.py`, `store.py` | **B** | skill format, baselines, driver lookup, reading the store |
 | `README*.md`, `pyproject.toml`, `.github/**` | **B** | project surface |
 
 If a change needs a file in the other column, say so in **Status** below rather than
@@ -1039,3 +1039,16 @@ where confidence is going to come from.
   room. It uses the danger tokens rather than the accent on purpose: the accent belongs to
   the interrupt state, which is a request for a decision, while this is a statement about
   what is connected. 332 tests green, shell builds.
+- **B — `tendon episodes` works instead of raising.** It was the last command the CLI
+  offered and could not perform, which is the shape of problem the last several rounds have
+  all been: something that looks available and is not.
+
+  `services/store.py` reads the layout on disk rather than opening datasets through
+  LeRobot. That is deliberate and tested: LeRobot needs Python 3.12 and an optional extra,
+  and **"what have I recorded?" is a question someone should be able to ask on a machine
+  that cannot currently record anything.**
+
+  A dataset whose metadata is missing or broken is listed with the reason rather than
+  skipped — a partial write looks exactly like that, and knowing 4 GB of something
+  unreadable is sitting there is the useful half. An empty store prints what to run next
+  rather than an empty table. 349 tests green.
