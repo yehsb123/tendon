@@ -9,6 +9,11 @@
 > 시뮬이 실시간보다 60배 빨라서 카메라가 못 따라가고, 300스텝에 프레임이 3장만 나옵니다.
 > 카메라를 쓰는 수집은 루프 속도를 실시간에 가깝게 늦추거나, 렌더 속도에 묶이는 것을
 > 받아들여야 합니다.
+>
+> 무엇을 측정하는지 글로만 설명하면 알기 어려워서, **0번 절에 실제 장면을 렌더링해
+> 넣었습니다.** 팔이 큐브를 집어 드는 5단계를 전체 시점과 손목 카메라 시점으로 각각
+> 담았습니다. 그림이자 동시에 테스트입니다 — 마지막에 큐브 높이가 skill.yaml의 성공
+> 기준(0.1m)을 넘는지 검사하고 못 넘으면 종료 코드 1을 냅니다.
 
 A measurement here exists because a decision hangs on it. Anything measured out of
 curiosity belongs in a commit message, not in this directory.
@@ -16,6 +21,57 @@ curiosity belongs in a commit message, not in this directory.
 Every number below was produced on CPU with no GPU and no hardware, which is the same
 constraint `CONTRIBUTING.md` puts on the test suite. If a benchmark needs more than a
 laptop, its result cannot be reproduced by whoever has to question it later.
+
+---
+
+## 0. What is actually being measured
+
+```bash
+python benchmarks/capture_grasp.py
+```
+
+Every number on this page comes from the same scene: an SO-ARM100 and a 30 mm cube. Rather
+than describe it, here it is — a scripted pick-up, five stages, rendered from the scene
+camera.
+
+![Scripted grasp, scene camera](images/grasp_scene.png)
+
+And the same five stages from the wrist camera, which is what a policy would actually see:
+
+![Scripted grasp, wrist camera](images/grasp_wrist.png)
+
+**The jaws taking up the lower third of the wrist view is not a framing mistake.** A real
+wrist camera sees its own gripper too, and that is useful — where the fingers are relative
+to the object is most of what the view is for. What matters is that the cube stays centred
+and grows as the arm descends, which it does.
+
+### This is a test, not an illustration
+
+The script ends by checking the cube's height against `cube_height_above: 0.1`, the success
+condition in `skills/grasp/cube-sim/skill.yaml`, and exits non-zero if it is not met.
+
+```
+1 start    cube z = 0.0150 m
+2 approach cube z = 0.0150 m
+3 descend  cube z = 0.0150 m
+4 close    cube z = 0.0150 m
+5 lift     cube z = 0.1523 m
+PASS: cube lifted to 0.1523 m, above the 0.1 m success height in skill.yaml.
+```
+
+So it answers a question that has to be settled before any policy is trained: **can this
+body do this task at all?** If the jaw gap were too narrow for a 30 mm cube, the friction
+too low to hold it, the reach too short, or the camera aimed at nothing, this fails —
+loudly, with an exit code, rather than producing a plausible picture of a robot missing.
+
+No policy is involved. Joint targets come from damped least-squares inverse kinematics
+against the grasp point measured in section 2, so the claim is about the body. Whether a
+*policy* can do it is what v0.3 exists to answer, and this is the baseline it will be
+measured against.
+
+The stage poses are hardcoded so the images are reproducible, and re-solved on every run
+and compared: if the scene moves the cube or the arm changes, the script warns rather than
+quietly rendering a near miss.
 
 ---
 
