@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import type { ConnectionStatus } from "../api/client";
+import { CorrectionEditor } from "../panels/CorrectionEditor";
 import { IntentPreview } from "../panels/IntentPreview";
 import { useSession } from "../state/session";
 
@@ -24,6 +25,8 @@ export function Live() {
     pending,
     deciding,
     decisionError,
+    correcting,
+    setCorrecting,
     checkRuntime,
     start,
     decide,
@@ -50,13 +53,22 @@ export function Live() {
       </section>
 
       <aside className="live-side">
-        <IntentPreview
-          intent={intent}
-          status={status}
-          onApprove={handedOver ? () => void decide("approved") : undefined}
-          onReject={handedOver ? () => void decide("rejected") : undefined}
-          onCorrect={handedOver ? () => void decide("rejected", undefined, "needs a correction") : undefined}
-        />
+        {correcting && pending ? (
+          <CorrectionEditor
+            intent={pending.intent}
+            busy={deciding}
+            onCancel={() => setCorrecting(false)}
+            onSubmit={(correction, note) => void decide("corrected", correction, note)}
+          />
+        ) : (
+          <IntentPreview
+            intent={intent}
+            status={status}
+            onApprove={handedOver ? () => void decide("approved") : undefined}
+            onReject={handedOver ? () => void decide("rejected") : undefined}
+            onCorrect={handedOver ? () => setCorrecting(true) : undefined}
+          />
+        )}
 
         {deciding ? <p className="hint">sending…</p> : null}
         {decisionError ? (

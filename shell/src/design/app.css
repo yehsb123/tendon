@@ -315,3 +315,91 @@
 }
 .episode-summary dt { color: var(--fg-muted); }
 .episode-summary dd { margin: 0; font-family: var(--font-mono); }
+
+/* --------------------------------------------------------------- correction editor */
+
+.correction {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pending);
+}
+
+.correction-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+.correction-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.correction-joints {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.correction-joint {
+  display: grid;
+  grid-template-columns: 2.5rem var(--touch-min) 1fr var(--touch-min);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.correction-joint-label {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
+/* Square, so a gloved thumb has the same target in both directions. */
+.btn-nudge {
+  min-width: var(--touch-min);
+  padding: 0;
+  font-size: var(--text-xl);
+  line-height: 1;
+}
+
+.correction-offset {
+  font-family: var(--font-mono);
+  text-align: center;
+  color: var(--fg-subtle);
+}
+/* An edited axis is marked by weight and colour, not colour alone. */
+.correction-offset[data-changed="true"] {
+  color: var(--fg);
+  font-weight: var(--weight-bold);
+}
+
+.correction-note {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+.correction-note input {
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.correction-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.correction-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

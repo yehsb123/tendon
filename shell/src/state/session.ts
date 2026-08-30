@@ -38,6 +38,10 @@ interface SessionStore {
   checkRuntime: () => Promise<void>;
   start: (skill: string, body: string) => Promise<void>;
   decide: (resolution: string, correction?: Intent, note?: string) => Promise<void>;
+  /** Whether the correction editor is open. Separate from `pending`: an operator can
+   *  open it, think, and close it again without answering the interrupt. */
+  correcting: boolean;
+  setCorrecting: (open: boolean) => void;
   disconnect: () => void;
 }
 
@@ -56,6 +60,11 @@ export const useSession = create<SessionStore>((set, get) => ({
   pending: null,
   deciding: false,
   decisionError: null,
+  correcting: false,
+
+  setCorrecting(open) {
+    set({ correcting: open, decisionError: null });
+  },
 
   async checkRuntime() {
     const result = await api.health();
@@ -103,7 +112,7 @@ export const useSession = create<SessionStore>((set, get) => ({
 
     // The runtime clears `pending` when it resumes; clearing here too keeps the controls
     // from being clickable twice while that round trip completes.
-    set({ pending: null });
+    set({ pending: null, correcting: false });
   },
 
   disconnect() {
@@ -128,6 +137,9 @@ function applyMessage(
       break;
 
     case "interrupt":
+      // A new handover closes any editor left open from the previous one: its offsets
+      // were relative to a chunk that is no longer the one being asked about.
+      set({ correcting: false });
       // The scene freezes here: the context carries the observation the decision is being
       // made against, not a live feed. Deciding against a moving picture is deciding about
       // a situation that has already passed.

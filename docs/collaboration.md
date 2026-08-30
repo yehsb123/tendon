@@ -872,3 +872,21 @@ where confidence is going to come from.
   policy" rather than a zero that looks like low confidence, and the v0.3 intervention
   curve is only meaningful for policies that produce a measurable spread. Choosing a
   stochastic base policy is a v0.3 prerequisite rather than a preference.
+- **B — the Correct button was lying.** It sent `rejected` with a note saying a correction
+  was needed. An operator would press it, believe they had shown the robot what to do, and
+  have taught it nothing — the resolution carries no correction, so `AdaptivePolicy` stores
+  nothing and the intervention rate never moves for that situation.
+
+  `panels/CorrectionEditor.tsx` now edits the refused intent as a per-joint offset applied
+  across the whole chunk. Editing every step individually would be more expressive and
+  unusable: ten steps on a five-axis arm is fifty numbers, and the person doing this has
+  seconds and one hand. An offset is also the shape of the correction people actually give
+  — "a bit higher", "further left" — rather than a redrawn trajectory.
+
+  Sends a whole `Intent`, never a delta: the runtime would have to reconstruct what a delta
+  was relative to, and a slightly wrong reconstruction is a motion nobody chose. The
+  arithmetic happens where the operator can see the resulting numbers first.
+
+  Send is disabled until something is actually changed. An unchanged correction is an
+  approval wearing the wrong label, and it would be stored as a lesson that teaches
+  nothing.
