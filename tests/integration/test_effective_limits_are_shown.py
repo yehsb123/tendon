@@ -106,6 +106,58 @@ def test_a_broken_ceiling_is_refused_rather_than_ignored(tmp_path: Path) -> None
     assert "limits" in response.text
 
 
+def test_the_list_reports_the_tightened_limit_too(tmp_path: Path) -> None:
+    """The route this file missed the first time.
+
+    Only the detail route was fixed, and only the detail route was tested, so the list —
+    which is where somebody looks first — went on answering with the skill's own numbers
+    while the scheduler enforced something tighter. A bug can survive being found if the
+    test written for it is as narrow as the fix.
+    """
+    client, patch = app_with_ceiling(tmp_path, "safety:\n  max_joint_velocity: 0.5\n")
+    try:
+        listed = client.get("/api/skills").json()
+    finally:
+        patch.undo()
+
+    entry = next(s for s in listed if s.get("ref") == "grasp/cube-sim")
+    assert entry["safety"]["max_joint_velocity"] == 0.5
+
+    # No `capped` here. The first version of this fix added one, and nothing reads it: the
+    # shell's list does not show limits, and the explanation of *why* a number narrowed
+    # belongs on the detail view where the number is read. Correcting a wrong figure is the
+    # job; adding a field nobody looks at is a different one.
+    assert "capped" not in entry
+
+
+def test_every_route_that_reports_limits_reports_the_effective_ones() -> None:
+    """Checked against the routes rather than against a list I remember to update.
+
+    The fix that missed the list route was written by somebody who knew about the ceiling
+    and still only thought of one place. Naming the shape instead: no handler serialises a
+    skill's own limits under a key called `safety`.
+    """
+    source = (REPO / "src/tendon/api/app.py").read_text(encoding="utf-8")
+
+    assert '"safety": loaded.limits' not in source, (
+        "a route reports a skill's declared limits as its safety limits, which is the "
+        "looser number and not the one that will be enforced"
+    )
+
+
+def test_a_broken_ceiling_fails_the_list_as_well(tmp_path: Path) -> None:
+    """Consistent with the detail route. A list that quietly showed declared limits while a
+    broken ceiling sat on disk would be the same wrong answer in the place people read
+    first."""
+    client, patch = app_with_ceiling(tmp_path, "safety: [not, a, mapping]\n")
+    try:
+        response = client.get("/api/skills")
+    finally:
+        patch.undo()
+
+    assert response.status_code == 500
+
+
 def test_a_session_and_the_view_use_the_same_calculation() -> None:
     """One function, because the two would otherwise drift.
 
@@ -118,8 +170,11 @@ def test_a_session_and_the_view_use_the_same_calculation() -> None:
     # Assignments only. Counting every occurrence includes the definition, which is the
     # same mistake this project made once before when checking that a policy was built in
     # one place.
+    # One definition and at least two callers. Pinning the *number* of callers was wrong
+    # and failed the moment a third route was corrected — which is the change this file
+    # exists to encourage, so the check must not punish it.
     assert source.count("def _effective(") == 1
-    assert source.count("= _effective(loaded)") == 2
+    assert source.count("= _effective(loaded)") >= 2
 
     # `tighten` appears once, inside `_effective`. A second call would be a route doing the
     # calculation itself, which is the drift this is about — but the assertion has to allow

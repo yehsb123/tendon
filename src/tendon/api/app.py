@@ -281,6 +281,7 @@ def create_app(
         dropping it would leave someone staring at a directory that exists and a list that
         does not mention it.
         """
+        from tendon.services.limits import LocalLimitsError
         from tendon.services.skill import SkillError, load_skill
 
         found: list[dict[str, Any]] = []
@@ -290,6 +291,14 @@ def create_app(
             except SkillError as exc:
                 found.append({"ref": str(path.parent), "error": str(exc)})
                 continue
+
+            try:
+                # Once per skill, not once per field: reading the ceiling twice would let a
+                # file changing between the two reads produce a row that disagrees with
+                # itself about whether it was capped.
+                effective = _effective(loaded)
+            except LocalLimitsError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
 
             found.append(
                 {
@@ -307,7 +316,11 @@ def create_app(
                         "cameras": list(loaded.requires.cameras),
                         "control_hz": loaded.requires.control_hz,
                     },
-                    "safety": loaded.limits.model_dump(),
+                    # The same correction as the detail route, one route over. Fixing that
+                    # one and not this one is how a bug survives being found: the list is
+                    # where somebody looks first, and it was answering with the skill's own
+                    # numbers while the scheduler enforced something tighter.
+                    "safety": effective.model_dump(),
                     "policy_base": loaded.policy_base,
                 }
             )
