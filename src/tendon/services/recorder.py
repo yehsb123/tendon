@@ -404,11 +404,16 @@ class Recorder:
             # Nothing was recorded. Discard rather than write an empty episode: a
             # zero-frame episode is indistinguishable from a broken one downstream.
             self._dataset.clear_episode_buffer()
+            episode_index = None
         else:
             self._dataset.save_episode()
+            # Read after the write, so it is the index LeRobot actually assigned rather
+            # than one predicted before the fact. A discarded episode gets None: it has
+            # no row in the parquet to join to.
+            episode_index = self._dataset.num_episodes - 1
         self._dataset.finalize()
 
-        self._write_sidecar()
+        self._write_sidecar(episode_index)
 
         meta = self._meta.model_copy(
             update={
@@ -434,8 +439,23 @@ class Recorder:
         """
         return self._root / self._repo_id.replace("/", "__") / "tendon_sidecar.duckdb"
 
-    def _write_sidecar(self) -> None:
-        """Flush this episode's sidecar rows. One transaction, once per episode."""
+    def _write_sidecar(self, episode_index: int | None = None) -> None:
+        """Flush this episode's sidecar rows. One transaction, once per episode.
+
+        Args:
+            episode_index: The index LeRobot filed this episode under, or None when it was
+                discarded for having no frames.
+
+        `episode_index` is the column that makes this file joinable to the dataset. Without
+        it the sidecar keys everything by the recorder's uuid while the parquet numbers
+        episodes from zero, and "how many interrupts did episode 7 have" cannot be answered
+        from the store at all -- which is why `services/progress.py` keeps its own log
+        rather than deriving one.
+
+        Added after the tables already existed in the field, so the ALTER runs for sidecars
+        written before this column did. Rows from those runs keep NULL, because the join
+        they needed was never recorded and inventing one would be worse than admitting it.
+        """
         if not self._sidecar and not self._interrupts:
             return
 
@@ -447,7 +467,8 @@ class Recorder:
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS frames (
-                    episode_id   VARCHAR,
+                    episode_id    VARCHAR,
+                    episode_index BIGINT,
                     frame_index  BIGINT,
                     confidence   DOUBLE,
                     intervention BOOLEAN,
@@ -458,7 +479,8 @@ class Recorder:
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS interrupts (
-                    episode_id  VARCHAR,
+                    episode_id    VARCHAR,
+                    episode_index BIGINT,
                     frame_index BIGINT,
                     reason      VARCHAR,
                     resolution  VARCHAR,
@@ -467,12 +489,21 @@ class Recorder:
                 )
                 """
             )
+            # Named columns rather than positional: a positional INSERT silently shifts
+            # every value one place the first time a column is added, which is exactly
+            # what adding this one would have done.
+            for table in ("frames", "interrupts"):
+                con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS episode_index BIGINT")
+
             if self._sidecar:
                 con.executemany(
-                    "INSERT INTO frames VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO frames "
+                    "(episode_id, episode_index, frame_index, confidence, intervention, "
+                    "sim_time_s) VALUES (?, ?, ?, ?, ?, ?)",
                     [
                         (
                             r["episode_id"],
+                            episode_index,
                             r["frame_index"],
                             r["confidence"],
                             r["intervention"],
@@ -483,10 +514,13 @@ class Recorder:
                 )
             if self._interrupts:
                 con.executemany(
-                    "INSERT INTO interrupts VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO interrupts "
+                    "(episode_id, episode_index, frame_index, reason, resolution, note, "
+                    "corrected) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     [
                         (
                             r["episode_id"],
+                            episode_index,
                             r["frame_index"],
                             r["reason"],
                             r["resolution"],
