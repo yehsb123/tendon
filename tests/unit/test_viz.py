@@ -151,7 +151,9 @@ def test_every_handover_can_be_logged(logger, reason, resolution) -> None:
     lose the one moment in an episode worth looking at, and would lose it by raising
     inside the subscriber that was supposed to be watching.
     """
-    logger.log_interrupt(make_interrupt(reason), InterruptResolution(resolution=resolution), step=12)
+    logger.log_interrupt(
+        make_interrupt(reason), InterruptResolution(resolution=resolution), step=12
+    )
 
 
 def test_the_operator_note_survives_into_the_log(logger) -> None:
@@ -174,7 +176,9 @@ def test_a_closed_logger_ignores_further_handovers(logger) -> None:
     subscriber failure.
     """
     logger.close()
-    logger.log_interrupt(make_interrupt(), InterruptResolution(resolution=Resolution.ABORTED), step=12)
+    logger.log_interrupt(
+        make_interrupt(), InterruptResolution(resolution=Resolution.ABORTED), step=12
+    )
     logger.log_intent(make_intent(), step=13)
 
 
