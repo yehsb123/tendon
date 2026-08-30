@@ -16,7 +16,10 @@ human.py      human demonstration video as a read-only body
 A driver declares its capabilities (degrees of freedom, gripper type, available
 sensors, control rate) and implements two directions:
 
-- **down** — accept a uniform action, produce whatever this body needs
+- **down** — accept a uniform action, produce whatever this body needs, and return
+  what was *actually* executed. Real bodies clip to actuator range, and the clipped
+  value is what the recorder must store. Returning the commanded action instead means
+  every episode records a fiction.
 - **up** — report observation and proprioceptive state in a uniform shape
 
 `human.py` is read-only: it produces observations and actions from recorded video

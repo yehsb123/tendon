@@ -85,15 +85,42 @@ export interface Action {
 }
 
 /**
- * How sure the policy is, and why it might not be.
+ * Where a confidence score came from.
+ *
+ * No upstream policy reports confidence — LeRobot, OpenVLA and GR00T all return a bare
+ * action tensor — so every score here was produced by something tendon added, and which
+ * something matters.
+ *
+ * The shell must distinguish NONE from a low score. They look identical as numbers and
+ * are opposite in meaning: one says the policy is unsure, the other says nobody measured.
+ * An operator who cannot tell them apart will misread the case where it matters.
+ *
+ * See docs/decisions/0003-confidence-has-no-upstream-source.md.
+ */
+export enum ConfidenceSource {
+  /** No estimator. The score is not a measurement and must not be shown as one. */
+  NONE = "none",
+  /** Spread across sampled action chunks. Cheap, uncalibrated. */
+  CHUNK_VARIANCE = "chunk_variance",
+  /** Disagreement across policies or seeds. */
+  ENSEMBLE = "ensemble",
+  /** A head trained to predict its own success. v0.3 onward. */
+  LEARNED_HEAD = "learned_head",
+  /** Whether the observation resembles the training distribution. */
+  OOD = "ood",
+}
+
+/**
+ * How sure the policy is, why it might not be, and where the number came from.
  *
  * `reasons` is what the operator actually reads. A bare number does not help anyone
  * decide in two seconds, so the panel leads with the reasons and treats the score as
  * secondary.
  */
 export interface Confidence {
-  /** 0 to 1. */
+  /** 0 to 1. Meaningless when `source` is NONE. */
   score: number;
+  source: ConfidenceSource;
   reasons: string[];
 }
 

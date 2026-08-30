@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from tendon.kernel.types import (
+    Confidence,
+    ConfidenceSource,
     InterruptContext,
     InterruptReason,
     InterruptResolution,
@@ -82,21 +84,26 @@ class ResumePlan:
     resolution: Resolution
 
 
-def should_raise(score: float, threshold: float) -> bool:
+def should_raise(confidence: Confidence, threshold: float) -> bool:
     """Whether this confidence warrants handing over.
 
-    A fixed threshold is the v0.1 answer and is known to be wrong: confidence is not
-    calibrated across skills, so a value that is right for one is noise for another.
-    Per-skill calibration is v0.3 work. Until then this is a configuration value an
-    operator can move, and `skill.yaml` records it as a starting point rather than a
-    recommendation.
+    Takes a `Confidence` rather than a float because the source is part of the decision.
+    When no estimator produced the score, there is nothing to compare against a threshold,
+    and this returns False — a policy with no confidence estimate falls back to safety-trip
+    and operator-request interrupts instead of silently never asking for help. Treating an
+    unmeasured score as a measurement is the failure ADR 0003 exists to prevent.
 
-    Strictly below, not at or below: a threshold of 0.0 must never fire, or a skill that
-    opts out of confidence-based handover would interrupt on every step.
+    A fixed threshold is the v0.2 answer and is known to be wrong: confidence is not
+    calibrated across skills, so a value that is right for one is noise for another.
+    Calibration against intervention outcomes is v0.3 work, and `skill.yaml` records the
+    threshold as a starting point rather than a recommendation.
+
+    Strictly below, not at or below: a threshold of 0.0 must never fire, or a skill opting
+    out of confidence-based handover would interrupt on every step.
     """
-    if not 0.0 <= score <= 1.0:
-        raise ValueError(f"confidence score out of range: {score}")
-    return score < threshold
+    if confidence.source is ConfidenceSource.NONE:
+        return False
+    return confidence.score < threshold
 
 
 def context_deficiencies(context: InterruptContext) -> tuple[str, ...]:

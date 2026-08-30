@@ -60,12 +60,14 @@ tendon publish  mysite/bag-handling
 
 **tendon is an orchestration layer, not a reinvention.** The hard parts — simulation,
 policy architectures, dataset formats, 3D visualization — are already solved by excellent
-open source. tendon writes only the four things nobody else has:
+open source. tendon writes only the five things nobody else has:
 
 1. **Embodiment HAL** — the driver contract that makes bodies interchangeable
 2. **Interrupt protocol** — how control is handed to a human and handed back
 3. **Curation metrics** — which episodes help training and which poison it
 4. **The shell** — the interface where a human reads intent and intervenes
+5. **Confidence estimation** — no upstream policy reports how sure it is, and that
+   number is what makes intervention fire ([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md))
 
 Everything else is composed.
 

@@ -110,17 +110,56 @@ class Action(BaseModel):
     gripper: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class Confidence(BaseModel):
-    """How sure the policy is, and why it might not be.
+class ConfidenceSource(str, Enum):
+    """Where a confidence score came from.
 
-    `score` is what raises an interrupt. `reasons` is what the shell shows an operator,
-    because a bare number does not help anyone decide in two seconds.
+    Carried because no upstream policy reports confidence at all — LeRobot, OpenVLA and
+    GR00T all return a bare action tensor — so every score in this system is produced by
+    something tendon added. Which something matters: a rate measured under chunk variance
+    is not comparable to one measured under a learned head.
+
+    See `docs/decisions/0003-confidence-has-no-upstream-source.md`.
+    """
+
+    #: No estimator. The score is not a measurement and must not be read as one.
+    NONE = "none"
+    #: Spread across sampled action chunks. Cheap, uncalibrated, and blind to a policy
+    #: that is confidently wrong.
+    CHUNK_VARIANCE = "chunk_variance"
+    #: Disagreement across policies or seeds.
+    ENSEMBLE = "ensemble"
+    #: A head trained to predict its own success. Needs the labelled data the loop
+    #: produces, so it is available from v0.3 onward.
+    LEARNED_HEAD = "learned_head"
+    #: Whether the observation resembles the training distribution.
+    OOD = "ood"
+
+
+class Confidence(BaseModel):
+    """How sure the policy is, why it might not be, and where the number came from.
+
+    `reasons` is what the shell leads with. A bare number does not help anyone decide in
+    two seconds, and the reasons are what an operator can actually act on.
+
+    `source` defaults to `NONE`, so a policy that says nothing about confidence produces a
+    score that cannot raise an interrupt. That is deliberate: defaulting to a usable value
+    would make a robot that never asks for help indistinguishable from one that is always
+    right.
     """
 
     model_config = ConfigDict(frozen=True)
 
     score: float = Field(ge=0.0, le=1.0)
+    source: ConfidenceSource = Field(
+        default=ConfidenceSource.NONE,
+        description="Where the score came from; NONE means it is not a measurement",
+    )
     reasons: tuple[str, ...] = ()
+
+    @property
+    def is_measured(self) -> bool:
+        """Whether this score reflects an actual estimate."""
+        return self.source is not ConfidenceSource.NONE
 
 
 class Intent(BaseModel):
@@ -255,6 +294,7 @@ __all__ = [
     "ActionSpace",
     "Capability",
     "Confidence",
+    "ConfidenceSource",
     "EpisodeMeta",
     "GripperKind",
     "Intent",

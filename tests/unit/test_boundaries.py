@@ -63,18 +63,39 @@ def test_layer_imports_stay_within_bounds(layer: str) -> None:
     assert not offences, f"{layer}/ violates docs/architecture.md:\n  " + "\n  ".join(offences)
 
 
-def test_kernel_owns_the_driver_contract() -> None:
-    """The Driver protocol must live in the kernel, not in drivers.
+@pytest.mark.parametrize("protocol", ["Driver", "Policy"])
+def test_kernel_owns_its_contracts(protocol: str) -> None:
+    """Both protocols must live in the kernel, not beside their implementations.
 
-    If this fails, the kernel has started depending on whichever driver happens to be
-    installed, and design decision 3 no longer holds.
+    If Driver moves, the kernel starts depending on whichever driver happens to be
+    installed and design decision 3 no longer holds. If Policy moves, the scheduler ends
+    up importing a service, and the layer boundary goes with it.
     """
     protocols = SRC / "kernel" / "protocols.py"
     assert protocols.exists(), "kernel/protocols.py is missing"
 
     tree = ast.parse(protocols.read_text(encoding="utf-8"))
     names = {node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
-    assert "Driver" in names, "Driver protocol is not defined in kernel/protocols.py"
+    assert protocol in names, f"{protocol} protocol is not defined in kernel/protocols.py"
+
+
+def test_apply_reports_what_was_executed() -> None:
+    """Driver.apply must return an Action, not None.
+
+    A driver that returns nothing discards the difference between what was commanded and
+    what the hardware did after clipping. The recorder then stores the policy request as
+    though it were the outcome, and the policy trains on a fiction. This is the kind of
+    regression that passes every other test.
+    """
+    tree = ast.parse((SRC / "kernel" / "protocols.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "apply":
+            assert node.returns is not None, "apply has no return annotation"
+            assert getattr(node.returns, "id", None) == "Action", (
+                f"Driver.apply must return the applied Action, not {ast.unparse(node.returns)}"
+            )
+            return
+    raise AssertionError("no apply method found in kernel/protocols.py")
 
 
 def test_every_driver_registers_itself() -> None:

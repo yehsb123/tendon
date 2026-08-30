@@ -37,7 +37,15 @@ dependencies = [
 
 [project.optional-dependencies]
 sim   = ["mujoco>=3.1", "gymnasium>=0.29"]
-robot = ["lerobot>=0.1"]
+# LeRobot 0.6.2 declares requires-python >=3.12, while tendon supports >=3.10. Pinning
+# the lower bound makes that collision an explicit resolution failure on 3.10 and 3.11
+# instead of a silent downgrade to an ancient release that happens to allow 3.10 — which
+# would install, import, and then behave nothing like the documented API.
+#
+# The kernel and the MuJoCo driver stay on 3.10, so only this extra is affected. Raising
+# requires-python for the whole project to satisfy one optional extra would push the
+# constraint onto everyone, including contributors who never install it.
+robot = ["lerobot>=0.6.2"]
 train = ["torch>=2.3", "transformers>=4.44", "peft>=0.12", "accelerate>=0.33"]
 view  = ["rerun-sdk>=0.17"]
 dev   = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]

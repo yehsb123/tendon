@@ -1,4 +1,5 @@
 import type { ConnectionStatus } from "../api/socket";
+import { ConfidenceSource } from "../api/types";
 import type { Intent } from "../api/types";
 
 /**
@@ -87,6 +88,10 @@ export function IntentPreview({
 function previewState(intent: Intent | null, handedOver: boolean): PreviewState {
   if (handedOver) return "interrupted";
   if (!intent) return "confident";
+  // An unmeasured score is not a low score. Treating NONE as uncertain would put the
+  // panel in a warning state permanently for any policy without an estimator, and an
+  // operator who sees a warning that never clears stops seeing it at all.
+  if (intent.confidence.source === ConfidenceSource.NONE) return "confident";
   return intent.confidence.score < CONFIDENCE_FLOOR ? "uncertain" : "confident";
 }
 
@@ -118,6 +123,17 @@ function ConfidenceReadout({ intent }: { intent: Intent | null }) {
     );
   }
 
+  // "Unsure" and "not measured" look identical as numbers and are opposite in meaning.
+  // Showing 0.00 for an unmeasured score would read as maximum uncertainty, which is the
+  // most misleading thing this panel could display. No number is shown at all.
+  if (intent.confidence.source === ConfidenceSource.NONE) {
+    return (
+      <div className="confidence" data-band="unmeasured">
+        <span className="confidence-band">not measured</span>
+      </div>
+    );
+  }
+
   const score = intent.confidence.score;
   const band = score >= 0.75 ? "high" : score >= CONFIDENCE_FLOOR ? "medium" : "low";
   const label = band === "high" ? "sure" : band === "medium" ? "unsure" : "needs you";
@@ -128,6 +144,9 @@ function ConfidenceReadout({ intent }: { intent: Intent | null }) {
       <span className="confidence-score" aria-label="confidence score">
         {score.toFixed(2)}
       </span>
+      {/* Which estimator produced this. A rate measured under chunk variance is not
+          comparable to one under a learned head, so the panel never hides it. */}
+      <span className="confidence-source">{intent.confidence.source}</span>
     </div>
   );
 }

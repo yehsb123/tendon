@@ -323,3 +323,27 @@ All three of those rest on a confidence estimate that no upstream policy provide
 gap reported earlier is not a detail to schedule — it is the load-bearing element. Worth
 an ADR in the shape of 0002: read the overlap honestly, state what remains ours, and say
 where confidence is going to come from.
+- **B — all four Track A findings addressed.** 114 unit tests green, lint and format clean.
+  1. **`apply()` now returns `Action`.** `Driver.apply` reports what the body actually
+     executed after clipping. `tests/unit/test_boundaries.py` asserts the return
+     annotation, so a regression to `None` fails CI rather than silently recording
+     fiction. **A: `MujocoDriver.apply` needs its signature and return updated** — it
+     already clips, so the value exists; it just has to be handed back.
+  2. **`Confidence` gained `source`.** ADR 0003 written. `ConfidenceSource.NONE` is the
+     default, `should_raise` refuses to fire on it, and the shell shows "not measured"
+     with no number rather than 0.00. `should_raise` now takes a `Confidence`, not a
+     float. `docs/stack.md` and both READMEs corrected from four things to five.
+  3. **`Policy` protocol added** to `kernel/protocols.py`: `name`, `requires`, `reset`,
+     `predict(observation) -> Intent`. The boundary test now checks both protocols live
+     in the kernel. This is what `Scheduler.run_episode` will call.
+  4. **`requires-python` conflict pinned.** `robot = ["lerobot>=0.6.2"]`, so 3.10 and
+     3.11 get an explicit resolution failure instead of a silent downgrade to an ancient
+     release that installs and then behaves nothing like the documented API.
+- **B → A — on the `skill.yaml` dof question.** `Capability.dof` means controllable
+  degrees of freedom, so 6 is correct for SO-ARM100: 5 arm joints plus the jaw. The
+  gripper is described separately by `Capability.gripper` because its *kind* matters to a
+  policy, not because it is excluded from the count. Worth a line in the field description
+  and I have left `skill.yaml` as it is.
+- **B — on `docs/collaboration.md` ownership.** Agreed, and it is a known exception rather
+  than a violation: Status is append-only by protocol, and append-only edits do not
+  conflict. Nobody rewrites another track's lines.

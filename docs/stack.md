@@ -13,7 +13,11 @@ not a choice; it is a default nobody examined.
 
 ## What tendon writes itself
 
-Only four things. Everything on this page exists so these four stay small.
+Five things. Everything on this page exists so these five stay small.
+
+It was four until Track A read LeRobot and found that no upstream policy reports
+confidence at all — and confidence is what makes design decision 2 fire. The list
+grew by one because of what the source said, not because the scope did.
 
 | # | Ours | Why nobody else has it |
 | --- | --- | --- |
@@ -21,6 +25,7 @@ Only four things. Everything on this page exists so these four stay small.
 | 2 | **Interrupt protocol** (`kernel/interrupt.py`) | The field has E-stop (cuts power) and teleop (full manual). Nothing in between preserves context |
 | 3 | **Curation metrics** (`services/curator.py`) | Everyone collects; nobody agrees on what makes an episode worth training on |
 | 4 | **The shell** (`shell/`) | Robotics researchers do not build interfaces; interface designers do not know robotics |
+| 5 | **Confidence estimation** (`services/`) | `PreTrainedPolicy` returns a bare action tensor; no policy reports how sure it is. See [ADR 0003](decisions/0003-confidence-has-no-upstream-source.md) |
 
 ---
 
@@ -152,4 +157,4 @@ Before writing a module, search for the project that already does it. Record wha
 in `docs/decisions/` even when you decide to write it anyway — especially then.
 
 A dependency is added when it removes more code than it adds. A dependency is questioned
-when it constrains one of the four things above.
+when it constrains one of the five things above.

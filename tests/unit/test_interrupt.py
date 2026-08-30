@@ -21,6 +21,7 @@ from tendon.kernel.types import (
     Action,
     ActionSpace,
     Confidence,
+    ConfidenceSource,
     Intent,
     InterruptContext,
     InterruptReason,
@@ -63,6 +64,11 @@ def make_context(step: int = 7, **overrides) -> InterruptContext:
 # ------------------------------------------------------------------------ should_raise
 
 
+def measured(score: float) -> Confidence:
+    """A score that came from somewhere. Anything else cannot raise an interrupt."""
+    return Confidence(score=score, source=ConfidenceSource.CHUNK_VARIANCE)
+
+
 @pytest.mark.parametrize(
     ("score", "threshold", "expected"),
     [
@@ -74,17 +80,40 @@ def make_context(step: int = 7, **overrides) -> InterruptContext:
     ],
 )
 def test_should_raise(score: float, threshold: float, expected: bool) -> None:
-    assert should_raise(score, threshold) is expected
+    assert should_raise(measured(score), threshold) is expected
 
 
 def test_threshold_of_zero_never_fires() -> None:
     """A skill opting out of confidence-based handover must not interrupt every step."""
-    assert not should_raise(0.0, 0.0)
+    assert not should_raise(measured(0.0), 0.0)
+
+
+def test_an_unmeasured_score_never_raises() -> None:
+    """The core of ADR 0003.
+
+    No upstream policy reports confidence, so a score with no source is not a measurement.
+    Comparing it against a threshold would make an unestimated value drive the interrupt
+    path — a robot that appears to be judging its own uncertainty while doing nothing of
+    the kind. Such a policy falls back to safety-trip and operator-request interrupts.
+    """
+    unmeasured = Confidence(score=0.0, source=ConfidenceSource.NONE)
+    assert not should_raise(unmeasured, 0.9)
+    assert not unmeasured.is_measured
+
+
+def test_a_measured_score_is_marked_as_measured() -> None:
+    assert measured(0.4).is_measured
+
+
+def test_confidence_defaults_to_unmeasured() -> None:
+    """A policy that says nothing about confidence must not appear to have an estimate."""
+    assert Confidence(score=0.5).source is ConfidenceSource.NONE
 
 
 def test_out_of_range_confidence_is_rejected() -> None:
+    """Pydantic bounds the field, so an impossible score cannot be constructed at all."""
     with pytest.raises(ValueError):
-        should_raise(1.4, 0.5)
+        Confidence(score=1.4, source=ConfidenceSource.CHUNK_VARIANCE)
 
 
 # ------------------------------------------------------------------ context sufficiency

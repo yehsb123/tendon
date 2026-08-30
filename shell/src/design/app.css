@@ -159,6 +159,22 @@
 .confidence[data-band="low"] .confidence-band { color: var(--conf-low); }
 .confidence[data-band="none"] .confidence-band { color: var(--fg-subtle); }
 
+/* Not measured is not a warning. Colouring it would put the panel in a permanent alert
+   state for any policy without an estimator, and an alert that never clears stops being
+   read. Muted, with the words carrying the meaning. */
+.confidence[data-band="unmeasured"] .confidence-band {
+  color: var(--fg-subtle);
+  font-weight: var(--weight-normal);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.confidence-source {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+}
+
 .confidence-score {
   font-family: var(--font-mono);
   font-size: var(--text-2xl);
