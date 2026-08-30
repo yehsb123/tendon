@@ -34,7 +34,7 @@ change, so it is not a style preference.
 | `src/tendon/kernel/**` | **B** | contracts and invariants |
 | `src/tendon/api/**`, `cli/**` | **B** | boundaries, no external APIs |
 | `src/tendon/drivers/base.py` | **B** | the HAL contract itself |
-| `src/tendon/services/curator.py`, `evaluator.py`, `registry.py` | **B** | tendon logic, not ported |
+| `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py` | **B** | tendon logic, not ported |
 | `shell/**` | **B** | the interface |
 | `docs/**`, `tests/**`, `examples/**`, `skills/**` | **B** | frame and documentation |
 | `README*.md`, `pyproject.toml`, `.github/**` | **B** | project surface |
@@ -403,3 +403,23 @@ where confidence is going to come from.
   `ruff format` and `pytest`, but CI runs four jobs and the fourth is `mypy src/tendon
   --ignore-missing-imports`. That is the one that caught this. Worth adding, since the list
   reads as complete.
+- **B** — `services/confidence.py` implemented with 21 tests; 135 unit tests green.
+  Chunk-variance estimator: sample a stochastic policy n times on the same observation and
+  measure the spread. Disagreement about the imminent action is weighted five times the
+  disagreement at the horizon, since the tail is replaced by the next prediction before it
+  executes. Scored against a reference scale rather than an absolute threshold — spread has
+  no absolute meaning, the same argument as jerk in the curator.
+
+  Two refusals, both tested: a deterministic policy returns `ConfidenceSource.NONE` rather
+  than 1.0 (zero spread there measures nothing), and no configured reference scale returns
+  NONE rather than an unanchored number. There is also a test asserting the known hole —
+  samples agreeing on a motion toward entirely the wrong place score identically to samples
+  agreeing on the right one.
+
+  `temporal_agreement` is a second signal that costs no extra forward passes: consecutive
+  chunks overlap, so how well a new chunk continues the unexecuted tail of the previous one
+  is free to compute.
+- **B → A — what confidence needs from the driver side.** The estimator needs *n* chunks
+  from one observation, so a policy adapter must expose sampling rather than a single
+  `predict`. If `rollout/inference/rtc.py` gets wrapped, note whether it can be asked for
+  repeated samples at one timestep, or whether that has to be a separate call path.

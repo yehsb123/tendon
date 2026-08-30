@@ -16,6 +16,8 @@ Requires the sim extra:  pip install "tendon-os[sim]"
 from __future__ import annotations
 
 import os
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -109,6 +111,7 @@ class MujocoDriver(Driver):
         gripper_actuator: str = _GRIPPER_ACTUATOR,
         render_cameras: tuple[str, ...] = (),
         render_size: tuple[int, int] = (480, 640),
+        render_hz: float = 0.0,
     ) -> None:
         """
         Args:
@@ -124,6 +127,12 @@ class MujocoDriver(Driver):
                 does not define is refused here rather than at the first frame.
             render_size: Rendered frame size as (height, width) [px]. Must fit the
                 scene's `offwidth`/`offheight`, which bound MuJoCo's offscreen buffer.
+            render_hz: Rate a background thread renders at [Hz]. Zero renders inline on
+                every `render()` call, which is simple and does not fit a control period —
+                measured at 22 ms against a 10 ms budget, see `benchmarks/README.md`. A
+                positive value models what a camera actually is: something that produces
+                frames on its own clock while the control loop reads whatever is current.
+                30 is the rate of most robot cameras.
         """
         try:
             import mujoco
@@ -174,10 +183,22 @@ class MujocoDriver(Driver):
             )
         self._render_cameras = tuple(render_cameras)
         self._render_size = render_size
+        self._render_hz = float(render_hz)
+        if self._render_hz < 0:
+            raise DriverError(f"render_hz cannot be negative, got {render_hz}")
         # Built on first use. A Renderer allocates an offscreen GL context, which is
         # wasted on a run that never renders — and on some headless machines, fails.
         # Deferring it means those runs work rather than dying at construction.
         self._renderer: Any = None
+
+        # Asynchronous rendering state. All unused when `render_hz` is zero.
+        self._render_thread: threading.Thread | None = None
+        self._render_stop = threading.Event()
+        self._render_ready = threading.Event()
+        self._state_lock = threading.Lock()
+        self._frame_lock = threading.Lock()
+        self._state_snapshot: tuple[np.ndarray, np.ndarray, float] | None = None
+        self._latest_frames: dict[str, np.ndarray] = {}
 
         self._reset_key = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_KEY, _RESET_KEYFRAME)
         if self._reset_key < 0:
@@ -186,6 +207,89 @@ class MujocoDriver(Driver):
                 f"{_RESET_KEYFRAME!r}. Resetting by index is unsafe for this body: the "
                 f"vendored model contributes keyframes that predate the task objects."
             )
+
+        if self._render_hz > 0 and self._render_cameras:
+            self._publish_state()
+            self._start_render_thread()
+
+    # ------------------------------------------------------- asynchronous render
+
+    def _publish_state(self) -> None:
+        """Hand the render thread a copy of the physics state.
+
+        Called once per control step. The cost is copying `nq` + `nv` floats — 26 numbers
+        for this body — under a lock held for the length of that copy, which is why it
+        does not show up against a 10 ms budget.
+
+        The copy is the point. `MjData` is not safe to read while `mj_step` writes it, and
+        a renderer reading it directly would produce torn frames under contact, where
+        every value is changing fastest.
+        """
+        snapshot = (self._data.qpos.copy(), self._data.qvel.copy(), float(self._data.time))
+        with self._state_lock:
+            self._state_snapshot = snapshot
+
+    def _start_render_thread(self) -> None:
+        """Start the camera thread and wait for its first frame.
+
+        Waiting here rather than letting the caller discover an empty dict later: a
+        recorder that declared a camera rejects a frame without it, so "no frame yet" would
+        surface as a schema error several steps into an episode.
+        """
+        self._render_thread = threading.Thread(
+            target=self._render_loop, name="tendon-render", daemon=True
+        )
+        self._render_thread.start()
+        if not self._render_ready.wait(timeout=30.0):
+            self._render_stop.set()
+            raise DriverError(
+                "render thread produced no frame within 30s; the offscreen GL context "
+                "probably could not be created on this machine"
+            )
+
+    def _render_loop(self) -> None:
+        """Render at `render_hz` from the last published state, on its own clock.
+
+        Owns its own `MjData` and `Renderer`, and touches neither of the driver's. A GL
+        context belongs to the thread that created it, so the renderer cannot be built
+        outside this function; and a second `MjData` is what lets this run while the
+        control thread steps physics.
+
+        `mj_forward` recomputes the derived quantities a render needs — body poses, camera
+        transforms — from the copied `qpos` and `qvel`. It is a fraction of a `mj_step`
+        because it integrates nothing.
+        """
+        height, width = self._render_size
+        data = self._mj.MjData(self._model)
+        renderer = self._mj.Renderer(self._model, height=height, width=width)
+        period_s = 1.0 / self._render_hz
+        try:
+            while not self._render_stop.is_set():
+                started = time.perf_counter()
+
+                with self._state_lock:
+                    snapshot = self._state_snapshot
+                if snapshot is not None:
+                    qpos, qvel, sim_time = snapshot
+                    data.qpos[:] = qpos
+                    data.qvel[:] = qvel
+                    data.time = sim_time
+                    self._mj.mj_forward(self._model, data)
+
+                    frames = {}
+                    for camera in self._render_cameras:
+                        renderer.update_scene(data, camera=camera)
+                        frames[camera] = renderer.render()
+                    with self._frame_lock:
+                        self._latest_frames = frames
+                    self._render_ready.set()
+
+                # Sleep the remainder of the period, waking early if asked to stop. When a
+                # render takes longer than the period the wait is zero and frames simply
+                # arrive slower, which is what a real camera under load also does.
+                self._render_stop.wait(max(0.0, period_s - (time.perf_counter() - started)))
+        finally:
+            renderer.close()
 
     # ------------------------------------------------------------------- setup
 
@@ -272,6 +376,8 @@ class MujocoDriver(Driver):
         self._mj.mj_resetDataKeyframe(self._model, self._data, self._reset_key)
         self._mj.mj_forward(self._model, self._data)
         self._step = 0
+        if self._render_thread is not None:
+            self._publish_state()
         return self.observe()
 
     def observe(self) -> Observation:
@@ -345,6 +451,9 @@ class MujocoDriver(Driver):
             self._mj.mj_step(self._model, self._data)
         self._step += 1
 
+        if self._render_thread is not None:
+            self._publish_state()
+
         return Action(space=action.space, values=applied, gripper=applied_gripper)
 
     def render(self) -> dict[str, np.ndarray]:
@@ -357,10 +466,20 @@ class MujocoDriver(Driver):
 
         Returns `{camera_name: uint8 array of shape (height, width, 3)}`. Empty when no
         cameras were requested, which is the default.
+
+        With `render_hz` set this returns the most recent frame the camera thread produced
+        and does not block. That means consecutive control steps can see the same frame,
+        which is correct rather than a compromise: a 30 fps camera against a 100 Hz loop
+        genuinely has no new image for two steps out of three, and pretending otherwise is
+        what makes a policy trained in simulation fail on hardware.
         """
         self._require_open()
         if not self._render_cameras:
             return {}
+
+        if self._render_thread is not None:
+            with self._frame_lock:
+                return dict(self._latest_frames)
 
         if self._renderer is None:
             height, width = self._render_size
@@ -373,10 +492,22 @@ class MujocoDriver(Driver):
         return frames
 
     def close(self) -> None:
-        """Release the model, data and any GL context. Safe to call twice."""
+        """Stop the camera thread and release the model, data and GL context.
+
+        The thread is joined rather than left to a daemon flag. It holds a GL context and
+        an `MjData` built from a model this method is about to drop; letting it run one
+        more iteration against freed memory is the kind of crash that gets blamed on the
+        simulator. Safe to call twice, as the protocol requires.
+        """
         if self._closed:
             return
         self._closed = True
+
+        if self._render_thread is not None:
+            self._render_stop.set()
+            self._render_thread.join(timeout=5.0)
+            self._render_thread = None
+
         if self._renderer is not None:
             self._renderer.close()
             self._renderer = None
