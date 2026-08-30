@@ -143,6 +143,18 @@ jobs:
       - run: python -m pytest tests/integration -q
         env:
           PYTHONFAULTHANDLER: "1"
+          # The stack that faulthandler finally produced said the abort happens with
+          # "<no Python frame>" and torch._C loaded: the interpreter has finished and a
+          # native thread is being destroyed while still joinable during library teardown.
+          # It is torch's OpenMP pool, which is why the job that does not install torch
+          # passes the same suite in the same run.
+          #
+          # One thread means no pool to tear down. This constrains the environment, it
+          # does not fix anything -- the abort lives in a dependency's shutdown and is
+          # still there. Nothing in this suite is compute-bound, so a single thread costs
+          # nothing here; do not copy this to a job where that is not true.
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
 
   shell:
     name: shell builds and type-checks
