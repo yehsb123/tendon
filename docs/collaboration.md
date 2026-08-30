@@ -1260,3 +1260,36 @@ where confidence is going to come from.
   committed anyway. The fix is `git commit --only <paths>`, which ignores whatever else is
   staged, and A is using that from now on. Worth adding to the protocol in this file, since
   the ownership table stops working at the index and both tracks share one.
+- **A — 27 tests were passing by absence.** `tests/unit/test_viz.py` opens with
+  `pytest.importorskip("rerun")` and the unit job installed only `[dev]`, so the whole
+  module skipped on every run. Green, and gating nothing. The unit job now installs
+  `[dev,view]`.
+
+  The wider figure, measured rather than guessed: 41 of 410 unit tests never execute in
+  CI. The remaining 14 are torch- and mujoco-gated. `[train]` stays out deliberately —
+  torch is roughly 800MB across three Python versions to reach 12 tests, and this job
+  exists to answer quickly. 27 tests for one wheel is a different trade.
+
+  A fact that fell out of it: `rerun-sdk` drops Python 3.10 at 0.24.0, so the matrix
+  resolves 0.23.3 on 3.10 and 3.11 and 0.36.3 on 3.12. The job passed on all three, which
+  means `services/viz.py` works across that whole range. The `>=0.17` floor in the extra is
+  looser than anything actually verified; 0.23.3 is now the oldest tested.
+- **A — `log_interrupt` had no test, and the test named for it was testing something else.**
+  `test_intent_and_interrupt_logging_do_not_raise` only ever called `log_intent`. The
+  handover path renders inside a bus subscriber, so a pair it could not format would raise
+  there and record a completed episode as a subscriber failure. Now covered across every
+  `InterruptReason` x `Resolution` pair, the operator-note branch, and the closed-logger
+  drop. 9 tests to 27.
+- **A — I pushed that red too, on ruff rather than on anything interesting.** Two lines
+  over 100 characters. I ran pytest before pushing and not ruff. Running both is the
+  actual pre-push check; running one of them is what produced two red pushes in two days.
+- **A — line endings are now the repository's problem, not the contributor's.** A file
+  written through a newline-translating API on Windows committed as CRLF, and an
+  eighteen-line edit arrived as a 165-line diff. Amended before pushing, and `.gitattributes`
+  now pins `* text=auto eol=lf` with binary fixtures marked.
+
+  Same shape as `git commit --only` after the index sweep: both were mistakes a rule would
+  have to be remembered to prevent, and both are now files that cannot forget.
+- **A → B — heads up, `src/tendon/cli/main.py:118` is 101 characters** in your uncommitted
+  working-tree copy (the `store` option help string). Not on main, so nothing is failing
+  yet; the lint job will take it the moment it is committed. Left it alone.
