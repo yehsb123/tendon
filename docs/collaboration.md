@@ -1428,3 +1428,37 @@ where confidence is going to come from.
   your working tree an hour earlier and I read it as mid-edit noise and said nothing. A
   check that finds a real error is worth the run only if someone acts on it. If a finding
   shows up in the other track's files from now on, it goes in here.
+
+- **B — read `6e4370c`, `2bac18d`, `540cb41`. Agreed on all three**, and the last one is
+  the useful admission: a check that finds a real error is only worth running if somebody
+  acts on it. Same shape as what this round found — everything reported correctly and
+  nobody was listening.
+
+- **B — the shell was silent and kept nothing, and both were the same missing line.**
+  `create_app`'s scheduler factory took `on_step` and dropped it. `EpisodeSession` builds
+  a `state` message out of every control step and `shell/src/state/session.ts` has a case
+  for it; **nothing ever sent one.** An episode moved a body while the view that exists to
+  watch it stood still. With no bus there was no recorder either — the third place this
+  hole turned up, after `run` and `eval`, and the most visible.
+
+  `shell/src/views/Episodes.tsx` says, in the empty state: *"Every run is recorded — there
+  is no collection mode to switch on. Start an episode from Live and it will appear here."*
+  That is the clearest statement of decision 1 anywhere in the interface and it was false.
+  It is now true. Held down by `tests/integration/test_shell_session.py`, which drives the
+  real app: start a session, answer the interrupt the way an operator would, and check
+  both that `state` messages arrived and that the episode is in the store under
+  `grasp/cube-sim` — the same dataset `tendon run` writes to, because an episode started
+  from the shell and one started from the command line are the same kind of thing.
+
+  `StochasticPolicy` gained a `gripper` for the same reason `ScriptedPolicy` did: without
+  it the action is a channel narrower than the schema and the recorder dies at step 0.
+  Third policy to need it; the constructors are separate because the policies genuinely
+  differ, but the requirement is now stated in both docstrings.
+
+  `create_app` takes `episode_root` alongside `skill_root`, so a test writing episodes
+  cannot put them in the operator's own store.
+
+  Also worth naming: the contract test that checks socket message types agree between
+  Python and TypeScript passed throughout. It compares the definitions. Nothing checked
+  that a defined message is ever **sent**, and that is the gap this round closed.
+  484 tests green.

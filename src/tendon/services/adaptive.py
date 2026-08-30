@@ -102,7 +102,15 @@ class StochasticPolicy:
         reference_spread: float = 0.01,
         seed: int = 0,
         name: str = "stochastic",
+        gripper: float | None = None,
     ) -> None:
+        """
+        Args:
+            gripper: Held at this value, or None for a body without a jaw. Same reason as
+                `ScriptedPolicy`: the recorder's action schema is `dof + 1` wide for a body
+                that has one, and an action that omits it is a channel short. A policy that
+                does not say what the jaw is doing has not fully specified the command.
+        """
         if samples < 3:
             raise ValueError(f"need at least 3 samples to measure spread, got {samples}")
 
@@ -115,6 +123,7 @@ class StochasticPolicy:
         self._reference_spread = reference_spread
         self._name = name
         self._seed = seed
+        self._gripper = gripper
         self._rng = random.Random(seed)
         self._step = 0
 
@@ -167,6 +176,7 @@ class StochasticPolicy:
                     sum(chunk[i].values[j] for chunk in chunks) / len(chunks)
                     for j in range(self._dof)
                 ],
+                gripper=self._gripper,
             )
             for i in range(self._chunk_size)
         ]

@@ -32,6 +32,7 @@ from __future__ import annotations
 import queue
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -162,7 +163,17 @@ class EpisodeSession:
         max_steps: int = 500,
         seed: int | None = None,
         timeout_s: float = _DEFAULT_TIMEOUT_S,
+        before_episode: Callable[[], None] | None = None,
+        after_episode: Callable[[], None] | None = None,
     ) -> None:
+        """
+        Args:
+            before_episode: Called on the episode thread just before the body moves, and
+                `after_episode` in a `finally` once it stops. They exist so a recorder can
+                be opened and closed around the run without this module knowing what a
+                recorder is — the episode happens on a thread nobody else can reach, so
+                there is no other moment for the caller to take.
+        """
         self.state = SessionState(session_id=uuid.uuid4().hex, skill=skill, body_id=body_id)
         self.events: queue.Queue = queue.Queue(maxsize=_EVENT_QUEUE_SIZE)
         self.handler = ShellHandler(self.events, timeout_s=timeout_s)
@@ -171,6 +182,8 @@ class EpisodeSession:
         self._policy_factory = policy_factory
         self._max_steps = max_steps
         self._seed = seed
+        self._before_episode = before_episode
+        self._after_episode = after_episode
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -184,7 +197,16 @@ class EpisodeSession:
         try:
             policy = self._policy_factory()
             scheduler: Scheduler = self._scheduler_factory(self.handler, self._on_step)
-            result = scheduler.run_episode(policy, max_steps=self._max_steps, seed=self._seed)
+
+            if self._before_episode is not None:
+                self._before_episode()
+            try:
+                result = scheduler.run_episode(policy, max_steps=self._max_steps, seed=self._seed)
+            finally:
+                # In `finally` so a run that raises still closes whatever was opened. A
+                # dataset left half written is what the store reports as unreadable later.
+                if self._after_episode is not None:
+                    self._after_episode()
 
             self.state.result = result
             self.state.steps = result.steps

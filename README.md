@@ -149,8 +149,13 @@ python -m pip install -e ".[sim]"
 tendon serve                               # http://127.0.0.1:8000
 ```
 
-One command serves both the runtime and the interface. Start an episode from the page; when
-the policy is unsure it hands over and waits for you.
+One command serves both the runtime and the interface. Start an episode from the page; the
+trajectory updates as the body moves, and when the policy is unsure it hands over and waits
+for you.
+
+The episode is recorded on the same terms as one started from the command line, into the
+same dataset — an episode is an episode, whichever way it was begun, and `Episodes` shows
+it when the run ends.
 
 While working on the shell itself, run it against a live runtime instead — the dev server
 reloads on edit and proxies `/api` and `/ws` through:

@@ -74,16 +74,38 @@ class DecisionRequest(BaseModel):
     note: str | None = None
 
 
-def create_app(*, skill_root: Path | None = None) -> FastAPI:
+def _open_recorder(loaded, root: Path):
+    """A recorder for one session, or None when LeRobot is not installed.
+
+    Returns rather than raises when it is missing: the kernel and the simulator both work
+    without it, and refusing to start an episode over an optional extra would make the
+    shell unusable on a machine that can still drive a body. The session reports what it
+    is doing either way.
+    """
+    try:
+        from tendon.services.recorder import Recorder
+    except ImportError:
+        return None
+
+    # Under the skill's own reference, matching what `tendon run` writes, so an episode
+    # started from the shell and one started from the command line land together.
+    return Recorder(root=root, repo_id=loaded.ref)
+
+
+def create_app(*, skill_root: Path | None = None, episode_root: Path | None = None) -> FastAPI:
     """Build the API.
 
-    `skill_root` is injected rather than read from a global so tests can point it at a
-    fixture directory, and so a deployment can serve skills from somewhere other than the
-    working directory.
+    `skill_root` and `episode_root` are injected rather than read from globals so tests
+    can point them at fixture directories, and so a deployment can serve skills from
+    somewhere other than the working directory and write episodes somewhere other than
+    the home directory. A test that used the real store would put its episodes in the
+    operator's data.
     """
     from tendon.api.session import SessionRegistry
+    from tendon.services.store import DEFAULT_ROOT
 
     root = skill_root if skill_root is not None else _DEFAULT_SKILL_ROOT
+    episode_root = episode_root if episode_root is not None else DEFAULT_ROOT
     registry = SessionRegistry()
 
     app = FastAPI(
@@ -246,7 +268,8 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
         worse than refusing.
         """
         from tendon.api.session import EpisodeSession
-        from tendon.kernel.scheduler import Scheduler
+        from tendon.kernel.bus import Bus
+        from tendon.kernel.scheduler import Scheduler, StepRecord
         from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
         from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
         from tendon.services.policies import sine_sweep
@@ -288,16 +311,31 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
                 dof=capability.dof,
                 regions=(UncertainRegion(joint=0, centre=0.12, width=0.03, magnitude=0.08),),
                 reference_spread=0.004,
+                # A body with a jaw needs the jaw commanded, or the action is a channel
+                # narrower than what the recorder is set up to store.
+                gripper=1.0 if capability.gripper.value != "none" else None,
             )
             return AdaptivePolicy(inner)
 
+        bus: Bus[StepRecord] = Bus()
+        recorder = _open_recorder(loaded, episode_root)
+
         def make_scheduler(handler, on_step):
+            # `on_step` was accepted and dropped here for the whole life of the shell. The
+            # session builds a `state` message out of every step and the shell has a case
+            # for it; nothing ever sent one, so a running episode moved a body while the
+            # view that exists to show it stayed still.
+            bus.subscribe("shell-stream", on_step)
+            if recorder is not None:
+                recorder.attach_to(bus)
+
             return Scheduler(
                 driver=body,
                 limits=loaded.limits,
                 confidence_threshold=loaded.confidence_threshold,
                 handler=handler,
                 on_intent=lambda obs, intent: holder["session"].publish_intent(obs, intent),
+                bus=bus,
             )
 
         session = EpisodeSession(
@@ -308,6 +346,10 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
             max_steps=request.max_steps,
             seed=request.seed,
             timeout_s=request.timeout_s,
+            before_episode=(
+                None if recorder is None else lambda: recorder.start(loaded.ref, capability)
+            ),
+            after_episode=None if recorder is None else recorder.finish,
         )
         holder["session"] = session
 
