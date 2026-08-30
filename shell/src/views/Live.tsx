@@ -15,6 +15,31 @@ import { useSession } from "../state/session";
  * Anything that does not serve that question belongs in another view.
  */
 /**
+ * This episode is not being kept.
+ *
+ * `[robot]` is what writes episodes, and it is an optional extra. Without it the handover,
+ * the correction and the memory all still happen and none of it survives the run — an
+ * operator can spend an afternoon teaching and find `Episodes` empty.
+ *
+ * The command line has printed this since the recorder was wired. The shell had no way to
+ * know, which made the omission worse here than there: somebody working from the interface
+ * has fewer places to notice.
+ *
+ * Loud, unlike the other two notes on this screen. Those describe how something works; this
+ * one says the work is being thrown away.
+ */
+function NotRecording({ recording }: { recording: boolean | undefined }) {
+  if (recording !== false) return null;
+
+  return (
+    <p className="hint hint-error">
+      Not recording: LeRobot is not installed, so this episode will not be kept. Install the
+      recording extra — <code>pip install -e ".[robot]"</code> — and start again.
+    </p>
+  );
+}
+
+/**
  * Where the handover you are about to see comes from.
  *
  * The policy raises its own hand at a point in joint space that was chosen in advance, so
@@ -141,6 +166,8 @@ export function Live() {
         }
         running={session?.running ?? false}
       />
+
+      <NotRecording recording={session?.recording} />
 
       <StandIn uncertainty={session?.uncertainty} />
 

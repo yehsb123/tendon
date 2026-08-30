@@ -84,6 +84,10 @@ class SessionState:
     #: way to know. ADR 0003 says confidence has no upstream source yet; this is the
     #: sentence that carries that decision to the person in front of it.
     uncertainty: str = "stand-in"
+    #: True when this episode is being written to the store. False when LeRobot is missing,
+    #: which the CLI says out loud and the shell had no way to know — an operator would
+    #: correct a policy for an afternoon and find `Episodes` empty.
+    recording: bool = True
     #: Why the episode ended early, if something outside it decided. Set from either of the
     #: two places that can stop one: the scheduler declining to ask for another chunk, and
     #: a pending decision being given up on. Both are the same condition and they surface
@@ -449,6 +453,7 @@ class EpisodeSession:
             "corrections": state.corrections,
             "error": state.error,
             "uncertainty": state.uncertainty,
+            "recording": state.recording,
             # Why it ended early, when something outside the episode asked. An operator
             # who reconnects to a finished run should be told it stopped because they were
             # gone, rather than left to read a short step count as a completed episode.

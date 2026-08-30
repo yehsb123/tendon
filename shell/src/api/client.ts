@@ -187,6 +187,14 @@ export interface SessionSnapshot {
    * it is a placeholder (ADR 0003).
    */
   uncertainty?: string;
+  /**
+   * Whether this episode is being written to the store.
+   *
+   * False when the recording extra is not installed. Everything else still happens — the
+   * handover, the correction, the memory — and none of it is kept, so the view has to say
+   * so rather than let somebody find out from an empty `Episodes` afterwards.
+   */
+  recording?: boolean;
   pending?: unknown | null;
 }
 

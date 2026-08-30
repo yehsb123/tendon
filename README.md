@@ -163,9 +163,14 @@ Watch an episode and intervene in it:
 
 ```bash
 cd shell && npm install && npm run build && cd ..
-python -m pip install -e ".[sim]"
+python -m pip install -e ".[sim,robot]"
 tendon serve                               # http://127.0.0.1:8000
 ```
+
+`[robot]` is what writes episodes. Without it everything below still happens — the handover,
+the correction, the memory — and none of it is kept, which makes the next paragraph false
+for you. The runtime says so on the page rather than leaving you to find out from an empty
+`Episodes`.
 
 One command serves both the runtime and the interface. Start an episode from the page; the
 trajectory updates as the body moves, and when the policy is unsure it hands over and waits

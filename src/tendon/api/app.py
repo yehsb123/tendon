@@ -665,6 +665,11 @@ def create_app(
             on_closed=body.close,
         )
         holder["session"] = session
+        # Said rather than discovered. Without the recording extra an operator can hand
+        # over, correct, watch the memory grow — and find `Episodes` empty afterwards,
+        # with nothing having warned them. The command line has printed this since the
+        # recorder was wired; the shell had no way to know.
+        session.state.recording = recorder is not None
 
         try:
             registry.add(session)

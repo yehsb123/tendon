@@ -2451,6 +2451,28 @@ where confidence is going to come from.
   the SERVICES row came to list five of seventeen without anything noticing. It left
   `policy_lerobot` out on its own first run.
   661 tests green.
+
+- **B — the README's own quickstart produced an installation that records nothing.**
+  The second block, the first thing somebody runs after the tests, said
+  `pip install -e ".[sim]"`. Four lines later: *"The episode is recorded on the same terms
+  as one started from the command line."* Both could not be true — `[robot]` is what writes
+  episodes, and without it `create_app` gets `None` from `_open_recorder` and carries on.
+
+  So the documented path produced the failure this project keeps finding, on the documented
+  path: the handover happens, the correction is taken, the memory grows, and `Episodes` is
+  empty afterwards with nothing having said why.
+
+  **And the shell had no way to say it.** `tendon run` has printed "not recording: LeRobot
+  is not installed" since the recorder was wired; the API returned `None` and said nothing.
+  That is worse there than on the command line — somebody working from the interface has
+  fewer places to notice. The session now carries `recording`, and `Live` shows it as an
+  error rather than a note: the other two banners on that screen describe how something
+  works, and this one says the work is being thrown away.
+
+  The README test checks the property rather than the wording — the `pip install` block
+  that leads into "the episode is recorded" has to install the extra that records — so it
+  fails wherever that pairing is broken next, including in a section nobody has written yet.
+  665 tests green, 22 in the shell.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as
