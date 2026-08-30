@@ -18,6 +18,11 @@ does not separate the two is a summary you learn to skip.
     python scripts/check.py            # everything
     python scripts/check.py --fast     # skip the test suite
 
+Run it plainly. `python scripts/check.py | tail -4 && git push` looks like a guarded push
+and is not one: a pipeline reports the exit status of its last command, so `tail` succeeds
+and `&&` proceeds no matter what this script found. That is how a push went out while this
+was reporting a failure. The summary is already short enough not to need trimming.
+
 The node jobs (shell/) are not included: they need npm and a separate install.
 """
 
