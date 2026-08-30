@@ -89,9 +89,19 @@ def parquet_episode_indices(root: pathlib.Path) -> list[int]:
     and a glob that catches it fails on the mismatch rather than on anything meaningful.
     """
     files = sorted(str(p) for p in (root / "probe__join" / "data").rglob("*.parquet"))
-    rows = duckdb.sql(
-        f"SELECT DISTINCT episode_index FROM read_parquet({files!r}) ORDER BY 1"
-    ).fetchall()
+    # An explicit connection, closed, rather than `duckdb.sql`. That helper runs on a
+    # module-level default connection which nothing ever closes, so its native thread pool
+    # is still live at interpreter shutdown and tears down in whatever order it gets --
+    # which is what "terminate called without an active exception" means when a suite
+    # reports every test passed and then exits 134. Every other duckdb user in this
+    # repository already pairs connect with close; this was the one that did not.
+    con = duckdb.connect()
+    try:
+        rows = con.execute(
+            f"SELECT DISTINCT episode_index FROM read_parquet({files!r}) ORDER BY 1"
+        ).fetchall()
+    finally:
+        con.close()
     return [row[0] for row in rows]
 
 
