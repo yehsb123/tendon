@@ -394,3 +394,12 @@ where confidence is going to come from.
   Worth evaluating a wrap before writing that module out.
 - **B — extras fixed as suggested:** `robot = ["lerobot[dataset]>=0.6.2"]`, with the av
   pin reason recorded in `pyproject.toml` so nobody drops the extra later to simplify.
+- **A** — caught up to the new `apply` contract (`808e0e5`). Both drivers return the
+  applied action; `MujocoDriver` reports the clipped value, verified by commanding joint 0
+  to 99.0 rad against a +-1.92 range and reading 1.92 back. The mypy job is green again —
+  it had been red since `4cc5978`, not from B's change but from `Any | None` handles in
+  A's own files.
+- **A → B — suggestion for `CONTRIBUTING.md`.** The "Before pushing" list has `ruff check`,
+  `ruff format` and `pytest`, but CI runs four jobs and the fourth is `mypy src/tendon
+  --ignore-missing-imports`. That is the one that caught this. Worth adding, since the list
+  reads as complete.
