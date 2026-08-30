@@ -135,7 +135,6 @@ def run(
     from tendon.kernel.bus import Bus
     from tendon.kernel.scheduler import Scheduler, StepRecord
     from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
-    from tendon.services.policies import ScriptedPolicy, sine_sweep
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
     try:
@@ -168,16 +167,7 @@ def run(
     capability = body.capability
 
     if policy == "scripted":
-        running = ScriptedPolicy(
-            sine_sweep(dof=capability.dof),
-            control_hz=capability.control_hz,
-            dof=capability.dof,
-            name=loaded.ref,
-            # A body with a jaw has to be told what the jaw is doing, even by a baseline
-            # that only sweeps one joint. Held open: this policy has no notion of grasping
-            # anything, and a jaw that closes on nothing is the more surprising default.
-            gripper=_HELD_OPEN if capability.gripper.value != "none" else None,
-        )
+        running = _baseline_policy(loaded, capability)
     else:
         console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
         console.print(
@@ -201,7 +191,9 @@ def run(
         f"({capability.dof} axes, {capability.control_hz:g} Hz) via {escape(policy)}[/dim]"
     )
 
-    recorder, root = _attach_recorder(console, bus, loaded, capability, store)
+    recorder, root = _attach_recorder(console, bus, loaded, store)
+    if recorder is not None:
+        recorder.start(loaded.ref, capability)
 
     try:
         result = scheduler.run_episode(running, max_steps=steps, seed=seed)
@@ -224,10 +216,36 @@ def run(
         raise typer.Exit(code=1)
 
 
-def _attach_recorder(console: Console, bus, loaded, capability, store: str):
-    """Subscribe a recorder to the step bus, or say why the run is not being recorded.
+def _baseline_policy(loaded, capability):
+    """The scripted policy both `run` and `eval` use when no model is loaded.
+
+    One function because there were two copies, and only one of them was fixed. `run`
+    learned to command the jaw of a body that has one — without it the recorder's schema
+    is a channel wider than the action and every episode dies at step 0 — and `eval` kept
+    the old constructor. The bug was repaired and still present, in the command that runs
+    thirty episodes instead of one.
+    """
+    from tendon.services.policies import ScriptedPolicy, sine_sweep
+
+    return ScriptedPolicy(
+        sine_sweep(dof=capability.dof),
+        control_hz=capability.control_hz,
+        dof=capability.dof,
+        name=loaded.ref,
+        # A body with a jaw has to be told what the jaw is doing, even by a baseline that
+        # only sweeps one joint. Held open: this policy has no notion of grasping
+        # anything, and a jaw that closes on nothing is the more surprising default.
+        gripper=_HELD_OPEN if capability.gripper.value != "none" else None,
+    )
+
+
+def _attach_recorder(console: Console, bus, loaded, store: str):
+    """Subscribe a recorder to the step bus, or say why nothing is being recorded.
 
     Returns the recorder (None when unavailable) and the store path it is writing to.
+    The caller opens each episode with `recorder.start(...)` and closes it with
+    `finish()`: subscribing is per-run, but an episode is per-episode, and `eval` runs
+    thirty of them through one subscription.
 
     Recording is not optional and there is no flag to turn it off, but LeRobot is an
     optional extra and the kernel and the simulator both work without it. So the one
@@ -255,7 +273,6 @@ def _attach_recorder(console: Console, bus, loaded, capability, store: str):
     # store's "skill" column claims to show, what `store.py` decodes a directory name
     # back into, and the only grouping a training run can use.
     recorder = Recorder(root=root, repo_id=loaded.ref)
-    recorder.start(loaded.ref, capability)
     recorder.attach_to(bus)
     return recorder, root
 
@@ -462,6 +479,9 @@ def evaluate_skill(
         help="Allow a body that moves real hardware. Read SECURITY.md first.",
     ),
     driver_arg: list[str] = _DRIVER_ARG_OPTION,
+    store: str = typer.Option(
+        "", help="Where episodes are written. Defaults to ~/.tendon/episodes"
+    ),
 ) -> None:
     """Run a skill repeatedly and report what happened.
 
@@ -469,13 +489,17 @@ def evaluate_skill(
     conditions the skill declares. When the body does not report the quantity, the verdict
     is *unknown* rather than *failed* — nobody measured, and recording that as failure
     would make an unmeasurable setup look like a broken policy.
+
+    Every episode is recorded, on the same terms as `tendon run`. This command produces
+    thirty episodes where that one produces a single episode, so it was the larger hole in
+    design decision 1 while it had no bus at all.
     """
     console = Console()
 
-    from tendon.kernel.scheduler import Scheduler
+    from tendon.kernel.bus import Bus
+    from tendon.kernel.scheduler import Scheduler, StepRecord
     from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
     from tendon.services.evaluator import EpisodeOutcome, SuccessCriterion, evaluate, judge
-    from tendon.services.policies import ScriptedPolicy, sine_sweep
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
     try:
@@ -500,22 +524,44 @@ def evaluate_skill(
         f"{count} episodes of up to {steps} steps[/dim]"
     )
 
+    bus: Bus[StepRecord] = Bus()
+    recorder, root = _attach_recorder(console, bus, loaded, store)
+
     outcomes: list[EpisodeOutcome] = []
     unknown = 0
+    failures: list[str] = []
     try:
         for index in range(count):
-            policy = ScriptedPolicy(
-                sine_sweep(dof=capability.dof),
-                control_hz=capability.control_hz,
-                dof=capability.dof,
-                name=loaded.ref,
-            )
+            policy = _baseline_policy(loaded, capability)
             scheduler = Scheduler(
                 driver=body,
                 limits=loaded.limits,
                 confidence_threshold=loaded.confidence_threshold,
+                bus=bus,
             )
-            result = scheduler.run_episode(policy, max_steps=steps, seed=seed + index)
+
+            # Opened and closed around each episode rather than around the sweep: an
+            # evaluation is thirty episodes, not one thirty times as long, and a store
+            # that could not tell them apart would be useless for training.
+            if recorder is not None:
+                recorder.start(loaded.ref, capability)
+            try:
+                result = scheduler.run_episode(policy, max_steps=steps, seed=seed + index)
+            finally:
+                if recorder is not None:
+                    recorder.finish()
+
+            if result.subscriber_failures:
+                for failure in result.subscriber_failures:
+                    failures.append(
+                        f"episode {index}: {failure.name} died at step "
+                        f"{failure.step} — {failure.error}"
+                    )
+                # The bus drops a subscriber that raises and never re-subscribes it, so
+                # the remaining episodes would record nothing while still opening and
+                # closing a dataset for each. Twenty-nine empty episodes are worse than
+                # none: they look like a run that happened.
+                recorder = None
 
             final = result.records[-1].observation.extra if result.records else {}
             verdict, reason = judge(final, criteria)
@@ -550,6 +596,8 @@ def evaluate_skill(
     table.add_row("corrections", str(report.corrections))
     table.add_row("faults", str(report.faults))
     table.add_row("episodes", str(report.episodes))
+    if root is not None and not failures:
+        table.add_row("recorded to", str(root))
     console.print(table)
 
     if report.failure_modes:
@@ -568,6 +616,15 @@ def evaluate_skill(
             "[yellow]note:[/yellow] this result cannot be compared against another run — "
             "see docs/decisions/0003-confidence-has-no-upstream-source.md"
         )
+
+    if failures:
+        # Same rule as `run`: an evaluation that measured thirty episodes and kept none of
+        # them has not done half its job, and the numbers above are the half that is left.
+        console.print()
+        console.print("[red]recording stopped during this evaluation[/red]")
+        for failure in failures:
+            console.print(f"  [dim]{escape(failure)}[/dim]")
+        raise typer.Exit(code=1)
 
 
 def _episode_source(result):

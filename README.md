@@ -184,7 +184,7 @@ store does not grow, and refuses to run at all without the recorder installed.
 ```
 tendon doctor            what works here, and what each missing piece costs
 tendon run <skill>       run a policy on a body, and record it
-tendon eval <skill>      run it repeatedly and report what happened
+tendon eval <skill>      run it repeatedly, record it, and report what happened
 tendon episodes          list what has been recorded
 tendon serve             the runtime API, and the shell when it is built
 tendon shell             the same, with instructions for the dev server
@@ -207,10 +207,13 @@ skill           episodes      size  last written
 grasp/cube-sim         1  585.0 KB  2026-08-31 02:29
 ```
 
-There is no flag asking for that recording and none to turn it off. If the recorder cannot
-run — LeRobot is an optional extra — the run says so and keeps going rather than pretending;
-if it starts and then fails, the command exits non-zero, because a run that collected
-nothing should not report success.
+There is no flag asking for that recording and none to turn it off. `tendon eval` collects
+on the same terms, one dataset episode per evaluation episode — it is the command that
+produces thirty runs, so it is where most of the data comes from.
+
+If the recorder cannot run — LeRobot is an optional extra — the command says so and keeps
+going rather than pretending; if it starts and then fails, the command exits non-zero,
+because a run that collected nothing should not report success.
 
 A body that moves real hardware is refused unless you pass `--physical`, and `doctor` says
 which bodies those are. Driver arguments go through `--driver-arg key=value`.

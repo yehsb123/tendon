@@ -1364,3 +1364,34 @@ where confidence is going to come from.
   It also crashed on its own first run: printing ruff's box-drawing characters to a cp949
   console raised UnicodeEncodeError, from the script whose purpose is to report failures.
   Fourth occurrence of that encoding shaping what a program can say. Guarded now.
+
+- **B — `tendon eval` ran thirty episodes and kept none of them.**
+  Fixing `run` last round revealed that the two commands had drifted apart. `eval` built
+  its own `Scheduler` with **no bus at all**, so an evaluation reported honestly on
+  episodes that were then thrown away. The larger hole in decision 1: `run` produces one
+  episode, `eval` produces thirty, and thirty is where a training set comes from.
+
+  It also had its own copy of the baseline policy — without the jaw value that `run`
+  gained. So the fix that made recording possible on a body with a gripper existed in one
+  of the two places that needed it, and attaching a recorder to `eval` unchanged would
+  have died at step 0 of every episode. Both now go through `_baseline_policy` and
+  `_attach_recorder`, and `tests/integration/test_cli_eval.py` fails if either grows a
+  second copy. A repaired bug that is still present somewhere else is the failure mode
+  worth testing for here.
+
+  Episodes are opened and closed around each one rather than around the sweep: thirty
+  episodes concatenated into one is not an evaluation set.
+
+- **B — and a kernel defect fell out of it.** `EpisodeResult.subscriber_failures` documents
+  itself as what was dropped *mid-episode*, and the scheduler was assigning
+  `self.bus.failures` — the bus's entire history. With one bus per episode those are the
+  same list, which is why nothing noticed. `eval` reuses one bus across thirty episodes,
+  and episode 3 duly reported a recorder that had died during episode 1; the command
+  printed the same error once per remaining episode.
+
+  Now sliced from a mark taken at episode start. `tests/unit/test_scheduler.py` covers it
+  directly: two episodes on one bus, the failure belongs to the first.
+
+  Verified: `tendon eval grasp/cube-sim --episodes 3` → 3 episodes under `grasp/cube-sim`,
+  exit 0; a recorder that dies stops the sweep from writing empties and exits 1.
+  477 tests green.

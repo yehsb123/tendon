@@ -234,6 +234,32 @@ def test_a_failing_subscriber_does_not_stop_the_body() -> None:
     assert "no space left" in failure.error
 
 
+def test_a_later_episode_does_not_inherit_an_earlier_one_s_failure() -> None:
+    """`subscriber_failures` is what went wrong *during this episode*.
+
+    The bus keeps every failure it has ever seen, and the scheduler used to copy the whole
+    list onto the result. With one bus per episode that is the same thing; with a bus
+    reused across an evaluation it is not, and `tendon eval` reused one. Episode three
+    reported a recorder that had died during episode one, so the command blamed every
+    remaining episode for a single fault and printed the same error thirty times.
+    """
+    bus: Bus[StepRecord] = Bus()
+    bus.subscribe("broken-recorder", _explode)
+
+    scheduler = Scheduler(driver=FakeDriver(), limits=SafetyLimits(), bus=bus)
+    first = scheduler.run_episode(FakePolicy(), max_steps=3)
+    second = scheduler.run_episode(FakePolicy(), max_steps=3)
+
+    assert len(first.subscriber_failures) == 1
+    # Not because it recovered — the bus dropped it — but because nothing failed here.
+    assert second.subscriber_failures == ()
+    assert bus.subscribers == ()
+
+
+def _explode(record: StepRecord) -> None:
+    raise OSError("no space left on device")
+
+
 def test_commanded_and_applied_are_both_kept_when_the_body_clips() -> None:
     """Recording only the command would store what the policy asked for as the outcome.
 

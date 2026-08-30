@@ -179,6 +179,12 @@ class Scheduler:
         machine = InterruptMachine()
         unchecked: dict[str, int] = {}
 
+        # The bus keeps every failure it has ever seen, so the ones belonging to this
+        # episode are whatever is added from here on. A bus that lives for one episode
+        # makes no difference; one reused across an evaluation does, and there it decides
+        # whether episode 30 reports a recorder that died during episode 1.
+        failures_before = len(self.bus.failures) if self.bus is not None else 0
+
         policy.reset()
         observation = self.driver.reset(seed=seed)
         dt_s = 1.0 / self.driver.capability.control_hz
@@ -270,7 +276,9 @@ class Scheduler:
         result.interventions = machine.interventions
         result.corrections = machine.corrections
         result.unchecked = dict(sorted(unchecked.items(), key=lambda kv: -kv[1]))
-        result.subscriber_failures = self.bus.failures if self.bus is not None else ()
+        result.subscriber_failures = (
+            self.bus.failures[failures_before:] if self.bus is not None else ()
+        )
         return result
 
     # ------------------------------------------------------------------ internals
