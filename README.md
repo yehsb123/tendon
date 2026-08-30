@@ -10,6 +10,43 @@ Every run becomes data. Every human correction becomes a lesson.
 
 ---
 
+## It runs
+
+```
+$ python examples/04_improve/run.py
+
+intervention rate over a trailing window of 10 episodes
+
+100% │█
+ 88% │█████
+ 75% │████████
+ 62% │██████████ █
+ 50% │█████████████
+ 38% │████████████████
+ 25% │████████████████████████  ███                    ██
+ 12% │████████████████████████████████████         ██████
+     └───────────────────────────────────────────────────
+      0                                            52 corrections
+
+  first 10 episodes : 100% interrupted
+  last  10 episodes :  20% interrupted
+  corrections stored : 52
+```
+
+A policy runs on an SO-ARM100 in MuJoCo. Where it is uncertain, confidence falls, and the
+scheduler hands over **before the body moves** rather than after something goes wrong. An
+operator corrects it. The correction is stored against the situation it was given in, and
+later episodes recall it and do not ask again.
+
+Every piece in that loop is the real one — the same scheduler, safety check, interrupt
+state machine and evaluator a trained policy would run under.
+
+**What this does not show.** The learner here remembers rather than generalises, and the
+operator is scripted. Swapping in LoRA fine-tuning ([`services/trainer.py`](src/tendon/services/trainer.py))
+and a human is the v0.3 experiment. This is v0.1 demonstrating that the machinery closes
+the loop — stated plainly, because a demo that blurred the two would be answering a
+question nobody asked while appearing to answer the one that matters.
+
 ## The gap
 
 `ROS` has "OS" in its name, but it is a *communication middleware*. It moves messages
@@ -115,10 +152,13 @@ python examples/01_record/run.py --overhead
 
 ## Status
 
-**v0.1 — in development. Simulation only.** Nothing works yet, and nothing here should be
-connected to physical hardware: safety limits are implemented and tested but nothing
-invokes them yet, and the interrupt path is unwritten.
-See [SECURITY.md](SECURITY.md) before going anywhere near a robot.
+**v0.1 — simulation only.** The loop above runs end to end: the scheduler routes every
+action through `kernel/safety`, raises interrupts on low confidence, and applies operator
+corrections under the same limits as policy actions.
+
+**Still do not connect this to physical hardware.** No physical driver exists, nothing has
+been verified against a real body, and there is no authentication between the shell and the
+runtime. See [SECURITY.md](SECURITY.md) before going anywhere near a robot.
 
 The project is proven or discarded at **v0.3**, where a single graph must show:
 *after N human corrections, the intervention rate drops.*

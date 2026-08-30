@@ -8,13 +8,16 @@ reversed.
 **tendon is pre-alpha and simulation-only.** Nothing here has been verified against a
 real body.
 
-As of the current commit: `kernel/safety` **is** implemented and tested, including the
-cases it cannot evaluate — a joint-space command carries no workspace information, and the
-verdict reports that as `unchecked` rather than passing silently. But **nothing calls it
-yet**, because `kernel/scheduler` is unwritten. A limit that exists and is never invoked
-protects nobody, so treat this as unenforced until the scheduler lands.
+As of the current commit, `kernel/safety` is implemented, tested, **and invoked**: the
+scheduler routes every action through it before the action reaches a driver, including
+corrections supplied by an operator. The interrupt path is implemented and exercised end
+to end by `examples/04_improve`.
 
-Also still missing: any physical driver, and the interrupt path.
+What remains missing is what matters most here: **no physical driver exists**, so none of
+this has been verified against a real body. A limit that has only ever held in simulation
+has not been shown to hold.
+
+Also still missing: authentication between the shell and the runtime, and a local policy able to override a skill-declared safety limit.
 
 The `so101` driver named in `docs/roadmap.md` is v0.4 work. Until it exists, and until the
 scheduler actually routes every action through `kernel/safety`, connecting this to a robot

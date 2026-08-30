@@ -38,7 +38,9 @@ rather than by trusting.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -145,6 +147,11 @@ class Scheduler:
     #: Below this confidence, hand over. Ignored when the policy reports no source.
     confidence_threshold: float = 0.5
     handler: InterruptHandler | None = None
+    #: Called after an operator resolves an interrupt, with the observation the
+    #: decision was made against. This is where a policy is given the chance to learn
+    #: from a correction. The kernel does not know what learning is — it hands over the
+    #: pair and lets the layer above decide whether anything can be done with it.
+    on_intervention: Callable[[Observation, InterruptResolution], None] | None = None
     #: Every control step is published here. The recorder, the shell stream and anything
     #: else subscribe. Design decision 1 is structural because of this: recording is not a
     #: mode that can be switched off, it is a subscriber that is always attached.
@@ -301,6 +308,12 @@ class Scheduler:
             return None
 
         machine.resumed()
+
+        # Told after the machine has resumed, so a handler that raises cannot leave the
+        # episode suspended. A policy failing to learn is not a reason to strand a body.
+        if self.on_intervention is not None:
+            with contextlib.suppress(Exception):
+                self.on_intervention(observation, resolution)
 
         if plan.use_correction:
             assert resolution.correction is not None  # guaranteed by InterruptMachine
