@@ -1003,3 +1003,28 @@ where confidence is going to come from.
   defaults to True because that is LeRobot's default and surprising a caller with a silent
   skip would be worse, but it is the one argument in this driver that starts a motion
   nobody explicitly asked for.
+- **B — the kernel could not tell a simulator from an arm in the room.** `doctor` listed
+  `so101` beside `mujoco` as equally fine, and `open_body` would have opened either. Now
+  `Capability.simulated` exists on both sides of the contract, and `register()` takes it
+  so the question can be answered **without constructing the driver** — `so101` wants a
+  serial port, and opening one to decide whether to open one is the opposite of careful.
+
+  The default is False: a driver that does not declare itself counts as physical. The cost
+  of that being wrong is one flag; the cost of the opposite default is a real arm moving
+  because someone ran an example.
+
+  `open_body` refuses a physical body unless asked, `tendon run` and `tendon eval` take
+  `--physical` and `--driver-arg key=value`, and `doctor` now says which bodies move real
+  hardware.
+- **B — two ordering bugs, both found by running it.** The refusal originally happened
+  *after* construction, so a serial port was already open by the time it fired — touching
+  the hardware to decide whether to touch it. And an unknown driver name produced "that is
+  a physical body", which is wrong: an unregistered name is not physical, it is absent.
+  Existence is checked first now, and there is a test that builds a tripwire subclass to
+  prove the driver is never constructed on the refusal path.
+- **B → A — I edited two lines in your column and want that on the record.**
+  `drivers/mujoco.py` and `drivers/human.py` now pass `simulated=True` to `@register`.
+  Without them `Capability.simulated`'s safe default made the simulator refuse to open and
+  main was broken. One line each, a statement of fact about what those drivers are, and
+  the alternative was leaving the repository unusable until you next looked. `so101`
+  correctly needs no change — not declaring is the right answer for it.

@@ -24,7 +24,14 @@ from dataclasses import dataclass
 from tendon.drivers import base as driver_base
 from tendon.kernel.protocols import Driver
 
-__all__ = ["BodyInfo", "BodyUnavailable", "available", "discover", "open_body"]
+__all__ = [
+    "BodyInfo",
+    "BodyUnavailable",
+    "PhysicalBodyRefused",
+    "available",
+    "discover",
+    "open_body",
+]
 
 #: Modules in `tendon.drivers` that are not bodies.
 _NOT_A_DRIVER = frozenset({"base"})
@@ -50,6 +57,17 @@ def _driver_modules() -> tuple[str, ...]:
     )
 
 
+class PhysicalBodyRefused(RuntimeError):
+    """A real body was asked for without saying so explicitly.
+
+    Not a safety mechanism — nothing here can stop a determined caller, and it is not
+    meant to. It exists so that opening something that moves in the room is never a
+    default, a typo, or a copy-pasted command. `SECURITY.md` says every safety limit in
+    this repository has only ever held in simulation; the least this layer can do is make
+    the person say they know which kind of body they are opening.
+    """
+
+
 class BodyUnavailable(RuntimeError):
     """A body could not be opened.
 
@@ -67,6 +85,9 @@ class BodyInfo:
     name: str
     #: Why it is unavailable, when it is. None means it registered.
     unavailable_because: str | None = None
+    #: False when this body moves real hardware. Read from the driver where possible;
+    #: assumed physical when the driver cannot be constructed to ask.
+    simulated: bool = False
 
     @property
     def available(self) -> bool:
@@ -88,7 +109,7 @@ def discover() -> tuple[BodyInfo, ...]:
         except ImportError as exc:
             infos.append(BodyInfo(name=short, unavailable_because=str(exc)))
         else:
-            infos.append(BodyInfo(name=short))
+            infos.append(BodyInfo(name=short, simulated=driver_base.is_simulated(short)))
     return tuple(infos)
 
 
@@ -100,13 +121,40 @@ def available() -> tuple[str, ...]:
     return driver_base.available()
 
 
-def open_body(name: str, **kwargs) -> Driver:
+def open_body(name: str, *, allow_physical: bool = False, **kwargs) -> Driver:
     """Open a body by name.
 
     Raises `BodyUnavailable`, naming what is available — more useful than a bare
     KeyError when someone has a typo or a missing extra.
+
+    Raises `PhysicalBodyRefused` when the body reports `simulated=False` and the caller
+    did not pass `allow_physical`. A driver that does not declare itself simulated counts
+    as physical: the cost of that being wrong is one flag, and the cost of the opposite
+    default is a real arm moving because someone ran an example.
+
+    The body is closed before refusing. Leaving a serial port open on the way out would
+    make the second attempt fail for a different reason than the first.
     """
-    available()  # ensure registration has happened
+    known = available()  # ensure registration has happened
+
+    # Existence first. Otherwise a typo produces "that is a physical body", which is both
+    # wrong and confusing: an unregistered name is not physical, it is absent.
+    if name not in known:
+        raise BodyUnavailable(f"unknown driver {name!r}; available: {list(known)}")
+
+    # Checked before construction, not after. An earlier version built the driver and then
+    # inspected its capability, which meant a serial port was already open by the time the
+    # refusal happened — touching the hardware in order to decide whether to touch it.
+    # This is the whole reason `simulated` is declared at registration rather than read
+    # from an instance.
+    if not allow_physical and not driver_base.is_simulated(name):
+        raise PhysicalBodyRefused(
+            f"{name!r} is a physical body. Nothing here has been verified against real "
+            "hardware and every safety limit has only ever held in simulation — see "
+            "SECURITY.md. Pass allow_physical=True (CLI: --physical) if that is what you "
+            "mean."
+        )
+
     try:
         return driver_base.load(name, **kwargs)
     except driver_base.DriverError as exc:

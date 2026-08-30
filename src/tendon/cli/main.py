@@ -16,6 +16,14 @@ from rich.table import Table
 from tendon import __version__
 from tendon.cli.doctor import Status, run_checks, summarise
 
+#: Repeatable driver arguments. Defined once at module level because a `typer.Option`
+#: call in a default is a mutable default in disguise, and ruff is right to flag it.
+_DRIVER_ARG_OPTION = typer.Option(
+    [],
+    "--driver-arg",
+    help="Pass key=value to the driver, e.g. --driver-arg port=COM3. Repeatable.",
+)
+
 app = typer.Typer(
     name="tendon",
     help="The operating layer for physical AI.",
@@ -80,6 +88,12 @@ def run(
     ),
     steps: int = typer.Option(500, help="Maximum control steps"),
     seed: int | None = typer.Option(None, help="Seed the body for a repeatable start"),
+    physical: bool = typer.Option(
+        False,
+        "--physical",
+        help="Allow a body that moves real hardware. Read SECURITY.md first.",
+    ),
+    driver_arg: list[str] = _DRIVER_ARG_OPTION,
 ) -> None:
     """Run a policy on a body under the kernel.
 
@@ -91,7 +105,7 @@ def run(
 
     from tendon.kernel.bus import Bus
     from tendon.kernel.scheduler import Scheduler, StepRecord
-    from tendon.services.bodies import BodyUnavailable, open_body
+    from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
     from tendon.services.policies import ScriptedPolicy, sine_sweep
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
@@ -102,7 +116,10 @@ def run(
         raise typer.Exit(code=1) from exc
 
     try:
-        body = open_body(driver)
+        body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
+    except PhysicalBodyRefused as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
     except BodyUnavailable as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         console.print(
@@ -228,6 +245,21 @@ def serve(
     uvicorn.run(create_app(skill_root=Path(skills_dir)), host=host, port=port)
 
 
+def _driver_kwargs(pairs: list[str]) -> dict[str, str]:
+    """Turn `key=value` strings into driver arguments.
+
+    Values stay strings. Guessing types here would mean deciding that `port=8` is an int
+    on a body where it is a name, and a driver knows its own argument types.
+    """
+    kwargs: dict[str, str] = {}
+    for pair in pairs:
+        key, separator, value = pair.partition("=")
+        if not separator:
+            raise typer.BadParameter(f"expected key=value, got {pair!r}")
+        kwargs[key.strip()] = value.strip()
+    return kwargs
+
+
 @app.command()
 def shell(
     port: int = typer.Option(8000, help="Port the runtime listens on"),
@@ -272,6 +304,12 @@ def evaluate_skill(
     episodes: int = typer.Option(0, help="Override the episode count in skill.yaml"),
     steps: int = typer.Option(300, help="Maximum control steps per episode"),
     seed: int = typer.Option(0, help="First seed; each episode increments it"),
+    physical: bool = typer.Option(
+        False,
+        "--physical",
+        help="Allow a body that moves real hardware. Read SECURITY.md first.",
+    ),
+    driver_arg: list[str] = _DRIVER_ARG_OPTION,
 ) -> None:
     """Run a skill repeatedly and report what happened.
 
@@ -283,7 +321,7 @@ def evaluate_skill(
     console = Console()
 
     from tendon.kernel.scheduler import Scheduler
-    from tendon.services.bodies import BodyUnavailable, open_body
+    from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
     from tendon.services.evaluator import EpisodeOutcome, SuccessCriterion, evaluate, judge
     from tendon.services.policies import ScriptedPolicy, sine_sweep
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
@@ -295,9 +333,9 @@ def evaluate_skill(
         raise typer.Exit(code=1) from exc
 
     try:
-        body = open_body(driver)
+        body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
         require_compatible(loaded, body)
-    except (BodyUnavailable, IncompatibleBody) as exc:
+    except (BodyUnavailable, PhysicalBodyRefused, IncompatibleBody) as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 

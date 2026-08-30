@@ -39,6 +39,14 @@ export interface Capability {
   control_hz: number;
   cameras: string[];
   has_force_sensing: boolean;
+  /**
+   * True when this body exists only in software.
+   *
+   * Defaults to false on the runtime side so a driver that does not say is treated as
+   * real. The shell shows the difference prominently: an operator approving a motion
+   * needs to know whether it happens in a window or in the room.
+   */
+  simulated: boolean;
   /** True for bodies that produce observations but accept no commands. */
   readonly: boolean;
 }

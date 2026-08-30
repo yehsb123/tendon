@@ -58,6 +58,15 @@ class Capability(BaseModel):
     control_hz: float = Field(gt=0, description="Rate the driver accepts setpoints at")
     cameras: tuple[str, ...] = ()
     has_force_sensing: bool = False
+    simulated: bool = Field(
+        default=False,
+        description=(
+            "True when this body exists only in software. Defaults to False so that a "
+            "driver which does not say is treated as real: the cost of asking about a "
+            "simulator is a keystroke, and the cost of assuming a real arm is a "
+            "simulator is a real arm moving."
+        ),
+    )
     readonly: bool = Field(
         default=False,
         description=(

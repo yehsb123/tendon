@@ -19,6 +19,7 @@ __all__ = [
     "ReadOnlyBody",
     "UnsupportedActionSpace",
     "available",
+    "is_simulated",
     "load",
     "negotiate",
     "register",
@@ -58,17 +59,37 @@ def negotiate(driver: Driver, required: tuple[ActionSpace, ...]) -> ActionSpace:
 
 _REGISTRY: dict[str, type] = {}
 
+#: Which registered drivers declared themselves simulators. Absence means physical: a
+#: driver that does not say counts as one that moves in the room.
+_SIMULATED: set[str] = set()
 
-def register(name: str):
-    """Register a driver implementation under the short name used by --driver."""
+
+def register(name: str, *, simulated: bool = False):
+    """Register a driver implementation under the short name used by --driver.
+
+    `simulated` is declared here rather than read from an instance because answering
+    "is this a simulator?" must not require constructing the driver — `so101` wants a
+    serial port, and opening one to ask a question would be the opposite of careful.
+
+    The default is False. A driver that does not declare itself is treated as physical,
+    because the cost of that being wrong is one flag and the cost of the opposite default
+    is a real arm moving because someone ran an example.
+    """
 
     def decorator(cls: type) -> type:
         if name in _REGISTRY:
             raise ValueError(f"driver {name} is already registered")
         _REGISTRY[name] = cls
+        if simulated:
+            _SIMULATED.add(name)
         return cls
 
     return decorator
+
+
+def is_simulated(name: str) -> bool:
+    """Whether a registered driver declared itself a simulator, without constructing it."""
+    return name in _SIMULATED
 
 
 def available() -> tuple[str, ...]:

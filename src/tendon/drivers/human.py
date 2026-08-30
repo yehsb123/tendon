@@ -57,7 +57,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-@register("human")
+@register("human", simulated=True)
 class HumanDriver(Driver):
     """A recorded LeRobotDataset episode, presented as a read-only body.
 
@@ -183,6 +183,8 @@ class HumanDriver(Driver):
             control_hz=float(self._dataset.fps),
             cameras=self._cameras,
             has_force_sensing=False,
+            # A recording, not a body in the room.
+            simulated=True,
             # The field this driver exists to set. Everything else is inference; this is
             # the claim.
             readonly=True,

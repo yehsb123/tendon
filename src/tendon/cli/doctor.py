@@ -107,6 +107,7 @@ def _drivers() -> Check:
 
     ready = [i.name for i in infos if i.available]
     missing = [i for i in infos if not i.available]
+    physical = [i.name for i in infos if i.available and not i.simulated]
 
     if not ready:
         return Check(
@@ -124,6 +125,15 @@ def _drivers() -> Check:
             f"{', '.join(ready)} available; "
             + ", ".join(f"{i.name} needs its backend" for i in missing),
             'pip install -e ".[sim]" for the simulator',
+        )
+
+    if physical:
+        # Not a warning about something being wrong — a statement about what is present.
+        # Someone reading this list should know which of these can move in the room.
+        return Check(
+            "drivers",
+            Status.OK,
+            f"{', '.join(ready)} ({', '.join(physical)} moves real hardware)",
         )
 
     return Check("drivers", Status.OK, ", ".join(ready))

@@ -13,7 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from tendon.services.bodies import BodyUnavailable, available, discover, open_body
+from tendon.services.bodies import (
+    BodyUnavailable,
+    PhysicalBodyRefused,
+    available,
+    discover,
+    open_body,
+)
 
 DRIVERS_DIR = Path(__file__).resolve().parents[2] / "src" / "tendon" / "drivers"
 #: Modules in the package that are not bodies.
@@ -121,3 +127,73 @@ def test_a_discovered_body_can_actually_be_opened() -> None:
             assert body.capability.body_id
         finally:
             body.close()
+
+
+# ------------------------------------------------------- simulated versus in the room
+
+
+def test_a_physical_body_is_refused_by_default() -> None:
+    """Opening something that moves in the room must never be a default or a typo.
+
+    Not a safety mechanism — nothing here stops a determined caller. It exists so that the
+    person says which kind of body they are opening, given that every safety limit in this
+    repository has only ever held in simulation.
+    """
+    physical = [i.name for i in discover() if i.available and not i.simulated]
+    if not physical:
+        pytest.skip("no physical driver is registered in this environment")
+
+    with pytest.raises(PhysicalBodyRefused) as excinfo:
+        open_body(physical[0])
+
+    assert "SECURITY.md" in str(excinfo.value)
+
+
+def test_the_refusal_happens_before_the_hardware_is_touched() -> None:
+    """The bug this ordering exists to prevent.
+
+    An earlier version constructed the driver and then inspected its capability, so a
+    serial port was already open by the time the refusal happened — touching the hardware
+    in order to decide whether to touch it. `simulated` is declared at registration
+    precisely so the question can be answered without constructing anything.
+    """
+    from tendon.drivers import base as driver_base
+
+    physical = [i.name for i in discover() if i.available and not i.simulated]
+    if not physical:
+        pytest.skip("no physical driver is registered in this environment")
+
+    name = physical[0]
+    constructed = []
+
+    class Tripwire(driver_base._REGISTRY[name]):  # type: ignore[misc, valid-type]
+        def __init__(self, *args, **kwargs):
+            constructed.append(True)
+            super().__init__(*args, **kwargs)
+
+    original = driver_base._REGISTRY[name]
+    driver_base._REGISTRY[name] = Tripwire
+    try:
+        with pytest.raises(PhysicalBodyRefused):
+            open_body(name, port="COM-NOT-REAL")
+    finally:
+        driver_base._REGISTRY[name] = original
+
+    assert not constructed, "the driver was built before the refusal"
+
+
+def test_a_simulator_opens_without_a_flag() -> None:
+    """The default must not make ordinary work harder than it needs to be."""
+    simulated = [i.name for i in discover() if i.available and i.simulated]
+    assert simulated, "no simulator is registered, so nothing here can be run safely"
+
+
+def test_an_undeclared_driver_counts_as_physical() -> None:
+    """The safe default, asserted rather than assumed.
+
+    A driver that forgets to declare itself must not be treated as a simulator: the cost of
+    that being wrong is a real arm moving because someone ran an example.
+    """
+    from tendon.drivers import base as driver_base
+
+    assert not driver_base.is_simulated("a-driver-that-was-never-registered")

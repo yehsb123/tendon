@@ -98,7 +98,7 @@ def _working_directory(path: Path) -> Iterator[None]:
         os.chdir(prior)
 
 
-@register("mujoco")
+@register("mujoco", simulated=True)
 class MujocoDriver(Driver):
     """A MuJoCo model exposed as a tendon body.
 
@@ -459,6 +459,9 @@ class MujocoDriver(Driver):
             # MuJoCo can compute contact forces, but this model carries no force sensor.
             # Reporting True would promise a calibrated reading the body does not have.
             has_force_sensing=False,
+            # Exists only in software. `Capability.simulated` defaults to False so that a
+            # driver which does not say is treated as real.
+            simulated=True,
             readonly=False,
         )
 
