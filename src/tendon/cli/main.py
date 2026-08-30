@@ -122,7 +122,7 @@ def run(
     """Run a policy on a body under the kernel.
 
     Loads the skill, checks it against the body before anything moves, and executes one
-    episode. The run is recorded. There is no flag for that — design decision 1 — and the
+    episode. The run is recorded. There is no flag for that - design decision 1 - and the
     only thing `--store` changes is where it lands.
 
     For most of this project's life that was not true. The bus was created and handed to
@@ -262,7 +262,7 @@ def _attach_recorder(console: Console, bus, loaded, store: str):
     except ImportError:
         console.print("[yellow]not recording: LeRobot is not installed[/yellow]")
         console.print(
-            "[dim]this episode will not be kept — " + escape('pip install -e ".[robot]"') + "[/dim]"
+            "[dim]this episode will not be kept - " + escape('pip install -e ".[robot]"') + "[/dim]"
         )
         # No path either: naming a store nothing was written to is the same lie in a
         # quieter form.
@@ -305,7 +305,7 @@ def _report(console: Console, result, bus, root: Path | None = None) -> None:
 
     if result.fault_reason:
         console.print()
-        console.print("[red]interrupt faulted — context could not support a resume:[/red]")
+        console.print("[red]interrupt faulted - context could not support a resume:[/red]")
         for reason in result.fault_reason:
             console.print(f"  {escape(reason)}")
 
@@ -344,7 +344,7 @@ def serve(
     if host not in ("127.0.0.1", "localhost", "::1"):
         Console().print(
             f"[yellow]warning:[/yellow] binding to {escape(host)}. There is no "
-            "authentication between the shell and the runtime yet — anyone who can reach "
+            "authentication between the shell and the runtime yet - anyone who can reach "
             "this port can command the body. See SECURITY.md."
         )
 
@@ -392,7 +392,7 @@ def episodes(
     """List what has been recorded.
 
     Reads the layout on disk rather than opening datasets through LeRobot, so it works on
-    a machine that cannot currently record — which is exactly when someone wants to know
+    a machine that cannot currently record - which is exactly when someone wants to know
     what they already have.
     """
     from tendon.services.store import DEFAULT_ROOT, human_size, list_datasets
@@ -487,7 +487,7 @@ def evaluate_skill(
 
     Success is judged from `Observation.extra` at the end of each episode, against the
     conditions the skill declares. When the body does not report the quantity, the verdict
-    is *unknown* rather than *failed* — nobody measured, and recording that as failure
+    is *unknown* rather than *failed* - nobody measured, and recording that as failure
     would make an unmeasurable setup look like a broken policy.
 
     Every episode is recorded, on the same terms as `tendon run`. This command produces
@@ -555,7 +555,7 @@ def evaluate_skill(
                 for failure in result.subscriber_failures:
                     failures.append(
                         f"episode {index}: {failure.name} died at step "
-                        f"{failure.step} — {failure.error}"
+                        f"{failure.step} - {failure.error}"
                     )
                 # The bus drops a subscriber that raises and never re-subscribes it, so
                 # the remaining episodes would record nothing while still opening and
@@ -613,7 +613,7 @@ def evaluate_skill(
 
     if not report.is_comparable:
         console.print(
-            "[yellow]note:[/yellow] this result cannot be compared against another run — "
+            "[yellow]note:[/yellow] this result cannot be compared against another run - "
             "see docs/decisions/0003-confidence-has-no-upstream-source.md"
         )
 

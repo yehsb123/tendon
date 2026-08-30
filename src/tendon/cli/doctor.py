@@ -63,14 +63,14 @@ def _python() -> Check:
         return Check(
             "python",
             Status.BLOCKED,
-            f"{version} — tendon needs 3.10 or newer",
+            f"{version} - tendon needs 3.10 or newer",
             "install a newer Python",
         )
     if (major, minor) < (3, 12):
         return Check(
             "python",
             Status.LIMITED,
-            f"{version} — the kernel and MuJoCo driver work; the lerobot extra does not",
+            f"{version} - the kernel and MuJoCo driver work; the lerobot extra does not",
             "LeRobot 0.6 requires 3.12+. Use 3.12 if you need the robot extra",
         )
     return Check("python", Status.OK, f"{version} on {platform.system()}")
@@ -82,7 +82,7 @@ def _simulation() -> Check:
     return Check(
         "simulation",
         Status.BLOCKED,
-        "mujoco not installed — no body to run on",
+        "mujoco not installed - no body to run on",
         'pip install -e ".[sim]"',
     )
 
@@ -144,7 +144,7 @@ def _training() -> Check:
         return Check(
             "training",
             Status.LIMITED,
-            "torch not installed — running and recording work, fine-tuning does not",
+            "torch not installed - running and recording work, fine-tuning does not",
             'pip install -e ".[train]"  (needed from v0.3)',
         )
 
@@ -173,10 +173,10 @@ def _training() -> Check:
             return Check(
                 "training",
                 Status.LIMITED,
-                f"torch with CUDA — {name}, {memory_gb:.1f} GB. Tight for LoRA on a VLA",
+                f"torch with CUDA - {name}, {memory_gb:.1f} GB. Tight for LoRA on a VLA",
                 "reduce batch size and chunk length, or fine-tune a smaller policy",
             )
-        return Check("training", Status.OK, f"torch with CUDA — {name}, {memory_gb:.1f} GB")
+        return Check("training", Status.OK, f"torch with CUDA - {name}, {memory_gb:.1f} GB")
 
     # A CPU-only wheel on a machine with a GPU is a different problem from having no GPU,
     # and reporting them the same way sends someone shopping for hardware they already own.
@@ -192,7 +192,7 @@ def _training() -> Check:
     return Check(
         "training",
         Status.LIMITED,
-        "torch was built with CUDA but no device is visible — driver or runtime problem",
+        "torch was built with CUDA but no device is visible - driver or runtime problem",
         "check nvidia-smi; the GPU may be disabled or the driver too old for this build",
     )
 
@@ -203,7 +203,7 @@ def _datasets() -> Check:
     return Check(
         "datasets",
         Status.LIMITED,
-        "lerobot not installed — episodes cannot be written in LeRobotDataset format",
+        "lerobot not installed - episodes cannot be written in LeRobotDataset format",
         'pip install -e ".[robot]"  (needs Python 3.12+)',
     )
 
@@ -214,7 +214,7 @@ def _visualisation() -> Check:
     return Check(
         "visualisation",
         Status.LIMITED,
-        "rerun not installed — the shell will have no scene view",
+        "rerun not installed - the shell will have no scene view",
         'pip install -e ".[view]"',
     )
 
@@ -235,14 +235,14 @@ def _storage(root: Path | None = None) -> Check:
         return Check(
             "storage",
             Status.BLOCKED,
-            f"{free_gb:.1f} GB free — recording will fail almost immediately",
+            f"{free_gb:.1f} GB free - recording will fail almost immediately",
             "free some space before running",
         )
     if free_gb < _RECOMMENDED_FREE_GB:
         return Check(
             "storage",
             Status.LIMITED,
-            f"{free_gb:.1f} GB free — episodes accumulate continuously",
+            f"{free_gb:.1f} GB free - episodes accumulate continuously",
             f"{_RECOMMENDED_FREE_GB:.0f} GB is a comfortable working margin",
         )
     return Check("storage", Status.OK, f"{free_gb:.1f} GB free")
@@ -257,7 +257,7 @@ def _hub() -> Check:
         return Check(
             "hub",
             Status.LIMITED,
-            "huggingface_hub not installed — skill install and publish unavailable",
+            "huggingface_hub not installed - skill install and publish unavailable",
             "not needed before v0.4",
         )
 
@@ -268,7 +268,7 @@ def _hub() -> Check:
     return Check(
         "hub",
         Status.LIMITED,
-        "not authenticated — public skills can be installed, publishing cannot",
+        "not authenticated - public skills can be installed, publishing cannot",
         "huggingface-cli login",
     )
 

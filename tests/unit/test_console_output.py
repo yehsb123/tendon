@@ -16,11 +16,36 @@ A Windows console in a Korean locale runs cp949. So does a Japanese or Chinese o
 their own code pages. None of them can encode `U+2014 EM DASH` or `U+2588 FULL BLOCK`, and
 `print` raises rather than dropping the character.
 
+## The fifth time, and why the rule widened
+
+Scanning `raise` and bare `print` missed the way this CLI actually speaks. Every command
+writes through rich's `console.print`, which raises `UnicodeEncodeError` on cp949 exactly
+as `print` does, and none of it was being checked. `tendon doctor` -- the first command
+anyone runs, and the one whose whole job is explaining what is wrong with an install --
+had thirteen lines that could not be printed on a Korean console.
+
+Typer renders a command's docstring as its `--help` text, so those are encoded too. A
+docstring is not automatically safe; it depends on who reads it.
+
+## Why `cli/` is checked more strictly than the rest
+
+Widening to `console.print` still missed `tendon doctor`, and the proof was not subtle:
+`PYTHONIOENCODING=cp949 tendon doctor` died with `UnicodeEncodeError` while a green test
+suite said the text was fine. Its findings are built as data -- `Finding(name, status,
+detail, remedy)` -- and printed by a different module, so no scan of print-call arguments
+can see them. Following a string from where it is written to where it is encoded is not
+something a syntactic check can do.
+
+So `cli/` gets a blunter rule: every string literal is treated as user-facing, docstrings
+aside. That layer exists to produce terminal output, and a string there is destined for a
+console until shown otherwise. Elsewhere the narrow rule still applies, because a message
+in `services/` is as likely to be a log line or a key as something a person reads.
+
 ## What it does not cover
 
-Docstrings, comments, and Korean text in commit messages or documentation. Those are read,
-not encoded to a terminal, and restricting them would cost the bilingual documentation this
-project deliberately keeps.
+Docstrings outside `@app.command` functions, comments, and Korean text in commit messages
+or documentation. Those are read, not encoded to a terminal, and restricting them would
+cost the bilingual documentation this project deliberately keeps.
 """
 
 from __future__ import annotations
@@ -41,22 +66,74 @@ CONSOLES = ("cp949", "cp932", "cp936")
 NON_ASCII = re.compile(r"[^\x00-\x7f]")
 
 
-def _user_facing_strings(path: Path) -> list[tuple[int, str]]:
-    """String literals inside `raise` statements and `print` calls.
+def _docstring_ids(tree: ast.AST) -> set[int]:
+    """Every string node that is a docstring, so `cli/`'s blanket rule can skip them.
 
-    Deliberately narrow. A string that reaches a console is one that gets encoded; one that
-    sits in a docstring does not. Walking the AST rather than grepping means a `—` inside a
-    comment three lines above a `raise` is not mistaken for part of it.
+    Prose explaining a function to a reader is not output. The exception is a command's
+    docstring, which typer prints, and that is collected separately.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if not node.body:
+            continue
+        first = node.body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            ids.add(id(first.value))
+    return ids
+
+
+def _is_command(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether typer will render this function's docstring as help text."""
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Attribute) and target.attr in {"command", "callback"}:
+            return True
+    return False
+
+
+def _user_facing_strings(path: Path) -> list[tuple[int, str]]:
+    """Strings that reach a terminal: `raise`, `print`, `console.print`, and typer help.
+
+    Walking the AST rather than grepping means a `—` inside a comment three lines above a
+    `raise` is not mistaken for part of it.
+
+    `console.print` is here because it is how every command in this CLI writes, and
+    scanning only the builtin missed all of it. The match is on the attribute name rather
+    than the receiver, so `console`, `err_console` and a locally built `Console()` are all
+    covered without the scanner needing to know what they were called.
+
+    Command docstrings are here because typer prints them as `--help`. A docstring is safe
+    only when nothing renders it, which is a fact about the decorator, not about the string.
     """
     found: list[tuple[int, str]] = []
     tree = ast.parse(path.read_text(encoding="utf-8"))
 
+    if path.parent.name == "cli":
+        docstrings = _docstring_ids(tree)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+            ):
+                found.append((node.lineno, node.value))
+
     for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_command(node):
+            doc = ast.get_docstring(node, clean=False)
+            if doc:
+                found.append((node.lineno, doc))
+
         is_raise = isinstance(node, ast.Raise)
-        is_print = (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "print"
+        is_print = isinstance(node, ast.Call) and (
+            (isinstance(node.func, ast.Name) and node.func.id == "print")
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == "print")
         )
         if not (is_raise or is_print):
             continue
