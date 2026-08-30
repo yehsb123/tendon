@@ -459,3 +459,18 @@
   color: var(--fg-subtle);
   padding: var(--space-6);
 }
+
+/* A body that moves in the room. Not dismissible, and it uses the danger tokens rather
+   than the accent: the accent belongs to the interrupt state, which is a request for a
+   decision. This is a statement about what is connected. */
+.banner-physical {
+  grid-column: 1 / -1;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  font-weight: var(--weight-medium);
+}
+.banner-physical .banner-mark {
+  border-radius: 2px;
+  border-width: 3px;
+}

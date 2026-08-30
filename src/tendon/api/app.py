@@ -56,6 +56,9 @@ class StartRequest(BaseModel):
     seed: int | None = None
     #: Seconds an interrupt waits for a decision before aborting the episode.
     timeout_s: float = 300.0
+    #: Required to run on a body that moves real hardware. Defaults to false so that
+    #: reaching a physical arm is never something a request does by omission.
+    allow_physical: bool = False
 
 
 class DecisionRequest(BaseModel):
@@ -106,7 +109,14 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
         from tendon.services.bodies import discover
 
         return [
-            {"name": info.name, "available": info.available, "detail": info.unavailable_because}
+            {
+                "name": info.name,
+                "available": info.available,
+                "detail": info.unavailable_because,
+                # The shell shows this prominently. Someone approving a motion needs to
+                # know whether it happens in a window or in the room.
+                "simulated": info.simulated,
+            }
             for info in discover()
         ]
 
@@ -212,7 +222,7 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
         from tendon.api.session import EpisodeSession
         from tendon.kernel.scheduler import Scheduler
         from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
-        from tendon.services.bodies import BodyUnavailable, open_body
+        from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
         from tendon.services.policies import sine_sweep
         from tendon.services.skill import (
             IncompatibleBody,
@@ -227,9 +237,14 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         try:
-            body = open_body(request.body)
+            body = open_body(request.body, allow_physical=request.allow_physical)
         except BodyUnavailable as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PhysicalBodyRefused as exc:
+            # 403 rather than 500: the request was understood and deliberately refused.
+            # Letting this escape as a server error made a safety decision look like a bug
+            # and left the shell with nothing to show the operator.
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
 
         try:
             require_compatible(loaded, body)

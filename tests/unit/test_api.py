@@ -104,3 +104,46 @@ def test_the_driver_hint_survives_rich_markup() -> None:
 
     result = CliRunner().invoke(app, ["run", "skills/grasp/cube-sim", "--driver", "nosuch"])
     assert 'pip install -e ".[sim]"' in result.output
+
+
+# ------------------------------------------------------- simulated versus in the room
+
+
+def test_bodies_report_whether_they_move_real_hardware(client: TestClient) -> None:
+    """The shell shows this before anything else. An operator approving a motion needs to
+    know which kind of body they are approving it for."""
+    for body in client.get("/api/bodies").json():
+        assert "simulated" in body, f"{body['name']} does not say whether it is a simulator"
+
+
+def test_starting_a_physical_body_is_refused_with_a_reason(client: TestClient) -> None:
+    """403 rather than 500.
+
+    Letting `PhysicalBodyRefused` escape as a server error made a safety decision look
+    like a bug, and left the shell with nothing to show — the operator saw a generic
+    failure where the runtime had a specific and correct objection.
+    """
+    physical = [b["name"] for b in client.get("/api/bodies").json() if not b["simulated"]]
+    if not physical:
+        pytest.skip("no physical driver is registered in this environment")
+
+    response = client.post(
+        "/api/sessions",
+        json={"skill": "skills/grasp/cube-sim", "body": physical[0]},
+    )
+
+    assert response.status_code == 403
+    assert "SECURITY.md" in response.json()["detail"]
+
+
+def test_reaching_hardware_is_never_something_a_request_does_by_omission(
+    client: TestClient,
+) -> None:
+    """`allow_physical` defaults to false in the request model.
+
+    A body that moves in the room must require someone to have said so, not merely to have
+    left a field out.
+    """
+    from tendon.api.app import StartRequest
+
+    assert StartRequest(skill="x").allow_physical is False

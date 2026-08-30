@@ -1028,3 +1028,14 @@ where confidence is going to come from.
   main was broken. One line each, a statement of fact about what those drivers are, and
   the alternative was leaving the repository unusable until you next looked. `so101`
   correctly needs no change — not declaring is the right answer for it.
+- **B — the API turned a safety refusal into a 500.** `POST /api/sessions` with a
+  physical body let `PhysicalBodyRefused` escape as an internal server error: a deliberate
+  decision looked like a bug, and the shell had a generic failure to show where the
+  runtime had a specific and correct objection. Now 403 with the reason, and
+  `StartRequest.allow_physical` defaults to false so reaching real hardware is never
+  something a request does by omission.
+- **B — the shell shows it, first and undismissible.** `/api/bodies` carries `simulated`,
+  and Live renders a warning above everything else when the selected body moves in the
+  room. It uses the danger tokens rather than the accent on purpose: the accent belongs to
+  the interrupt state, which is a request for a decision, while this is a statement about
+  what is connected. 332 tests green, shell builds.

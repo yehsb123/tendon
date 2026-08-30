@@ -13,7 +13,14 @@
 
 import { create } from "zustand";
 
-import { api, connect, type ConnectionStatus, type SessionSnapshot, type SocketHandle } from "../api/client";
+import {
+  api,
+  connect,
+  type Body,
+  type ConnectionStatus,
+  type SessionSnapshot,
+  type SocketHandle,
+} from "../api/client";
 import type { InboundMessage } from "../api/socket";
 import type { Intent, InterruptContext, Observation } from "../api/types";
 
@@ -22,6 +29,8 @@ interface SessionStore {
   status: ConnectionStatus;
   statusDetail: string | null;
   runtimeVersion: string | null;
+  /** Bodies the runtime can open. Physical ones are marked and warned about. */
+  bodies: Body[];
 
   // episode
   session: SessionSnapshot | null;
@@ -51,6 +60,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   status: "closed",
   statusDetail: null,
   runtimeVersion: null,
+  bodies: [],
 
   session: null,
   step: 0,
@@ -70,6 +80,8 @@ export const useSession = create<SessionStore>((set, get) => ({
     const result = await api.health();
     if (result.ok) {
       set({ runtimeVersion: result.value.version, statusDetail: null });
+      const bodies = await api.bodies();
+      if (bodies.ok) set({ bodies: bodies.value });
     } else {
       // Not connected is a state to display, not an error to throw. The panel says so.
       set({ runtimeVersion: null, status: "closed", statusDetail: result.error });

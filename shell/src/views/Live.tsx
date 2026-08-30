@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import type { ConnectionStatus } from "../api/client";
+import type { Body, ConnectionStatus } from "../api/client";
 import type { Intent, Observation } from "../api/types";
 import { CorrectionEditor } from "../panels/CorrectionEditor";
 import { IntentPreview } from "../panels/IntentPreview";
@@ -30,6 +30,7 @@ export function Live() {
     correcting,
     setCorrecting,
     observation,
+    bodies,
     checkRuntime,
     start,
     decide,
@@ -43,6 +44,8 @@ export function Live() {
 
   return (
     <div className="live">
+      <PhysicalWarning body={bodies.find((b) => b.name === BODY)} />
+
       <ConnectionBanner
         status={status}
         detail={statusDetail}
@@ -102,6 +105,30 @@ export function Live() {
           </dl>
         ) : null}
       </aside>
+    </div>
+  );
+}
+
+/**
+ * A body that moves in the room does not look like one in a window.
+ *
+ * Shown before anything else and never dismissible. An operator approving a motion needs
+ * to know which kind of body they are approving it for, and finding that out afterwards
+ * is the wrong order.
+ *
+ * A body the runtime has not described is treated as physical, matching the runtime's own
+ * default: the safe direction to be wrong in.
+ */
+function PhysicalWarning({ body }: { body: Body | undefined }) {
+  if (body === undefined || body.simulated) return null;
+
+  return (
+    <div className="banner banner-physical" role="alert">
+      <span className="banner-mark" aria-hidden="true" />
+      <span>
+        <strong>{body.name}</strong> moves real hardware. Nothing here has been verified
+        against a real body, and every safety limit has only ever held in simulation.
+      </span>
     </div>
   );
 }

@@ -56,6 +56,13 @@ export interface Body {
   name: string;
   available: boolean;
   detail: string | null;
+  /**
+   * False when this body moves real hardware.
+   *
+   * The runtime defaults it to false for any driver that does not declare itself, so an
+   * undeclared driver shows as physical. That is the safe direction to be wrong in.
+   */
+  simulated: boolean;
 }
 
 export interface SkillSummary {
