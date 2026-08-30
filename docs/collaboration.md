@@ -2134,3 +2134,28 @@ where confidence is going to come from.
   had failed anyway, so it was true for the wrong reason. Rewritten against a real episode
   with a close that throws.
   582 tests green.
+
+- **B — the same question again, and the same answer: sessions were never released either.**
+  Having found the body leak by asking who gives back what the API takes, I asked it once
+  more of the registry. Finished sessions stayed for the life of the process, each holding
+  an `EpisodeResult` and through it every step's observation and both actions. Measured:
+  **728 bytes a step**, so 364 KB for a 500-step episode, kept forever, for data nothing in
+  the API ever reads again.
+
+  It does not fail; it grows. The failure it eventually produces is a memory figure noticed
+  long after the sessions that caused it — the worst kind to trace back.
+
+  Two changes, one idea: **the registry is a window, not an archive.** It holds the last
+  twenty sessions and evicts finished ones oldest-first, never a running one — that is the
+  session somebody is watching, and evicting it would 404 an episode currently moving a
+  robot. And a finished session clears its step records: the recorder took each step off
+  the bus as it happened, `on_result` has written the episode's line to the progress log,
+  and the durable record is the store and that log.
+
+  Cleared rather than never collected. The scheduler returns records because `tendon run`
+  prints from them, and a kernel deciding which caller cares would be guessing.
+
+  Dropping history costs nothing that is not better answered elsewhere: an evicted session
+  is indistinguishable from one this runtime never had, which is what `get` already returns
+  None for and the shell already handles.
+  590 tests green.

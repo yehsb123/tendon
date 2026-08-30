@@ -277,6 +277,16 @@ class EpisodeSession:
                 # it closes things.
                 with contextlib.suppress(Exception):
                     self._on_result(result)
+
+            # Everything that wanted the steps has had them: the recorder took each one
+            # off the bus as it happened, and `on_result` has just written the episode's
+            # line to the progress log. Nothing in the API reads them again, and holding
+            # them is what made a long-running server grow by 364 KB an episode.
+            #
+            # Cleared rather than never collected: the scheduler returns them because
+            # `tendon run` prints from them, and a kernel that guessed which caller cared
+            # would be guessing.
+            result.records.clear()
         except Exception as exc:  # noqa: BLE001 - surfaced, not swallowed
             self.state.error = f"{type(exc).__name__}: {exc}"
         finally:
@@ -354,7 +364,20 @@ class SessionRegistry:
 
     One at a time for now. Two episodes on one body would fight over it, and the honest
     way to say that is to refuse rather than to interleave.
+
+    **A window, not an archive.** Finished sessions used to stay for the life of the
+    process, so a runtime left up all day accumulated one per episode — each holding an
+    `EpisodeResult` and, through it, every step's observation and both actions. At roughly
+    728 bytes a step and 500 steps an episode that is 364 KB per run kept forever, for
+    data nothing in the API ever reads again.
+
+    The durable record is the episode store and the progress log. This only has to answer
+    "what happened in the session I am watching", and a little history around it.
     """
+
+    #: How many sessions to remember. Small on purpose: the shell follows one at a time,
+    #: and anything older is a question for `tendon episodes` or `tendon progress`.
+    limit: int = 20
 
     _sessions: dict[str, EpisodeSession] = field(default_factory=dict)
 
@@ -365,6 +388,22 @@ class SessionRegistry:
                 f"session {live[0].state.session_id} is still running on {live[0].state.body_id}"
             )
         self._sessions[session.state.session_id] = session
+        self._evict()
+
+    def _evict(self) -> None:
+        """Drop the oldest finished sessions past the limit.
+
+        Insertion order, which for a dict is the order they were added and therefore the
+        order they ran. A running session is never dropped: it is the one somebody is
+        watching, and `add` has already refused to start a second.
+        """
+        while len(self._sessions) > self.limit:
+            for session_id, session in self._sessions.items():
+                if not session.state.running:
+                    del self._sessions[session_id]
+                    break
+            else:  # pragma: no cover - `add` refuses a second running session
+                return
 
     def get(self, session_id: str) -> EpisodeSession | None:
         return self._sessions.get(session_id)

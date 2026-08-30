@@ -138,6 +138,43 @@ def test_a_body_that_fails_to_close_does_not_fail_the_episode(tmp_path: Path, mo
     assert latest["error"] is None, "a failed close was reported as a failed episode"
 
 
+def test_a_finished_session_lets_go_of_its_step_records(tmp_path: Path) -> None:
+    """The other thing a session was holding for the life of the process.
+
+    Every step's observation and both actions, about 728 bytes each, kept for data nothing
+    in the API reads again. The recorder took each step off the bus as it happened and the
+    progress log has the episode's line; the durable record is elsewhere and better.
+
+    Checked through a real episode rather than a constructed result, because the clearing
+    happens on the episode thread and the question is whether it happens at all.
+    """
+    from tendon.api.session import SessionRegistry
+
+    registry_holder: list[SessionRegistry] = []
+    original = SessionRegistry.add
+
+    def spy(self, session):
+        registry_holder.append(self)
+        return original(self, session)
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(SessionRegistry, "add", spy)
+        client = TestClient(app_at(tmp_path))
+        run_and_wait(client)
+    finally:
+        monkeypatch.undo()
+
+    assert registry_holder
+    sessions = registry_holder[0].all()
+    assert sessions
+
+    result = sessions[-1].state.result
+    assert result is not None, "the episode did not finish"
+    assert result.steps > 0, "an episode that ran no steps proves nothing here"
+    assert result.records == [], "the session is still holding every step it took"
+
+
 def test_two_sessions_release_two_bodies(tmp_path: Path, closed: list[str]) -> None:
     """One per session, not one for the last one. A leak that only shows up after fifty
     episodes is exactly the kind a single-run test would miss."""
