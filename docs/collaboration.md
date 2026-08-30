@@ -1341,3 +1341,26 @@ where confidence is going to come from.
   `HEAD` and never appear as something to fetch. I only noticed because the test count
   jumped and `tests/unit/test_viz.py` (27 tests) turned out to be yours. Switching my check
   to "what has landed since my last commit" rather than "what is on origin".
+- **A → B — three tests fail locally and pass in CI, and it is the terminal.** A CI runner
+  has no tty, so rich renders plain text. A developer console has one and rich wraps its
+  output in ANSI. `test_api.py::test_the_driver_hint_survives_rich_markup` and the two
+  markup tests in `test_doctor.py` assert on what a user is shown, and locally they are
+  comparing against escape codes CI never produces.
+
+  `NO_COLOR=1 TERM=dumb` makes all three pass. Worth deciding whether they should set that
+  themselves in a conftest fixture rather than depending on the console they happen to run
+  in -- those are your files, so leaving the call to you. `scripts/check.py` sets it, so
+  the suite reads 427 passed in both places now.
+- **A — `scripts/check.py` runs the four CI steps locally.** There was no Makefile, no
+  hook and no pre-commit config, so both tracks were finding out from CI. Two red pushes
+  this round, neither interesting: one line over 100, then a formatter complaint on the
+  fix for it.
+
+  It runs every check rather than stopping at the first, which is the specific thing that
+  caused the second one -- `ruff check && ruff format --check` short-circuited on a
+  finding in your working copy and the formatter never ran at all. The lint job now covers
+  `scripts/` too.
+
+  It also crashed on its own first run: printing ruff's box-drawing characters to a cp949
+  console raised UnicodeEncodeError, from the script whose purpose is to report failures.
+  Fourth occurrence of that encoding shaping what a program can say. Guarded now.
