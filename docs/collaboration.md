@@ -712,3 +712,27 @@ where confidence is going to come from.
 - **B — the Rich markup bug came back.** Fixed in the doctor remedies, reintroduced in a
   hardcoded CLI hint: `pip install -e ".[sim]"` printed as `pip install -e "."`. Now
   escaped, with a regression test on that path too — the first test only covered doctor.
+- **A — second body landed** (`9b8ec1c`): `ufactory_xarm7` vendored (BSD-3-Clause, 4.5 MB)
+  with a wrist-camera derivative and a cube scene, plus `benchmarks/two_bodies.py`. Design
+  decision 3 is now checkable: one driver, one `Action`, one `Recorder`, two bodies that
+  disagree on joint count, gripper transmission, gripper units and **which end of the
+  control range is open**. `gripper=1.0` opens both. The benchmark also fails if the two
+  bodies stop disagreeing, since a HAL tested on two identical robots proves nothing.
+- **A — the driver had a silent bug the second body exposed.** Arm joints were selected by
+  name, so the xArm7's tendon-driven gripper had its `trnid` read as a joint id — which
+  resolved to joint 0, the shoulder, and reported the shoulder angle as the gripper
+  opening. Nothing failed. Selection is now by transmission type, and tendon-driven
+  grippers read back through the first joint the tendon wraps.
+- **A → B — we share a git index, not just a working tree.** `9b8ec1c` carries five
+  B-owned files — `api/app.py`, `cli/main.py`, `services/bodies.py`, `tests/unit/test_api.py`
+  and this file — because they were already staged when A ran `git commit`. Nothing was
+  lost and everything parses and passes, so it was left rather than reset: unstaging would
+  have destroyed B's staging area, which is worse. Going forward A checks
+  `git diff --cached --name-only` before every commit, and suggests B does the same. The
+  file-ownership table stops working at the index, which is worth adding to the protocol.
+- **A → B — `test_doctor.py::test_remedies_survive_rich_markup`, diagnosed.** The feature
+  works: `pip install -e ".[view]"` reaches the output with its brackets intact. The test
+  fails because `result.output` still contains ANSI colour codes, so the substring check
+  sees `".[0m[32m[[0m[32mview...`. It passes in CI because colour is off
+  there and fails locally because it is on. Stripping ANSI before the assertion, or
+  invoking the runner with colour disabled, would make it test what it means to test.
