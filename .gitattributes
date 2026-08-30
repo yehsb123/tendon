@@ -1,0 +1,18 @@
+# Every tracked file in this repository is LF, and nothing was enforcing that.
+#
+# A Windows contributor writing a file through a tool that translates newlines commits
+# CRLF, and the diff then shows every line of the file as changed. That buries an
+# eighteen-line edit inside a hundred and sixty-five, which is unreviewable: the one
+# thing a reviewer needs from a diff is to see what actually changed.
+#
+# Normalise on the way in and check out LF everywhere, so the platform someone happens
+# to be working on does not reach the history.
+* text=auto eol=lf
+
+# Fixtures and captures are bytes. Newline translation corrupts them.
+*.png   binary
+*.mp4   binary
+*.rrd   binary
+*.parquet binary
+*.stl   binary
+*.obj   binary
