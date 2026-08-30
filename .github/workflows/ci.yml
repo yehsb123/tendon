@@ -142,22 +142,19 @@ jobs:
       # Costs nothing when the job is green.
       - run: python -m pytest tests/integration -q
         env:
+          # Kept after the incident it was added for. It dumps every thread's stack on
+          # SIGABRT, and it is what turned "exit 134 after all tests passed" into a
+          # readable cause. Free on a green run.
           PYTHONFAULTHANDLER: "1"
-          # The stack that faulthandler finally produced said the abort happens with
-          # "<no Python frame>" and torch._C loaded: the interpreter has finished and a
-          # native thread is being destroyed while still joinable during library teardown.
-          # It is torch's OpenMP pool, which is why the job that does not install torch
-          # passes the same suite in the same run.
-          #
-          # One thread means no pool to tear down. This constrains the environment, it
-          # does not fix anything -- the abort lives in a dependency's shutdown and is
-          # still there. Nothing in this suite is compute-bound, so a single thread costs
-          # nothing here; do not copy this to a job where that is not true.
-          OMP_NUM_THREADS: "1"
-          MKL_NUM_THREADS: "1"
-          # Ends the process once pytest has finished, before native static destructors
-          # run. See the pytest_sessionfinish hook in tests/conftest.py for what that
+          # Ends the process once pytest has finished, before the native static destructors
+          # that abort. See the pytest_unconfigure hook in tests/conftest.py for what that
           # skips and why it is scoped to this job alone.
+          #
+          # OMP_NUM_THREADS and MKL_NUM_THREADS were here too, on the theory that the
+          # abort was torch's OpenMP pool tearing down. Pinning both to one thread changed
+          # nothing, so the theory was wrong and the settings are gone. Leaving them would
+          # have left this file asserting a cause that had already been ruled out, which is
+          # how a workflow accumulates settings nobody can explain.
           TENDON_EXIT_WITHOUT_TEARDOWN: "1"
 
   shell:
