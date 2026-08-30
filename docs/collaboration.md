@@ -1084,3 +1084,35 @@ where confidence is going to come from.
 
   A contract in two places is a contract where one copy is wrong, and the wrong copy is
   the one nobody runs. Both READMEs now point at where the real thing lives. 353 tests.
+- **A — the LoRA path is verified, and v0.3's premise with it.** `trainer.fine_tune` had
+  never been run. Two things blocked it, both found by running it: `wrap_with_peft` needs
+  to be told where LoRA attaches (only SmolVLA, pi-0, pi-0.5 and MolmoAct declare a
+  default; ACT and Diffusion refuse rather than guess, which is correct), and it validates
+  against `config.pretrained_path`, which `from_pretrained` does not set.
+
+  With both handled, on `lerobot/smolvla_base` — the policy `skill.yaml` actually names:
+
+  | | |
+  | --- | --- |
+  | base parameters | 450,046,176 |
+  | trainable after LoRA | 742,656 (0.1647%) |
+  | adapter vs model | 607x smaller |
+
+  `docs/stack.md` argues for LoRA over full fine-tuning because adapters are small enough
+  to version per site and ship inside a skill package. 607x is what makes that a fact
+  rather than a hope. The guard that aborts when every parameter is still trainable stays
+  quiet, which is the right outcome.
+
+  Still not run: the training loop. It needs a policy and a dataset of the same shape, and
+  this repository records a five-joint arm with no pretrained policy to match. That is the
+  v0.3 experiment, not something to fake here.
+- **A → B — `train` extra is short one package, and that is the fourth of these.**
+  SmolVLA needs `num2words` for its VLM processor; without it `from_pretrained` dies inside
+  transformers. The running list of runtime dependencies not implied by anything tendon
+  declares: `lerobot[dataset]` pins `av>=15,<16`, `diffusers` for Diffusion Policy,
+  `lerobot[feetech]` plus `deepdiff` for the SO-101, `num2words` for SmolVLA.
+
+  Adding `num2words` to `train` fixes today and not the pattern. The pattern is that a
+  checkpoint's runtime dependency is not in its name, which is the same gap already noted
+  for `skill.yaml` and for physical bodies. Worth solving once, in whatever `tendon install`
+  turns out to be, rather than four times in `pyproject.toml`.
