@@ -80,6 +80,31 @@ tendon은 아직 아무도 만들지 않은 네 가지만 직접 씁니다.
 | 레지스트리 | [Hugging Face Hub](https://huggingface.co/docs/hub) | 자체 레지스트리 |
 | 런타임·API | FastAPI, Pydantic | RPC 프레임워크 |
 
+## 빠른 시작
+
+GPU도, 로봇도, 시뮬레이터도 필요 없습니다.
+
+```bash
+git clone https://github.com/yehsb123/tendon.git
+cd tendon
+python -m pip install -e ".[dev]"
+pytest tests/unit
+```
+
+셸도 실행됩니다. 런타임이 연결되지 않았을 때 빈 화면을 라이브인 척 보여주지 않고,
+연결되지 않았다고 분명히 말합니다.
+
+```bash
+cd shell && npm install && npm run dev     # http://localhost:5273
+```
+
+MuJoCo 드라이버가 붙은 뒤 시뮬레이터까지:
+
+```bash
+python -m pip install -e ".[sim,dev]"
+python examples/01_record/run.py --overhead
+```
+
 ## 상태
 
 **v0.1 — 개발 중. 시뮬레이션 전용입니다.** 아직 아무것도 동작하지 않고, **실물 로봇에
@@ -106,11 +131,11 @@ src/tendon/
 
 shell/src/
   views/         Live · Episodes · Skills · Training
-  panels/        IntentPreview · ConfidenceMeter · InterruptPrompt · ...
+  panels/        IntentPreview.tsx — 중심 패널, 레이아웃이 흔들리지 않는 고정 그리드
   rerun/         Rerun 뷰어 임베드, 에피소드 타임라인과 시계 동기화
   api/           kernel/types.py를 그대로 미러링한 타입드 클라이언트
   state/         연결 · 에피소드 · 대기 중인 결정
-  design/        토큰과 프리미티브 (현장 태블릿 기준으로 크기 설계)
+  design/        tokens.css + app.css — 라이트/다크 양쪽, 현장 태블릿 기준
 
 docs/            개념 · 아키텍처 · 스택 · 로드맵 · 용어집 · 협업
   decisions/     ADR — 되돌리기 어려운 결정 하나당 한 파일

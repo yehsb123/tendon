@@ -81,6 +81,31 @@ Everything else is composed.
 | Registry | [Hugging Face Hub](https://huggingface.co/docs/hub) | our own registry |
 | Runtime / API | FastAPI, Pydantic | an RPC framework |
 
+## Quick start
+
+Nothing here needs a GPU, a robot, or a simulator.
+
+```bash
+git clone https://github.com/yehsb123/tendon.git
+cd tendon
+python -m pip install -e ".[dev]"
+pytest tests/unit
+```
+
+The shell runs too, and will tell you plainly that no runtime is connected rather than
+rendering an empty scene that looks live:
+
+```bash
+cd shell && npm install && npm run dev     # http://localhost:5273
+```
+
+Adding the simulator, once the MuJoCo driver lands:
+
+```bash
+python -m pip install -e ".[sim,dev]"
+python examples/01_record/run.py --overhead
+```
+
 ## Status
 
 **v0.1 — in development. Simulation only.** Nothing works yet, and nothing here should be
@@ -108,11 +133,11 @@ src/tendon/
 
 shell/src/
   views/         Live, Episodes, Skills, Training
-  panels/        IntentPreview, ConfidenceMeter, InterruptPrompt, ...
+  panels/        IntentPreview.tsx — the centre; fixed grid so nothing shifts
   rerun/         embedded Rerun viewer, clock-aligned to the episode
   api/           typed client mirroring kernel/types.py
   state/         connection, episode, pending decision
-  design/        tokens and primitives, sized for a tablet on a factory floor
+  design/        tokens.css + app.css — light and dark, sized for a floor tablet
 
 docs/            concepts, architecture, stack, roadmap, glossary, collaboration
   decisions/     ADRs — one per irreversible choice
