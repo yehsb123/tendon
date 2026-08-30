@@ -78,6 +78,18 @@ export interface Compatibility {
   reasons: string[];
 }
 
+export interface SkillDetail {
+  ref: string;
+  version: string;
+  summary: string;
+  license: string;
+  confidence_threshold: number;
+  /** Declared bounds. A null value means that limit is not set for this skill. */
+  safety: Record<string, number | number[] | null>;
+  success_criteria: { condition: string; threshold: number }[];
+  eval_episodes: number;
+}
+
 export interface Episode {
   ref: string;
   /** Null when the count could not be read. Not the same as zero. */
@@ -111,6 +123,9 @@ export const api = {
   bodies: () => request<Body[]>("/api/bodies"),
   skills: () => request<SkillSummary[]>("/api/skills"),
   episodes: () => request<Episode[]>("/api/episodes"),
+
+  skill: (namespace: string, name: string) =>
+    request<SkillDetail>(`/api/skills/${namespace}/${name}`),
 
   startSession: (skill: string, body: string, maxSteps = 500) =>
     request<SessionSnapshot>("/api/sessions", {

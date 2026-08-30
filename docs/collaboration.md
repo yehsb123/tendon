@@ -1142,3 +1142,19 @@ where confidence is going to come from.
   empty when what happened is that nobody could tell. Unreadable datasets are dimmed and
   listed with their reason rather than dropped. An empty store says what to do about it.
   358 tests green.
+- **B — the Skills view, and the last unused endpoint is now used.**
+  `/api/skills/{ns}/{name}` had been built and never called. The view exists for one
+  reason: **a skill declares the bounds every one of its actions is checked against,
+  including the ones an operator supplies, and the only way to read them was to open
+  `skill.yaml`.** Somebody deciding whether to approve a motion should be able to see what
+  the motion is not allowed to do.
+
+  A skill with no declared limits is called out loudly rather than shown as an empty list —
+  "none declared" reads as nothing to see, when it means every action runs unbounded. The
+  confidence threshold is labelled as a starting point, because it is not calibrated
+  across skills until v0.3 and presenting it as a recommendation would be a lie of tone.
+- **B — dead surface is now checked in both directions.** One test asserts every path the
+  shell calls exists on the server; the new one asserts every endpoint the server serves is
+  called by the shell, with `GET /api/sessions` listed as a deliberate exception for
+  terminal use. The last three rounds each found something that had drifted into being
+  unused, so the check is written down rather than remembered. 361 tests green.

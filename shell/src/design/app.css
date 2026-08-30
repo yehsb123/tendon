@@ -562,3 +562,93 @@
   font-size: var(--text-sm);
   color: var(--fg-muted);
 }
+
+/* -------------------------------------------------------------------------- skills */
+
+.skills {
+  padding: var(--space-6);
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  max-width: 60rem;
+}
+
+.skills h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.skills-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.skills-entry {
+  width: 100%;
+  min-height: var(--touch-min);
+  display: grid;
+  grid-template-columns: minmax(10rem, auto) 5rem 1fr;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.skills-entry[aria-current="true"] {
+  border-color: var(--border-strong);
+  background: var(--bg-sunken);
+}
+.skills-entry:disabled {
+  color: var(--fg-subtle);
+  cursor: not-allowed;
+}
+
+.skills-version,
+.skills-summary {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+.skills-version { font-family: var(--font-mono); }
+
+.skill-detail {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+}
+.skill-detail h3 { margin: 0 0 var(--space-3); font-size: var(--text-lg); }
+.skill-detail h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.skill-detail dl { margin: 0; display: grid; gap: var(--space-2); }
+.skill-detail dl > div { display: grid; grid-template-columns: 12rem 1fr; gap: var(--space-3); }
+.skill-detail dt { color: var(--fg-muted); font-size: var(--text-sm); }
+.skill-detail dd { margin: 0; font-variant-numeric: var(--numeric); }
+
+.skill-limits {
+  margin: 0;
+  padding-left: var(--space-6);
+  font-size: var(--text-sm);
+  font-variant-numeric: var(--numeric);
+}
+.skill-limits code {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.skill-note {
+  font-size: var(--text-sm);
+  color: var(--fg-subtle);
+}

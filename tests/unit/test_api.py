@@ -253,3 +253,52 @@ def test_an_unreadable_dataset_is_listed_with_its_reason(tmp_path: Path) -> None
     assert payload[0]["readable"] is False
     assert payload[0]["episodes"] is None
     assert payload[0]["detail"]
+
+
+def test_skill_detail_carries_the_terms_a_run_happens_under(client: TestClient) -> None:
+    """The safety limits are why the shell reads this.
+
+    A skill declares the bounds every one of its actions is checked against, including the
+    ones an operator supplies. Somebody deciding whether to approve a motion should be able
+    to see what the motion is not allowed to do without opening a YAML file.
+    """
+    detail = client.get("/api/skills/grasp/cube-sim").json()
+
+    assert detail["safety"], "a skill with no declared bounds runs unbounded and must say so"
+    assert "max_joint_velocity" in detail["safety"]
+    assert detail["confidence_threshold"] > 0
+    assert detail["success_criteria"], "without criteria a run cannot be judged"
+
+
+def test_every_server_endpoint_is_reachable_from_the_shell(client: TestClient) -> None:
+    """The inverse of the path test, and the one that catches dead surface.
+
+    An endpoint nobody calls is a maintained thing that verifies nothing. Both of the last
+    two rounds removed or connected something that had drifted into that state, so the
+    check is written down rather than remembered.
+    """
+    import re
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "shell" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+
+    called = set()
+    for raw in re.findall(r"[\"`](/api/[^\"`]*)", source):
+        called.add(re.sub(r"\$\{[^}]+\}", "{}", raw).rstrip("/"))
+
+    served = set()
+    for route in client.app.routes:
+        path = getattr(route, "path", "")
+        if path.startswith("/api"):
+            served.add(re.sub(r"\{[^}]+\}", "{}", path).rstrip("/"))
+
+    # `GET /api/sessions` lists every session and exists for operators with a terminal;
+    # the shell follows one session at a time and has no use for it.
+    expected_unused = {"/api/sessions"}
+    unused = sorted(served - called - expected_unused)
+
+    assert not unused, (
+        f"the server serves {unused} and nothing calls them; either wire them up or "
+        "remove them — surface that is never exercised is surface that quietly rots"
+    )

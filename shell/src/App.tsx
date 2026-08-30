@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Episodes } from "./views/Episodes";
 import { Live } from "./views/Live";
+import { Skills } from "./views/Skills";
 
 type View = "live" | "episodes" | "skills" | "training";
 
@@ -35,7 +36,8 @@ export function App() {
       <main className="app-main">
         {view === "live" ? <Live /> : null}
         {view === "episodes" ? <Episodes /> : null}
-        {view === "skills" || view === "training" ? <NotBuiltYet view={view} /> : null}
+        {view === "skills" ? <Skills /> : null}
+        {view === "training" ? <NotBuiltYet view={view} /> : null}
       </main>
     </div>
   );
