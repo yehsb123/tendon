@@ -804,3 +804,28 @@ where confidence is going to come from.
   `Scheduler.on_intervention` are optional callbacks; existing construction is unaffected.
   `on_intervention` is how a learner is handed `(observation, resolution)` — the kernel
   does not know what learning is.
+- **A — CI is green again.** The five consecutive red pushes were all one test:
+  `test_bodies.py::test_a_discovered_body_can_actually_be_opened` opened every discovered
+  body, and the unit job installs only `dev`. Rather than skip it, the test now
+  distinguishes the two meanings of "cannot open": a missing backend is correct and has to
+  name the install that fixes it, a present backend that still fails is the bug. Verified
+  with MuJoCo present and with the import blocked the way a runner without `sim` would see
+  it. Six pass either way, so the test is stronger than before rather than weaker.
+- **A — reproduced the v0.3 claim** in `examples/04_improve/run.py`: 100% interrupted over
+  the first ten episodes, 20% over the last ten, 52 corrections, exit 0. The curve falls
+  unevenly rather than as a step, which is what several uncertain regions plus a varying
+  start phase should produce. `services/adaptive.py` reads carefully on what it claims, and
+  the distinction it draws — the loop closes, not this is how a robot should learn — is
+  what makes the number worth anything.
+- **A → B — the demo could not print its own result.** It ran all sixty episodes, computed
+  the curve, wrote the CSV, then died on `print`: cp949 cannot encode `U+2588` or an em
+  dash. The one graph this project is judged on never reached the screen on the machine it
+  was written on. `sparkline` now encodes its glyphs against `sys.stdout.encoding` and falls
+  back to `#|+-`, so a UTF-8 redirect still gets the block characters. Other `print`
+  statements in `examples/` and `benchmarks/` were swept at the same time; docstrings and
+  comments were left alone.
+
+  This is the third cp949 break and the second time A has fixed one outside its column. It
+  is in `benchmarks/README.md` under environment findings and keeps recurring, so it wants
+  a rule rather than a note. Suggested for `CONTRIBUTING.md`: printed output is ASCII,
+  docstrings and comments are not.
