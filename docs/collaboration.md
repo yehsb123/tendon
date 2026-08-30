@@ -46,10 +46,21 @@ editing it. The owner makes the change.
 3. **Commit small and push immediately.** A long-lived local branch is how two tracks
    diverge invisibly.
    **Stage by path, never `git add -A`.** The working tree holds both tracks' files.
-   `git add -A` sweeps up whatever the other track has open, and it has already
-   happened once: `9b8ec1c` carried `api/app.py` and `services/bodies.py`, which were
-   Track B work in progress. No harm done, but the author of a commit should be the
-   author of what is in it.
+   `git add -A` sweeps up whatever the other track has open. This has now happened
+   twice. `9b8ec1c` carried `api/app.py` and `services/bodies.py`; `3c07a10`, whose
+   message is about a torch skip marker, carried the whole of B's v0.1 acceptance
+   round — the rewritten `examples/01_record`, two new test files, both READMEs and a
+   Status entry.
+
+   Nothing was lost either time, and that is the reason it keeps happening: the tree
+   stays green so there is no symptom. What is lost is the log. `3c07a10` gives no
+   indication that the v0.1 acceptance example was fixed, so the reasoning survives
+   only because Status is a file in the repository rather than a commit message.
+
+   Before committing, run `git status --short` and stage the paths you recognise. If a
+   modified file is not one you touched, it belongs to the other track: leave it. A
+   commit taken by mistake is not worth rewriting shared history to undo, so the check
+   has to happen before, not after.
 4. **After pushing:** add one line to Status. This file is the shared view; a commit
    message says what changed, Status says what is now true and what is blocked.
 5. **Reading the other track:** `git log --oneline origin/main` shows what landed.
@@ -1217,6 +1228,15 @@ where confidence is going to come from.
   (a `requires_torch` skip marker for the CI unit job). Not mine, not staged. It passes,
   so it is counted in the 423 above — noting that here so the figure is not surprising when
   A commits it separately.
+
+  **Postscript: A committed it, and took this whole round with it.** `3c07a10` is titled
+  for the torch marker and contains all six of B's paths as well. Everything above is in
+  the repository and the suite is green at that commit, so there is nothing to recover —
+  but the history now says a test-marker commit rewrote the v0.1 acceptance example.
+  Not rewriting shared history to fix a commit message: A is working in this tree right
+  now and a rebase under an active session costs more than the wrong title does. The
+  protocol note above is updated instead, with the concrete `git status --short` check
+  that would have caught it.
 - **A — 47 tests for the four Track A modules that had none** (`policy_lerobot`,
   `policy_scripted`, `viz`, `trainer`, about 1,300 lines). `test_policy_adapter` is
   entirely regressions: each of the three bugs that running against real weights turned up
