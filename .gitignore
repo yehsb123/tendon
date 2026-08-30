@@ -14,6 +14,9 @@ build/
 node_modules/
 .vite/
 shell/dist/
+# tsc incremental build state — regenerated on every build, and it changes on
+# every build, so tracking it makes every shell commit look like a diff.
+*.tsbuildinfo
 
 # tendon runtime state
 .tendon/
