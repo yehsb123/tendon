@@ -18,6 +18,7 @@ a question rather than performing an import.
 from __future__ import annotations
 
 import contextlib
+import pkgutil
 from dataclasses import dataclass
 
 from tendon.drivers import base as driver_base
@@ -25,9 +26,28 @@ from tendon.kernel.protocols import Driver
 
 __all__ = ["BodyInfo", "BodyUnavailable", "available", "discover", "open_body"]
 
-#: Driver modules to import so they register themselves. Adding a driver means adding it
-#: here and nowhere else.
-_DRIVER_MODULES = ("tendon.drivers.mujoco",)
+#: Modules in `tendon.drivers` that are not bodies.
+_NOT_A_DRIVER = frozenset({"base"})
+
+
+def _driver_modules() -> tuple[str, ...]:
+    """Every driver module in the package, discovered rather than listed.
+
+    An earlier version kept a hardcoded tuple, and the very first driver added after that
+    — `human` — was missing from it. It registered itself correctly and was invisible to
+    `doctor`, to `/api/bodies`, and to `--driver human`, with nothing reporting a problem
+    because nothing knew it should exist.
+
+    A list you have to remember to update is a list that will be wrong. Scanning the
+    package cannot forget.
+    """
+    import tendon.drivers as package
+
+    return tuple(
+        f"tendon.drivers.{info.name}"
+        for info in pkgutil.iter_modules(package.__path__)
+        if not info.name.startswith("_") and info.name not in _NOT_A_DRIVER
+    )
 
 
 class BodyUnavailable(RuntimeError):
@@ -61,7 +81,7 @@ def discover() -> tuple[BodyInfo, ...]:
     list that silently omits the first leaves someone wondering where it went.
     """
     infos: list[BodyInfo] = []
-    for module in _DRIVER_MODULES:
+    for module in _driver_modules():
         short = module.rsplit(".", 1)[-1]
         try:
             __import__(module)
@@ -74,7 +94,7 @@ def discover() -> tuple[BodyInfo, ...]:
 
 def available() -> tuple[str, ...]:
     """Names of bodies that can actually be opened."""
-    for module in _DRIVER_MODULES:
+    for module in _driver_modules():
         with contextlib.suppress(ImportError):
             __import__(module)
     return driver_base.available()

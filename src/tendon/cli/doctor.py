@@ -10,7 +10,6 @@ on a machine with a robot attached.
 
 from __future__ import annotations
 
-import contextlib
 import importlib.util
 import platform
 import shutil
@@ -18,6 +17,8 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from tendon.cli.doctor_remedy import import_remedy
 
 __all__ = ["Check", "Status", "run_checks"]
 
@@ -87,44 +88,45 @@ def _simulation() -> Check:
 
 
 def _drivers() -> Check:
-    """Which bodies are registered.
+    """Which bodies are registered, and which failed to import.
 
-    Imports the driver package rather than probing, since registration happens on import
-    and there is no other way to know.
+    Asks `services.bodies` rather than importing driver modules here. Three copies of the
+    same lazy-import block existed before that service — doctor, the API, and the CLI —
+    and a driver added after the fact was invisible to all three until each was updated.
     """
-    from tendon.drivers import base
+    from tendon.services.bodies import discover
 
-    # Importing is how a driver registers itself, so absence is expected rather than
-    # exceptional: a machine without the sim extra simply has no mujoco body.
-    with contextlib.suppress(ImportError):
-        import tendon.drivers.mujoco  # noqa: F401
-
-    available = base.available()
-    if not available:
+    infos = discover()
+    if not infos:
         return Check(
             "drivers",
             Status.BLOCKED,
-            "no bodies registered",
+            "no driver modules found in tendon.drivers",
+            "this is a broken install rather than a missing extra",
+        )
+
+    ready = [i.name for i in infos if i.available]
+    missing = [i for i in infos if not i.available]
+
+    if not ready:
+        return Check(
+            "drivers",
+            Status.BLOCKED,
+            "no bodies could be loaded: "
+            + "; ".join(f"{i.name} ({i.unavailable_because})" for i in missing),
             'install a driver extra, e.g. pip install -e ".[sim]"',
         )
-    return Check("drivers", Status.OK, ", ".join(available))
 
-
-def _import_remedy(exc: Exception) -> str:
-    """Turn an import failure into something actionable.
-
-    A stack trace tells a reader that something is broken. This tells them what to do,
-    which is the only reason they ran the command.
-    """
-    message = str(exc)
-    if "Visual C++" in message or "vc_redist" in message:
-        return (
-            "install the Microsoft Visual C++ Redistributable: "
-            "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+    if missing:
+        return Check(
+            "drivers",
+            Status.LIMITED,
+            f"{', '.join(ready)} available; "
+            + ", ".join(f"{i.name} needs its backend" for i in missing),
+            'pip install -e ".[sim]" for the simulator',
         )
-    if "DLL load failed" in message:
-        return "a native dependency is missing or mismatched; reinstall torch"
-    return 'reinstall torch, or run `python -c "import torch"` to see the full error'
+
+    return Check("drivers", Status.OK, ", ".join(ready))
 
 
 def _training() -> Check:
@@ -151,7 +153,7 @@ def _training() -> Check:
             "training",
             Status.LIMITED,
             f"torch is installed but fails to import: {type(exc).__name__}",
-            _import_remedy(exc),
+            import_remedy(exc),
         )
 
     if torch.cuda.is_available():

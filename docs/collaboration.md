@@ -44,6 +44,11 @@ editing it. The owner makes the change.
 2. **Only your own files.** If that is not possible, note it in Status and stop.
 3. **Commit small and push immediately.** A long-lived local branch is how two tracks
    diverge invisibly.
+   **Stage by path, never `git add -A`.** The working tree holds both tracks' files.
+   `git add -A` sweeps up whatever the other track has open, and it has already
+   happened once: `9b8ec1c` carried `api/app.py` and `services/bodies.py`, which were
+   Track B work in progress. No harm done, but the author of a commit should be the
+   author of what is in it.
 4. **After pushing:** add one line to Status. This file is the shared view; a commit
    message says what changed, Status says what is now true and what is blocked.
 5. **Reading the other track:** `git log --oneline origin/main` shows what landed.
@@ -736,3 +741,16 @@ where confidence is going to come from.
   sees `".[0m[32m[[0m[32mview...`. It passes in CI because colour is off
   there and fails locally because it is on. Stripping ANSI before the assertion, or
   invoking the runner with colour disabled, would make it test what it means to test.
+- **B — driver discovery no longer depends on remembering.** `services/bodies.py` kept a
+  hardcoded `_DRIVER_MODULES`, and the very first driver added after it — Track A's
+  `human` — was missing from that tuple. It registered itself correctly and was invisible
+  to `doctor`, to `/api/bodies`, and to `--driver human`, with nothing reporting a problem
+  because nothing knew it should exist. Now the package is scanned with `pkgutil`, and
+  `tests/unit/test_bodies.py` compares discovery against the filesystem, so adding a
+  driver passes without editing a registry and forgetting to register one fails.
+
+  `doctor` was a third copy of the same lazy-import block and now asks the service too.
+  Bodies currently discovered: `human`, `mujoco`.
+- **B — process note on `git add -A`.** Recorded in Protocol above rather than as a
+  complaint: the working tree holds both tracks, so `-A` sweeps up the other track's open
+  files. Staging by path costs nothing and keeps authorship honest.
