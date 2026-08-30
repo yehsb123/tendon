@@ -244,7 +244,7 @@ def evaluate(outcomes: Sequence[EpisodeOutcome], *, skill: str) -> EvaluationRes
         )
     if faults:
         caveats.append(
-            f"{faults} episode(s) faulted — an interrupt could not preserve enough "
+            f"{faults} episode(s) faulted - an interrupt could not preserve enough "
             "context to resume. Excluded from intervention counts but not from the "
             "episode total"
         )
@@ -256,7 +256,7 @@ def evaluate(outcomes: Sequence[EpisodeOutcome], *, skill: str) -> EvaluationRes
     elif sources == (ConfidenceSource.NONE,):
         caveats.append(
             "no confidence estimator was active, so any handover here was "
-            "operator-initiated or a safety trip — not the policy raising its own hand"
+            "operator-initiated or a safety trip - not the policy raising its own hand"
         )
     unlabelled = failure_modes.get("unlabelled", 0)
     if unlabelled:

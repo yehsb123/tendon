@@ -286,7 +286,7 @@ def score_episode(
         # discontinuity `jerk` detects, so these episodes score badly for the wrong
         # reason, and ranking them alongside the rest would discard the recoveries.
         reasons.append(
-            "contains a human intervention — the only recorded recovery from failure, "
+            "contains a human intervention - the only recorded recovery from failure, "
             "and scored separately for that reason"
         )
 

@@ -27,7 +27,7 @@ had thirteen lines that could not be printed on a Korean console.
 Typer renders a command's docstring as its `--help` text, so those are encoded too. A
 docstring is not automatically safe; it depends on who reads it.
 
-## Why `cli/` is checked more strictly than the rest
+## Why every string literal is checked, not just the ones next to a `print`
 
 Widening to `console.print` still missed `tendon doctor`, and the proof was not subtle:
 `PYTHONIOENCODING=cp949 tendon doctor` died with `UnicodeEncodeError` while a green test
@@ -36,10 +36,16 @@ detail, remedy)` -- and printed by a different module, so no scan of print-call 
 can see them. Following a string from where it is written to where it is encoded is not
 something a syntactic check can do.
 
-So `cli/` gets a blunter rule: every string literal is treated as user-facing, docstrings
-aside. That layer exists to produce terminal output, and a string there is destined for a
-console until shown otherwise. Elsewhere the narrow rule still applies, because a message
-in `services/` is as likely to be a log line or a key as something a person reads.
+So the rule is blunt: every string literal in `src/tendon` is treated as user-facing,
+docstrings aside. `services/` builds the same kind of thing `doctor` does -- a curator
+reason, an evaluator caveat, `unreadable_because` on a store entry -- and every one of
+them is rendered by `console.print` in the CLI a layer up.
+
+The strictness was measured before it was chosen. Outside `cli/`, `kernel/` and `drivers/`
+had no non-docstring violations at all and `services/` had four, all of them user-facing.
+The rule costs four fixes and closes the hole; a narrower one that has to guess which
+strings travel would keep re-opening it. If a genuinely internal constant ever needs a
+character outside ASCII, this test is where that argument gets made.
 
 ## What it does not cover
 
@@ -98,48 +104,33 @@ def _is_command(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 
 def _user_facing_strings(path: Path) -> list[tuple[int, str]]:
-    """Strings that reach a terminal: `raise`, `print`, `console.print`, and typer help.
+    """Every string literal that is not a docstring, plus the docstrings typer prints.
 
-    Walking the AST rather than grepping means a `—` inside a comment three lines above a
-    `raise` is not mistaken for part of it.
+    Blunt on purpose. An earlier version matched `raise` and `print` call arguments, which
+    is the shape the problem takes when you find it by reading code, and it missed
+    `tendon doctor` entirely: its findings are built as data and printed by a different
+    module, so there is no print call anywhere near the string. Following a value from
+    where it is written to where it is encoded is not something a syntactic check can do,
+    so this one stops trying and checks the literals.
 
-    `console.print` is here because it is how every command in this CLI writes, and
-    scanning only the builtin missed all of it. The match is on the attribute name rather
-    than the receiver, so `console`, `err_console` and a locally built `Console()` are all
-    covered without the scanner needing to know what they were called.
-
-    Command docstrings are here because typer prints them as `--help`. A docstring is safe
-    only when nothing renders it, which is a fact about the decorator, not about the string.
+    Command docstrings are collected separately because typer renders them as `--help`.
+    Every other docstring is prose for a reader and is left alone.
     """
     found: list[tuple[int, str]] = []
     tree = ast.parse(path.read_text(encoding="utf-8"))
-
-    if path.parent.name == "cli":
-        docstrings = _docstring_ids(tree)
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and id(node) not in docstrings
-            ):
-                found.append((node.lineno, node.value))
+    docstrings = _docstring_ids(tree)
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_command(node):
             doc = ast.get_docstring(node, clean=False)
             if doc:
                 found.append((node.lineno, doc))
-
-        is_raise = isinstance(node, ast.Raise)
-        is_print = isinstance(node, ast.Call) and (
-            (isinstance(node.func, ast.Name) and node.func.id == "print")
-            or (isinstance(node.func, ast.Attribute) and node.func.attr == "print")
-        )
-        if not (is_raise or is_print):
-            continue
-        for child in ast.walk(node):
-            if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                found.append((child.lineno, child.value))
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in docstrings
+        ):
+            found.append((node.lineno, node.value))
     return found
 
 

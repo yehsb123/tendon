@@ -82,7 +82,7 @@ def _read(directory: Path) -> StoredDataset:
             episodes=None,
             size_bytes=size,
             modified=modified,
-            unreadable_because="no meta/info.json — not a LeRobotDataset, or a partial write",
+            unreadable_because="no meta/info.json - not a LeRobotDataset, or a partial write",
         )
 
     try:
