@@ -155,9 +155,7 @@ def test_enum_values_match(enum: str) -> None:
     only_ts = sorted(ts_enums[enum] - py_enums[enum])
 
     assert not only_py and not only_ts, (
-        f"enum {enum} has diverged.\n"
-        f"  only in Python: {only_py}\n"
-        f"  only in TypeScript: {only_ts}"
+        f"enum {enum} has diverged.\n  only in Python: {only_py}\n  only in TypeScript: {only_ts}"
     )
 
 

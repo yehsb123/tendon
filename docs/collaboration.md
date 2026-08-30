@@ -201,3 +201,9 @@ Newest last. One line per push: track, what landed, and anything the other track
   an approval is an intervention but not a correction, because the operator was consulted
   and changed nothing. The v0.3 graph plots corrections on x. A faulted machine never
   reaches PENDING, so faults contribute to neither count by construction.
+- **B** — depth 9: `services/curator.py` implemented with 35 tests; 108 unit tests green.
+- **B** — CI `lint and format` was failing on `main`. Fixed: 12 `zip()` calls needed an
+  explicit `strict=`, four docstring table rows exceeded 100 columns, and five files were
+  not `ruff format` clean. **Before pushing, run `ruff check src tests` and
+  `ruff format src tests`** — CI runs both and `ruff format --check` fails on formatting
+  alone, with tests passing.

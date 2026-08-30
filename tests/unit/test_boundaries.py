@@ -60,9 +60,7 @@ def test_layer_imports_stay_within_bounds(layer: str) -> None:
                 if _violates(imported, rule):
                     offences.append(f"{path.relative_to(SRC.parent)} imports {imported}")
 
-    assert not offences, (
-        f"{layer}/ violates docs/architecture.md:\n  " + "\n  ".join(offences)
-    )
+    assert not offences, f"{layer}/ violates docs/architecture.md:\n  " + "\n  ".join(offences)
 
 
 def test_kernel_owns_the_driver_contract() -> None:

@@ -10,11 +10,14 @@ An `Action` on its own does not carry enough information to check every limit, a
 honest thing is to say so rather than return `allowed=True` and let a caller believe the
 action was verified.
 
-| Limit | Checkable from | Otherwise |
-| --- | --- | --- |
-| joint velocity | a velocity command directly, or a position command plus the previous one and dt | reported unchecked |
-| workspace | an absolute end-effector pose | reported unchecked — the kernel has no forward kinematics, and acquiring it would mean the kernel knowing about robot geometry, which is a driver concern |
-| force | an observation, not an action | `check_force` |
+**joint velocity** — checkable from a velocity command directly, or from a position
+command together with the previous one and dt. Otherwise reported unchecked.
+
+**workspace** — checkable from an absolute end-effector pose. A joint-space command
+would need forward kinematics, and giving the kernel kinematics means giving it robot
+geometry, which is a driver concern and would end design decision 3. Reported unchecked.
+
+**force** — an observation, not an action. See `check_force`.
 
 So a verdict carries three things, not two: what was violated, what was clamped, and
 **what could not be checked at all**. A caller that ignores `unchecked` is choosing to
@@ -168,7 +171,7 @@ def _joint_velocities(action: Action, ctx: CheckContext) -> list[float] | None:
         # A changed joint count mid-episode is a fault, not something to average over.
         return None
 
-    return [(now - was) / dt_s for now, was in zip(action.values, previous.values)]
+    return [(now - was) / dt_s for now, was in zip(action.values, previous.values, strict=True)]
 
 
 def _clamp_velocity(action: Action, ctx: CheckContext, ceiling: float) -> Action | None:
@@ -193,14 +196,14 @@ def _clamp_velocity(action: Action, ctx: CheckContext, ceiling: float) -> Action
         previous, dt_s = ctx.previous, ctx.dt_s
         if previous is None or dt_s is None or dt_s <= 0.0:
             return None
-        deltas = [now - was for now, was in zip(action.values, previous.values)]
+        deltas = [now - was for now, was in zip(action.values, previous.values, strict=True)]
         peak = max((abs(d) for d in deltas), default=0.0) / dt_s
         if peak == 0.0:
             return None
         factor = ceiling / peak
         return Action(
             space=action.space,
-            values=[was + d * factor for was, d in zip(previous.values, deltas)],
+            values=[was + d * factor for was, d in zip(previous.values, deltas, strict=True)],
             gripper=action.gripper,
         )
 
@@ -219,7 +222,7 @@ def _commanded_position(action: Action, ctx: CheckContext) -> list[float] | None
             return None
         return [
             current + delta
-            for current, delta in zip(ctx.ee_position, action.values[:_POSITION_DIMS])
+            for current, delta in zip(ctx.ee_position, action.values[:_POSITION_DIMS], strict=True)
         ]
 
     # Joint-space commands need forward kinematics, which is a driver concern. Giving the
@@ -233,12 +236,12 @@ def _workspace_breaches(position: list[float], limits: SafetyLimits) -> list[str
     breaches: list[str] = []
 
     if limits.workspace_min is not None:
-        for axis, value, floor in zip(axes, position, limits.workspace_min):
+        for axis, value, floor in zip(axes, position, limits.workspace_min, strict=False):
             if value < floor:
                 breaches.append(f"workspace: {axis}={value:.4f} < {floor:.4f} [m]")
 
     if limits.workspace_max is not None:
-        for axis, value, ceiling in zip(axes, position, limits.workspace_max):
+        for axis, value, ceiling in zip(axes, position, limits.workspace_max, strict=False):
             if value > ceiling:
                 breaches.append(f"workspace: {axis}={value:.4f} > {ceiling:.4f} [m]")
 

@@ -160,9 +160,7 @@ def test_delta_pose_needs_current_position() -> None:
     assert any("workspace" in u for u in without.unchecked)
 
     ctx = CheckContext(ee_position=(0.0, 0.0, 0.2))
-    with_pos = check(
-        Action(space=ActionSpace.EE_DELTA_POSE, values=[0.9, 0, 0, 0, 0, 0]), BOX, ctx
-    )
+    with_pos = check(Action(space=ActionSpace.EE_DELTA_POSE, values=[0.9, 0, 0, 0, 0, 0]), BOX, ctx)
     assert not with_pos.allowed
 
 

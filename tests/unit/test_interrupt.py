@@ -236,9 +236,7 @@ def test_interventions_and_corrections_are_counted_separately() -> None:
     for step, resolution in enumerate(
         [
             InterruptResolution(resolution=Resolution.APPROVED),
-            InterruptResolution(
-                resolution=Resolution.CORRECTED, correction=make_intent(1.0)
-            ),
+            InterruptResolution(resolution=Resolution.CORRECTED, correction=make_intent(1.0)),
             InterruptResolution(resolution=Resolution.REJECTED),
         ]
     ):
