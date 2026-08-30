@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 
 import type { ConnectionStatus } from "../api/client";
+import type { Intent, Observation } from "../api/types";
 import { CorrectionEditor } from "../panels/CorrectionEditor";
 import { IntentPreview } from "../panels/IntentPreview";
+import { TrajectoryPreview } from "../panels/TrajectoryPreview";
 import { useSession } from "../state/session";
 
 const SKILL = "skills/grasp/cube-sim";
@@ -27,6 +29,7 @@ export function Live() {
     decisionError,
     correcting,
     setCorrecting,
+    observation,
     checkRuntime,
     start,
     decide,
@@ -49,7 +52,12 @@ export function Live() {
       />
 
       <section className="live-scene" aria-label="Scene">
-        <SceneView step={step} connected={status === "open"} />
+        <SceneView
+          step={step}
+          connected={status === "open"}
+          intent={intent}
+          observation={observation}
+        />
       </section>
 
       <aside className="live-side">
@@ -142,7 +150,17 @@ function ConnectionBanner({
   );
 }
 
-function SceneView({ step, connected }: { step: number; connected: boolean }) {
+function SceneView({
+  step,
+  connected,
+  intent,
+  observation,
+}: {
+  step: number;
+  connected: boolean;
+  intent: Intent | null;
+  observation: Observation | null;
+}) {
   if (!connected) {
     return (
       <div className="scene-empty">
@@ -155,10 +173,11 @@ function SceneView({ step, connected }: { step: number; connected: boolean }) {
   }
 
   return (
-    <div className="scene-empty">
-      <p>Episode running — step {step}.</p>
+    <div className="scene-live">
+      <TrajectoryPreview intent={intent} observation={observation} />
       <p className="scene-empty-hint">
-        The Rerun viewer mounts here. Until then the intent panel carries the decision.
+        step {step} — the Rerun viewer will render the body here; the plan above is what it
+        is about to do.
       </p>
     </div>
   );

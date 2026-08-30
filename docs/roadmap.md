@@ -26,6 +26,12 @@ execution, and can reject it.
 policy plans cannot be rendered as something an operator judges in a few seconds, the
 premise of the shell is wrong and the project should stop here.
 
+**Where it stands.** Trajectory, target and confidence all render before execution, and an
+operator can approve, reject or correct. What is not yet answered is the part that decides
+the milestone: whether the drawing is *legible*. That is a question about a person, and no
+test settles it — someone has to sit in front of it with an episode running. Until then
+v0.2 is built but not accepted.
+
 ## v0.3 — Correction becomes learning  *(~6 weeks)*  — the proof
 
 Interrupt protocol, correction recording, curation, nightly LoRA.

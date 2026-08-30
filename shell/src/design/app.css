@@ -403,3 +403,59 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---------------------------------------------------------------- trajectory preview */
+
+.scene-live {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: center;
+  padding: var(--space-6);
+}
+
+.trajectory {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+}
+
+.trajectory-plot {
+  width: min(100%, 32rem);
+  height: auto;
+}
+
+/* Context, not signal. Faint enough that the eye goes to the busiest axis first. */
+.trajectory-line {
+  fill: none;
+  stroke: var(--fg-subtle);
+  stroke-width: 1.25;
+  opacity: 0.35;
+}
+
+/* The axis doing the work. Thicker as well as brighter — colour is never the only
+   signal, and a floor tablet under glare flattens hue before it flattens weight. */
+.trajectory-line.is-busiest {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  opacity: 1;
+}
+
+/* Where the arm is now. A plan without it says where the arm will go and not whether
+   that is an adjustment or a lunge. */
+.trajectory-now {
+  fill: var(--bg-scene);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.trajectory-caption {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  font-variant-numeric: var(--numeric);
+}
+
+.trajectory-empty {
+  color: var(--fg-subtle);
+  padding: var(--space-6);
+}

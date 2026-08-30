@@ -931,3 +931,22 @@ where confidence is going to come from.
   type from the checkpoint config and map it to an extra, or have `skill.yaml` declare its
   own extras. The first keeps skill files honest by construction; the second is explicit
   but goes stale.
+- **B — the trajectory renders, which is what v0.2 is actually judged on.**
+  `panels/TrajectoryPreview.tsx` draws the chunk in the scene area, where the operator is
+  already looking. Two decisions carry the panel:
+
+  **One scale across every joint.** Per-joint scaling would make a 0.002 rad wobble look
+  exactly like a 0.4 rad sweep, which is the single most misleading thing this panel could
+  do.
+
+  **The busiest axis is solid, the rest are faint.** Five equally-weighted curves over ten
+  steps is accurate and unreadable — an operator scans it, finds no signal, and stops
+  looking at the panel, which is worse than not having it. "Which joint is doing the work,
+  and how far" is the question people ask first, so the caption answers it in words too.
+
+  Cartesian action spaces render nothing rather than a plausible-looking picture of
+  something that is not happening.
+- **B — v0.2 is built but not accepted, and the roadmap now says so.** Everything the
+  milestone lists is on screen. What it is actually judged on — whether the drawing is
+  legible in a few seconds — is a question about a person, and no test settles it. Someone
+  has to sit in front of it with an episode running.
