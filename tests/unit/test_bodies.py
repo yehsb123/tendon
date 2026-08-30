@@ -68,12 +68,29 @@ def test_base_is_not_mistaken_for_a_body() -> None:
 
 
 def test_a_discovered_body_can_actually_be_opened() -> None:
-    """Discovery that reports a body it cannot open would be worse than not reporting it."""
+    """Discovery that reports a body it cannot open would be worse than not reporting it.
+
+    "Cannot open" has two meanings and only one of them is a bug. A body whose backend is
+    not installed is *correctly* unavailable — that is what the extras are for, and what
+    `doctor` reports. A body that is discoverable, has its backend, and still fails is the
+    failure this test exists to catch.
+
+    So a missing backend is not skipped over silently: the error still has to name the
+    install that would fix it, which is the difference between a useful message and a
+    stack trace. This also keeps `tests/unit` runnable with no simulator, which
+    `CONTRIBUTING.md` requires and the CI unit job depends on.
+    """
     for name in available():
         if name == "human":
             # Read-only and needs a recording; construction requires arguments.
             continue
-        body = open_body(name)
+        try:
+            body = open_body(name)
+        except BodyUnavailable as exc:
+            assert "install" in str(exc).lower(), (
+                f"{name} is unavailable but does not say how to get it: {exc}"
+            )
+            continue
         try:
             assert body.capability.body_id
         finally:
