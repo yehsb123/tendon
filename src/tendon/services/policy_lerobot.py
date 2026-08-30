@@ -10,12 +10,18 @@ boundary `tests/unit/test_boundaries.py` enforces.
 A `PreTrainedPolicy` returns a bare action tensor. A tendon `Intent` needs three things
 that tensor does not carry, and supplying them is the entire job:
 
-**Confidence.** No upstream policy reports how sure it is (ADR 0003). Flow-matching
-and diffusion policies — SmolVLA, pi-0, pi-0.5 — are stochastic: sampling the same
-observation twice gives different chunks, and `predict_action_chunk` takes a `noise`
-argument precisely so a caller can drive that. So the adapter samples n times and hands the
-spread to `services.confidence`. That is the mechanism design decision 2 rests on, and it
-exists because of an argument LeRobot's own API happens to make possible.
+**Confidence.** No upstream policy reports how sure it is (ADR 0003). Flow-matching and
+diffusion policies (SmolVLA, pi-0, pi-0.5) are stochastic: sampling the same observation
+twice gives different chunks, and `predict_action_chunk` takes a `noise` argument precisely
+so a caller can drive that. The adapter samples n times and hands the spread to
+`services.confidence`.
+
+Not every policy is stochastic, and the ones that are not are the dangerous case. ACT
+returns the same chunk every time, so its spread is zero and a naive reading scores it 1.0:
+a policy that can never raise an interrupt, wearing the number that means it never needs
+to. Measured on a real checkpoint, which is how it was found. The adapter compares the
+samples it already drew and reports `ConfidenceSource.NONE` when they are identical,
+whether or not the caller knew to declare it.
 
 **Typed actions.** A tensor row becomes an `Action` with a declared `ActionSpace` and the
 gripper split out into its own normalised scalar, which is what makes a chunk renderable
@@ -171,10 +177,10 @@ class LeRobotPolicy:
                 checkpoint's config when omitted, which is the normal case; pass it only
                 for a checkpoint whose config does not say.
 
-        Note: this path is written against LeRobot 0.6 and has not been exercised against
-        a downloaded checkpoint here — the fake-policy tests cover the adapter, not the
-        loader. Treat a failure in it as a version mismatch to look up rather than a bug in
-        the caller.
+        Verified against `lerobot/act_aloha_sim_transfer_cube_human` on LeRobot 0.6: the
+        config resolves, `ACTPolicy` loads, and `predict` returns a 100-step chunk of
+        14-dimensional actions. A failure here is more likely a version mismatch than a
+        mistake in the caller.
         """
         torch = _import_torch()
         try:
@@ -239,21 +245,38 @@ class LeRobotPolicy:
         batch = self._build_batch(observation)
         chunks = [self._sample_chunk(batch) for _ in range(self._samples)]
 
-        if self._samples >= 3 and not self._deterministic:
+        # Detected, not trusted to the caller. A deterministic policy returns the same
+        # chunk every time, so its spread is zero and `estimate_from_samples` would score
+        # it 1.0 — a policy that can never raise an interrupt, wearing the number that
+        # means it never needs to.
+        #
+        # This is not hypothetical: `lerobot/act_aloha_sim_transfer_cube_human` is an ACT
+        # checkpoint, ACT is deterministic, and against a real observation it produced
+        # exactly that, confidence 1.0000 with source=chunk_variance.
+        #
+        # The samples are already drawn, so comparing them costs nothing and catches the
+        # case whether or not the caller knew to declare it.
+        identical = all(chunk == chunks[0] for chunk in chunks[1:])
+        deterministic = self._deterministic or identical
+
+        if self._samples >= 3 and not deterministic:
             confidence = estimate_from_samples(chunks, reference_spread=self._reference_spread)
         else:
             # Fewer than three samples cannot support a spread, and saying so is the point.
             # A score that is not a measurement must not be able to raise an interrupt.
-            confidence = Confidence(
-                score=0.0,
-                source=ConfidenceSource.NONE,
-                reasons=(
+            if deterministic:
+                reason = (
+                    "policy returned identical chunks from the same observation, so sample "
+                    "spread measures nothing; confidence-based handover is disabled for it"
+                    if identical and not self._deterministic
+                    else "policy is deterministic, so sample spread measures nothing"
+                )
+            else:
+                reason = (
                     f"{self._samples} sample(s) drawn; at least 3 are needed to measure "
                     f"disagreement"
-                    if not self._deterministic
-                    else "policy is deterministic, so sample spread measures nothing",
-                ),
-            )
+                )
+            confidence = Confidence(score=0.0, source=ConfidenceSource.NONE, reasons=(reason,))
 
         executed = chunks[0]
         return Intent(
