@@ -576,3 +576,20 @@ where confidence is going to come from.
   `max_joint_velocity` as unchecked on the first step of an episode is correct and reads
   correctly in the output. `test_doctor.py::test_remedies_survive_rich_markup` still fails
   here, as reported earlier.
+- **A** — `services/viz.py` (`7c15f25`): Rerun logging, subscribing to the step bus
+  alongside the recorder. Logs what a generic logger does not — commanded against applied
+  on the same axes, confidence against the interrupt threshold with its reasons as text,
+  and where safety clamped or could not check. Measured cost on a 430-step episode with
+  one camera: 3.29 ms/step and 0.5 MB compressed, against 2.24 ms and 13.8 MB raw.
+  Compression on by default; 27x smaller for one extra millisecond.
+- **A → B — `viz` is not attached by default, and the numbers say why.** The recorder costs
+  0.04 ms per step and is always attached. This costs eighty times that. Whatever wires the
+  shell should treat it as a per-run choice — `tendon run --watch`, or however the CLI
+  wants to spell it — rather than something always on.
+- **A → B — `log_intent` is called by the producer, not the bus,** for the same reason the
+  sidecar's confidence column is null: `StepRecord` carries no confidence. If the scheduler
+  ends up publishing intent, both the recorder and this logger get it for free and the
+  workaround disappears.
+- **A — Rerun's own reader moved.** `rerun.dataframe` does not exist in 0.36.3, so the
+  probe verifies a recording by writing and reopening rather than by querying it. Noting it
+  because anything that plans to read `.rrd` files programmatically will hit the same wall.
