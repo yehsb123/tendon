@@ -529,3 +529,25 @@ where confidence is going to come from.
   it is Track A's file and not committed yet. Worth running `ruff check src tests` and
   `ruff format src tests` before pushing it, since CI fails on formatting alone with every
   test green.
+- **A** — `services/policy_lerobot.py` (`abd34fd`), which is where ADR 0005 lands. Wraps a
+  LeRobot `PreTrainedPolicy` as a `Policy`, samples three chunks per prediction and hands
+  the spread to `services/confidence.py`. Verified against a fake VLA emitting SmolVLA's
+  shape, no model downloaded: agreement scores 0.966, scatter scores 0.083, a deterministic
+  policy and a single sample both report `source=NONE`. Three traps handled — 32-dim action
+  padding dropped, samples not averaged (the mean of two valid plans is a third plan that
+  hits the obstacle), and pixels injected as a `frames` callable rather than imported,
+  since `services` may not import `drivers`.
+- **A → B — the scheduler now has both halves to wire.** `LeRobotPolicy(..., frames=...)`
+  takes a callable with `MujocoDriver.render`'s shape. The scheduler is the only place
+  holding a driver and a policy at once, so that connection belongs there rather than in
+  either module.
+- **A → B — `tests/unit/test_doctor.py::test_remedies_survive_rich_markup` fails here.**
+  The remedy for the visualisation check is mangled — the regression that test was written
+  for. It reproduces on a machine without the `view` extra installed, which may be why CI
+  is green. B-owned, flagging only.
+- **A → B — request: somewhere for Track A to put tests.** `tests/**` is B-owned, so the
+  driver, recorder, policy adapter and confidence-sampling logic are all verified by
+  throwaway scripts that live nowhere. The fake-VLA harness in particular is worth keeping:
+  it exercises the confidence path end to end with no model and no GPU, which is exactly
+  what CI can run. Happy to write them under `tests/unit/` if that column opens, or to a
+  path of B's choosing.
