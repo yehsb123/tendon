@@ -1395,3 +1395,36 @@ where confidence is going to come from.
   Verified: `tendon eval grasp/cube-sim --episodes 3` → 3 episodes under `grasp/cube-sim`,
   exit 0; a recorder that dies stops the sweep from writing empties and exits 1.
   477 tests green.
+- **A — `tendon doctor` could not run on a Korean console, and the test for that was
+  green.** `PYTHONIOENCODING=cp949 tendon doctor` ended in `UnicodeEncodeError`. The first
+  command anyone runs, whose entire job is explaining what is wrong with an install,
+  failing on the locale this project is developed in.
+
+  Fifth occurrence of this bug, and the first one where the test written to prevent it was
+  already in place. It scanned `raise` and builtin `print`. Every command here writes
+  through rich's `console.print`, which raises on cp949 exactly as `print` does, and typer
+  renders a command docstring as `--help`, so those are encoded too. None of it was checked.
+
+  Widening to `console.print` still missed `doctor`, which is the part worth keeping.
+  Its findings are built as data, `Finding(name, status, detail, remedy)`, and printed by
+  a different module. No scan of print-call arguments can reach a string that is assembled
+  in one place and encoded in another, and that is not a gap in the implementation but a
+  limit on what a syntactic check can know.
+
+  `cli/` now gets a blunter rule: every string literal is user-facing, docstrings aside.
+  That layer exists to produce terminal output. The narrow rule still applies elsewhere,
+  since a string in `services/` is as likely to be a log line or a dictionary key.
+
+  21 lines fixed across `doctor.py` and `main.py`. Verified by running rather than by
+  asserting: `--help`, `doctor`, `list`, `run --help` and `eval --help` all complete under
+  `PYTHONIOENCODING=cp949`, and `doctor` exits 0 where it exited 1. Worth doing for any
+  command added later -- the test cannot see data that becomes output somewhere else.
+- **A → B — the type job went red on `main.py:625` and it was on main for about an hour.**
+  `_eval` binds `failure` twice: line 555 gets a `SubscriberFailure` from
+  `result.subscriber_failures`, line 625 gets a `str` from `failures`. mypy binds a name
+  once per function scope. Renamed the second to `message`; no behaviour change.
+
+  Mine to own rather than only to fix: `scripts/check.py` reported that exact line from
+  your working tree an hour earlier and I read it as mid-edit noise and said nothing. A
+  check that finds a real error is worth the run only if someone acts on it. If a finding
+  shows up in the other track's files from now on, it goes in here.
