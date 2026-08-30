@@ -51,7 +51,14 @@ sim   = ["mujoco>=3.1", "gymnasium>=0.29"]
 robot = ["lerobot[dataset]>=0.6.2"]
 train = ["torch>=2.3", "transformers>=4.44", "peft>=0.12", "accelerate>=0.33"]
 view  = ["rerun-sdk>=0.17"]
-dev   = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]
+dev   = [
+  "pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10",
+  # fastapi.testclient goes through starlette.testclient, which needs an HTTP
+  # client it does not itself depend on. starlette <1.0 asks for `httpx` and
+  # >=1.0 asks for `httpx2`; CI resolves to the newer one, so a machine with an
+  # older starlette already installed passes locally and fails there.
+  "httpx2",
+]
 all   = ["tendon-os[sim,robot,train,view]"]
 
 [project.scripts]
