@@ -150,7 +150,7 @@ def open_body(name: str, *, allow_physical: bool = False, **kwargs) -> Driver:
     if not allow_physical and not driver_base.is_simulated(name):
         raise PhysicalBodyRefused(
             f"{name!r} is a physical body. Nothing here has been verified against real "
-            "hardware and every safety limit has only ever held in simulation — see "
+            "hardware and every safety limit has only ever held in simulation. See "
             "SECURITY.md. Pass allow_physical=True (CLI: --physical) if that is what you "
             "mean."
         )

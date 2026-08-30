@@ -240,7 +240,7 @@ def _requirements(block: dict[str, Any], path: Path) -> Requirements:
             control_hz=float(block["control_hz"]) if "control_hz" in block else None,
         )
     except ValueError as exc:
-        raise SkillError(f"{path}: invalid requires block — {exc}") from exc
+        raise SkillError(f"{path}: invalid requires block: {exc}") from exc
 
 
 #: Known keys in the safety block. A misspelling here silently leaves a limit unset, which
@@ -265,7 +265,7 @@ def _limits(block: dict[str, Any], path: Path) -> SafetyLimits:
             workspace_max=block.get("workspace_max"),
         )
     except ValueError as exc:
-        raise SkillError(f"{path}: invalid safety block — {exc}") from exc
+        raise SkillError(f"{path}: invalid safety block: {exc}") from exc
 
 
 def _threshold(block: dict[str, Any], path: Path) -> float:
