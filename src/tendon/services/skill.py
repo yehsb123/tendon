@@ -25,6 +25,7 @@ point of separating them.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,45 @@ class Skill:
         return f"{self.namespace}/{self.name}"
 
 
+#: Where skills live when a reference is given instead of a path. The API resolves
+#: `namespace/name` under the same directory; a reference that works in the shell and
+#: fails on the command line is the kind of difference nobody can be expected to hold.
+SKILL_ROOT = Path("skills")
+
+
+def _resolve(path: str | Path) -> Path:
+    """Find a `skill.yaml` from either a path or a `namespace/name` reference.
+
+    A path is tried first and wins, so nothing that used to work changes. The reference
+    form exists because it is what everything else in the project calls a skill: the API
+    serves `/api/skills/{namespace}/{name}`, the shell lists `grasp/cube-sim`, the run
+    output prints `grasp/cube-sim`, and the README documents `tendon run <skill>`. Only
+    the command line required `skills/grasp/cube-sim`, and typing the documented form got
+    `no skill file at grasp\\cube-sim` — an error about a path, for someone who was not
+    thinking about paths.
+    """
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "skill.yaml"
+    if candidate.exists():
+        return candidate
+
+    # Only a bare `namespace/name` is worth retrying. Anything with a suffix or more
+    # segments was meant as a path, and reporting the path the caller typed is more
+    # useful than reporting somewhere they never mentioned.
+    parts = Path(path).parts
+    if len(parts) == 2 and not Path(path).suffix:
+        under_root = SKILL_ROOT / parts[0] / parts[1] / "skill.yaml"
+        if under_root.exists():
+            return under_root
+        raise SkillError(
+            f"no skill file at {candidate}, and no skill {parts[0]}/{parts[1]} "
+            f"under {SKILL_ROOT}{os.sep}"
+        )
+
+    raise SkillError(f"no skill file at {candidate}")
+
+
 def load_skill(path: str | Path) -> Skill:
     """Read and validate a `skill.yaml`.
 
@@ -112,11 +152,7 @@ def load_skill(path: str | Path) -> Skill:
     A misspelled *known* key is the dangerous case — `max_joint_velocty` would silently
     leave a limit unset — so the safety block is checked for near-misses explicitly.
     """
-    path = Path(path)
-    if path.is_dir():
-        path = path / "skill.yaml"
-    if not path.exists():
-        raise SkillError(f"no skill file at {path}")
+    path = _resolve(path)
 
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))

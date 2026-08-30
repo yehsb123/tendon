@@ -228,3 +228,66 @@ def test_require_compatible_raises_with_every_reason() -> None:
 
     assert len(excinfo.value.reasons) >= 2
     assert "test:body" in str(excinfo.value)
+
+
+# ------------------------------------------------------------- finding a skill
+#
+# Everything else in the project calls a skill `namespace/name`: the API serves
+# `/api/skills/{namespace}/{name}`, the shell lists it, the run output prints it, the
+# README documents `tendon run <skill>`. Only the command line insisted on a path, so the
+# documented form produced `no skill file at grasp\cube-sim` — an error about paths, for
+# somebody who was not thinking about paths.
+
+
+@pytest.fixture
+def skill_root(tmp_path: Path, monkeypatch) -> Path:
+    """A skills tree somewhere else, so these do not depend on the current directory."""
+    import tendon.services.skill as skill_module
+
+    root = tmp_path / "skills"
+    directory = root / "test" / "probe"
+    directory.mkdir(parents=True)
+    (directory / "skill.yaml").write_text(MINIMAL, encoding="utf-8")
+
+    monkeypatch.setattr(skill_module, "SKILL_ROOT", root)
+    monkeypatch.chdir(tmp_path)
+    return root
+
+
+def test_a_reference_resolves_under_the_skill_root(skill_root: Path) -> None:
+    assert load_skill("test/probe").ref == "test/probe"
+
+
+def test_a_path_is_tried_first(skill_root: Path, tmp_path: Path) -> None:
+    """Precedence, tested where it actually matters: one string that is both a real
+    relative path and a valid reference.
+
+    A reference is an addition, so anything that used to resolve has to keep resolving to
+    the same file. Redirecting an existing caller to a different skill that happens to
+    share a name would be a worse bug than the one this resolution fixes.
+    """
+    here = tmp_path / "test" / "probe"
+    here.mkdir(parents=True)
+    (here / "skill.yaml").write_text(MINIMAL.replace("0.1.0", "9.9.9"), encoding="utf-8")
+
+    assert load_skill("test/probe").version == "9.9.9"
+
+
+def test_a_missing_reference_names_both_places_it_looked(skill_root: Path) -> None:
+    """Reporting only the path the caller typed would hide the search; reporting only the
+    root would hide what they asked for."""
+    with pytest.raises(SkillError) as excinfo:
+        load_skill("grasp/nowhere")
+
+    message = str(excinfo.value)
+    assert "grasp" in message and "nowhere" in message
+    assert "skills" in message
+
+
+def test_a_missing_path_is_reported_as_a_path(skill_root: Path) -> None:
+    """Three segments is not a reference. Someone who typed a path wants to hear about
+    the path they typed, not about a skill root they never mentioned."""
+    with pytest.raises(SkillError) as excinfo:
+        load_skill("some/deep/path")
+
+    assert "skills" not in str(excinfo.value)

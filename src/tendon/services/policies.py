@@ -150,7 +150,18 @@ class ScriptedPolicy:
         chunk_size: int = 10,
         space: ActionSpace = ActionSpace.JOINT_POSITION,
         name: str = "scripted",
+        gripper: float | None = None,
     ) -> None:
+        """
+        Args:
+            gripper: Held at this value for the whole run, or None for a body without one.
+                A body that has a gripper and is commanded `None` is underspecified — the
+                driver is left to invent a jaw position, and the recorder's schema, which
+                is `dof + 1` wide for such a body, gets `dof` values and drops the episode.
+                That is not hypothetical: it is what `tendon run` did at step 0 of every
+                run on `so_arm100_cube`, and the bus isolated it so well that the command
+                still exited zero having written an empty dataset.
+        """
         if chunk_size < 1:
             raise ValueError(f"chunk_size must be at least 1, got {chunk_size}")
         if control_hz <= 0:
@@ -162,6 +173,7 @@ class ScriptedPolicy:
         self._chunk_size = chunk_size
         self._space = space
         self._name = name
+        self._gripper = gripper
         self._step = 0
 
     @property
@@ -185,7 +197,7 @@ class ScriptedPolicy:
                     "body; a mismatched action would be clipped by the driver and "
                     "recorded as though it were intended"
                 )
-            actions.append(Action(space=self._space, values=list(values)))
+            actions.append(Action(space=self._space, values=list(values), gripper=self._gripper))
 
         self._step += self._chunk_size
         return Intent(

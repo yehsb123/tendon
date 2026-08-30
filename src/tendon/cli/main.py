@@ -93,9 +93,16 @@ def doctor() -> None:
         raise typer.Exit(code=1)
 
 
+#: Jaw position the baseline policy holds. Open, because a scripted sweep is not grasping
+#: anything and a jaw closing on nothing is the more surprising default.
+_HELD_OPEN = 1.0
+
+
 @app.command()
 def run(
-    skill: str = typer.Argument(..., help="Path to a skill directory or skill.yaml"),
+    skill: str = typer.Argument(
+        ..., help="Skill reference (grasp/cube-sim) or a path to a skill directory"
+    ),
     driver: str = typer.Option("mujoco", help="Which body to run on"),
     policy: str = typer.Option(
         "scripted", help="scripted | replay:<episode.json> | the skill's own policy"
@@ -108,12 +115,20 @@ def run(
         help="Allow a body that moves real hardware. Read SECURITY.md first.",
     ),
     driver_arg: list[str] = _DRIVER_ARG_OPTION,
+    store: str = typer.Option(
+        "", help="Where episodes are written. Defaults to ~/.tendon/episodes"
+    ),
 ) -> None:
     """Run a policy on a body under the kernel.
 
     Loads the skill, checks it against the body before anything moves, and executes one
-    episode. Every step is published to the bus, so a recorder attached here would capture
-    the run with no flag set — design decision 1.
+    episode. The run is recorded. There is no flag for that — design decision 1 — and the
+    only thing `--store` changes is where it lands.
+
+    For most of this project's life that was not true. The bus was created and handed to
+    the scheduler, and nothing ever subscribed to it, so `tendon run` completed and the
+    store stayed empty. The milestone this command is the acceptance test for reads
+    "`tendon run` executes a policy in simulation and episodes appear".
     """
     console = Console()
 
@@ -158,6 +173,10 @@ def run(
             control_hz=capability.control_hz,
             dof=capability.dof,
             name=loaded.ref,
+            # A body with a jaw has to be told what the jaw is doing, even by a baseline
+            # that only sweeps one joint. Held open: this policy has no notion of grasping
+            # anything, and a jaw that closes on nothing is the more surprising default.
+            gripper=_HELD_OPEN if capability.gripper.value != "none" else None,
         )
     else:
         console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
@@ -182,15 +201,66 @@ def run(
         f"({capability.dof} axes, {capability.control_hz:g} Hz) via {escape(policy)}[/dim]"
     )
 
+    recorder, root = _attach_recorder(console, bus, loaded, capability, store)
+
     try:
         result = scheduler.run_episode(running, max_steps=steps, seed=seed)
     finally:
-        body.close()
+        # Nested so that a recorder which fails to close still leaves the body closed. A
+        # half-written dataset is recoverable; a driver left holding a port is not.
+        try:
+            if recorder is not None:
+                recorder.finish()
+        finally:
+            body.close()
 
-    _report(console, result, bus)
+    _report(console, result, bus, root)
+
+    if result.subscriber_failures:
+        # The bus isolates a failing subscriber so a body never stops moving because of a
+        # consumer, and that is right for the kernel. It is wrong for a command: a run
+        # whose recorder died collected nothing, and exiting zero says the opposite to
+        # every script and CI job that only reads the status.
+        raise typer.Exit(code=1)
 
 
-def _report(console: Console, result, bus) -> None:
+def _attach_recorder(console: Console, bus, loaded, capability, store: str):
+    """Subscribe a recorder to the step bus, or say why the run is not being recorded.
+
+    Returns the recorder (None when unavailable) and the store path it is writing to.
+
+    Recording is not optional and there is no flag to turn it off, but LeRobot is an
+    optional extra and the kernel and the simulator both work without it. So the one
+    honest thing to do when it is missing is to run anyway and say plainly that this
+    episode is not being kept. Failing the run would make an optional dependency
+    mandatory; staying quiet would let someone collect nothing for an afternoon.
+    """
+    from tendon.services.store import DEFAULT_ROOT
+
+    root = Path(store) if store else DEFAULT_ROOT
+
+    try:
+        from tendon.services.recorder import Recorder
+    except ImportError:
+        console.print("[yellow]not recording: LeRobot is not installed[/yellow]")
+        console.print(
+            "[dim]this episode will not be kept — " + escape('pip install -e ".[robot]"') + "[/dim]"
+        )
+        # No path either: naming a store nothing was written to is the same lie in a
+        # quieter form.
+        return None, None
+
+    # Recorded under the skill's own reference rather than the recorder's default
+    # `tendon/local`. Episodes are grouped by what was being done, which is what the
+    # store's "skill" column claims to show, what `store.py` decodes a directory name
+    # back into, and the only grouping a training run can use.
+    recorder = Recorder(root=root, repo_id=loaded.ref)
+    recorder.start(loaded.ref, capability)
+    recorder.attach_to(bus)
+    return recorder, root
+
+
+def _report(console: Console, result, bus, root: Path | None = None) -> None:
     """What happened, and anything that would otherwise be found later.
 
     Unchecked limits and dropped subscribers are printed even on a clean run. A caller who
@@ -202,6 +272,11 @@ def _report(console: Console, result, bus) -> None:
     table.add_row("ended", "policy exhausted" if result.exhausted else result.state.value)
     table.add_row("interventions", f"{result.interventions} ({result.corrections} corrections)")
     table.add_row("clamped", str(sum(1 for r in result.records if r.clamped)))
+    if root is not None:
+        # On the table rather than in a closing line, because "where did it go" is part of
+        # what happened. A run that recorded and a run that did not used to print
+        # identically, which is how this command passed for a milestone it did not meet.
+        table.add_row("recorded to", str(root))
     console.print(table)
 
     if result.unchecked:
@@ -313,7 +388,7 @@ def episodes(
         # Not an error. It is the normal state before anything has run, and saying so is
         # more useful than an empty table.
         console.print(f"[dim]nothing recorded under {escape(str(root))}[/dim]")
-        console.print("[dim]run an episode: tendon run skills/grasp/cube-sim[/dim]")
+        console.print("[dim]run an episode: tendon run grasp/cube-sim[/dim]")
         return
 
     table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)

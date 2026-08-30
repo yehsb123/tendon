@@ -182,7 +182,7 @@ with recorder      steps=400   loop= 0.309ms  recorder= 0.027ms  ( 0.27% of a 10
 
 ```
 tendon doctor            여기서 뭐가 되고, 안 되는 것 각각의 대가가 무엇인지
-tendon run <skill>       커널 위에서 정책을 바디에 실행
+tendon run <skill>       커널 위에서 정책을 바디에 실행하고 기록
 tendon eval <skill>      반복 실행하고 결과를 보고
 tendon episodes          기록된 것 목록
 tendon serve             런타임 API, 셸이 빌드돼 있으면 셸까지
@@ -190,6 +190,26 @@ tendon shell             같은 것 + dev 서버 실행 방법 안내
 tendon curate <skill>    v0.3 — 아직 안 됨, 그렇다고 말함
 tendon train <skill>     v0.3 — 아직 안 됨, 그렇다고 말함
 ```
+
+스킬은 프로젝트의 다른 모든 곳과 같은 이름으로 부릅니다 — `tendon run grasp/cube-sim`.
+스킬 디렉터리 경로도 그대로 됩니다.
+
+```
+$ tendon run grasp/cube-sim
+grasp/cube-sim 0.1.0 on so_arm100_cube (5 axes, 100 Hz) via scripted
+episode        e710613da75f
+steps          500
+recorded to    ~/.tendon/episodes
+
+$ tendon episodes
+skill           episodes      size  last written
+grasp/cube-sim         1  585.0 KB  2026-08-31 02:29
+```
+
+이 기록을 요청하는 플래그는 없고, 끄는 플래그도 없습니다. 레코더를 못 쓰는 환경이면
+(LeRobot은 선택 extra입니다) 그렇다고 **말하고** 실행을 계속합니다. 시작했다가 실패하면
+명령은 0이 아닌 코드로 끝납니다 — 아무것도 수집하지 못한 실행이 성공을 보고해서는
+안 되기 때문입니다.
 
 실제 하드웨어를 움직이는 바디는 `--physical` 없이는 거부되고, 어느 바디가 그런지는
 `doctor`가 알려줍니다. 드라이버 인자는 `--driver-arg key=value`로 넘깁니다.

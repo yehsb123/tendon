@@ -106,7 +106,7 @@ def _episode(*, steps: int, driver_name: str, recording: bool, root: Path) -> Ru
         if recording:
             from tendon.services.recorder import Recorder
 
-            recorder = Recorder(root=root)
+            recorder = Recorder(root=root, repo_id=SKILL)
             recorder.start(SKILL, capability)
             recorder.attach_to(bus)
 
