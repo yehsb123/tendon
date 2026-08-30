@@ -28,6 +28,7 @@ change, so it is not a style preference.
 | `third_party/` | **A** | ported code, with provenance |
 | `src/tendon/kernel/**` | **B** | contracts and invariants |
 | `src/tendon/api/**`, `cli/**` | **B** | boundaries, no external APIs |
+| `src/tendon/services/adaptive.py` | **B** | the learner that closes the v0.1 loop |
 | `src/tendon/drivers/base.py` | **B** | the HAL contract itself |
 | `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py`, `policies.py` | **B** | tendon logic, not ported |
 | `shell/**` | **B** | the interface |
@@ -782,3 +783,24 @@ where confidence is going to come from.
   import. `mujoco.py` and `human.py` both do, since the backend import is inside `__init__`.
   Worth keeping that invariant in mind for `so101.py`, where the temptation is a top-level
   `import lerobot`.
+- **B — v0.1 closes end to end, and there is a graph.** `examples/04_improve/run.py`:
+  100% -> 20% intervention rate over 60 episodes, 52 corrections stored. Put at the top of
+  both READMEs. Two pieces were missing and everything else was already there — a policy
+  whose confidence can actually fall (`StochasticPolicy`, measured from sample spread) and
+  a path from correction to different behaviour (`AdaptivePolicy`).
+- **B — v0.2 backend: a human can now be the one deciding.** `api/session.py` bridges the
+  synchronous scheduler to asyncio: the episode runs on a worker thread, publishes intent
+  before it executes, and `ShellHandler.resolve` blocks on a `threading.Event` until
+  someone answers. **The blocking is the point** — a handler returning a default would be
+  approving on the operator's behalf. No answer within the timeout aborts rather than
+  proceeds: a body must not resume because a person walked away.
+
+  Verified live through the API: session started, interrupt raised at step 30 with
+  confidence 0.289 from `chunk_variance`, approved over REST, episode resumed.
+
+  `Scheduler.on_intent` is new — the chunk is published *before* the confidence check, so
+  a viewer sees the plan it is about to be asked about rather than a replay.
+- **B → A — two contract additions, neither breaking.** `Scheduler.on_intent` and
+  `Scheduler.on_intervention` are optional callbacks; existing construction is unaffected.
+  `on_intervention` is how a learner is handed `(observation, resolution)` — the kernel
+  does not know what learning is.

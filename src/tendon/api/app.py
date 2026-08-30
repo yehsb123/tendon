@@ -2,8 +2,8 @@
 
 Two channels, deliberately separated:
 
-    REST       skills, bodies, episodes, evaluation results
-    WebSocket  live intent, confidence, interrupt raise and resolve
+    REST       skills, bodies, sessions, decisions
+    WebSocket  live intent, state, interrupt raise and resolve
 
 The intent stream is latency-critical: an operator has to see what the robot is about to
 do while it is still about to do it. Anything precomputable belongs to REST so the socket
@@ -24,10 +24,13 @@ should not have to discover the absence by looking for the code.
 
 from __future__ import annotations
 
+import asyncio
+import queue as queue_module
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from tendon import __version__
 
@@ -35,6 +38,33 @@ __all__ = ["create_app"]
 
 #: Where skills are looked for when no explicit root is configured.
 _DEFAULT_SKILL_ROOT = Path("skills")
+
+#: How often the socket checks the worker queue when it is empty [s].
+_POLL_INTERVAL_S = 0.02
+
+
+class StartRequest(BaseModel):
+    """What to run. Kept small on purpose — a session is one episode."""
+
+    skill: str
+    body: str = "mujoco"
+    max_steps: int = 500
+    seed: int | None = None
+    #: Seconds an interrupt waits for a decision before aborting the episode.
+    timeout_s: float = 300.0
+
+
+class DecisionRequest(BaseModel):
+    """An operator answering a pending interrupt.
+
+    `correction` is a full `Intent`. A correction expressed as a delta would need the
+    runtime to reconstruct what it was relative to, and a reconstruction that is even
+    slightly wrong is a motion nobody chose.
+    """
+
+    resolution: str
+    correction: dict[str, Any] | None = None
+    note: str | None = None
 
 
 def create_app(*, skill_root: Path | None = None) -> FastAPI:
@@ -44,13 +74,18 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
     fixture directory, and so a deployment can serve skills from somewhere other than the
     working directory.
     """
+    from tendon.api.session import SessionRegistry
+
     root = skill_root if skill_root is not None else _DEFAULT_SKILL_ROOT
+    registry = SessionRegistry()
 
     app = FastAPI(
         title="tendon",
         version=__version__,
         summary="The operating layer for physical AI",
     )
+
+    # ------------------------------------------------------------------- discovery
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
@@ -63,11 +98,7 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
 
     @app.get("/api/bodies")
     async def bodies() -> list[dict[str, Any]]:
-        """Bodies this runtime can load.
-
-        Reports what is registered rather than what is installed: a driver whose backend
-        is missing never registers, so this is the honest list.
-        """
+        """Bodies this runtime can load, and why any of them cannot be."""
         from tendon.services.bodies import discover
 
         return [
@@ -119,9 +150,8 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
     async def skill_detail(namespace: str, name: str) -> dict[str, Any]:
         from tendon.services.skill import SkillError, load_skill
 
-        path = root / namespace / name / "skill.yaml"
         try:
-            loaded = load_skill(path)
+            loaded = load_skill(root / namespace / name / "skill.yaml")
         except SkillError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -165,5 +195,183 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
             driver.close()
 
         return {"compatible": not reasons, "reasons": list(reasons)}
+
+    # -------------------------------------------------------------------- sessions
+
+    @app.post("/api/sessions")
+    async def start_session(request: StartRequest) -> dict[str, Any]:
+        """Start an episode. Refuses rather than queueing when one is already running.
+
+        Two episodes on one body would fight over it, and interleaving them silently is
+        worse than refusing.
+        """
+        from tendon.api.session import EpisodeSession
+        from tendon.kernel.scheduler import Scheduler
+        from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
+        from tendon.services.bodies import BodyUnavailable, open_body
+        from tendon.services.policies import sine_sweep
+        from tendon.services.skill import (
+            IncompatibleBody,
+            SkillError,
+            load_skill,
+            require_compatible,
+        )
+
+        try:
+            loaded = load_skill(request.skill)
+        except SkillError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        try:
+            body = open_body(request.body)
+        except BodyUnavailable as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        try:
+            require_compatible(loaded, body)
+        except IncompatibleBody as exc:
+            body.close()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        capability = body.capability
+        holder: dict[str, Any] = {}
+
+        def make_policy():
+            inner = StochasticPolicy(
+                sine_sweep(dof=capability.dof),
+                control_hz=capability.control_hz,
+                dof=capability.dof,
+                regions=(UncertainRegion(joint=0, centre=0.12, width=0.03, magnitude=0.08),),
+                reference_spread=0.004,
+            )
+            return AdaptivePolicy(inner)
+
+        def make_scheduler(handler, on_step):
+            return Scheduler(
+                driver=body,
+                limits=loaded.limits,
+                confidence_threshold=loaded.confidence_threshold,
+                handler=handler,
+                on_intent=lambda obs, intent: holder["session"].publish_intent(obs, intent),
+            )
+
+        session = EpisodeSession(
+            skill=loaded.ref,
+            body_id=capability.body_id,
+            scheduler_factory=make_scheduler,
+            policy_factory=make_policy,
+            max_steps=request.max_steps,
+            seed=request.seed,
+            timeout_s=request.timeout_s,
+        )
+        holder["session"] = session
+
+        try:
+            registry.add(session)
+        except RuntimeError as exc:
+            body.close()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        session.start()
+        return session.snapshot()
+
+    @app.get("/api/sessions")
+    async def list_sessions() -> list[dict[str, Any]]:
+        return [s.snapshot() for s in registry.all()]
+
+    @app.get("/api/sessions/{session_id}")
+    async def session_detail(session_id: str) -> dict[str, Any]:
+        session = registry.get(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail=f"no session {session_id}")
+
+        snapshot = session.snapshot()
+        pending = session.handler.pending
+        snapshot["pending"] = pending.model_dump(mode="json") if pending else None
+        return snapshot
+
+    @app.post("/api/sessions/{session_id}/decide")
+    async def decide(session_id: str, request: DecisionRequest) -> dict[str, Any]:
+        """Answer a pending interrupt.
+
+        A decision for an interrupt that is no longer pending is accepted and ignored: a
+        second click on Approve is a person being unsure, not an error.
+        """
+        from tendon.kernel.types import Intent, InterruptResolution, Resolution
+
+        session = registry.get(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail=f"no session {session_id}")
+
+        try:
+            resolution = Resolution(request.resolution)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"unknown resolution {request.resolution!r}; expected one of "
+                    f"{[r.value for r in Resolution]}"
+                ),
+            ) from exc
+
+        correction = None
+        if request.correction is not None:
+            try:
+                correction = Intent.model_validate(request.correction)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid correction: {exc}") from exc
+
+        if resolution is Resolution.CORRECTED and correction is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "a CORRECTED decision must carry a correction; approving what the "
+                    "operator meant to replace is the dangerous reading"
+                ),
+            )
+
+        accepted = session.handler.decide(
+            InterruptResolution(resolution=resolution, correction=correction, note=request.note)
+        )
+        return {"accepted": accepted}
+
+    @app.websocket("/ws/{session_id}")
+    async def stream(websocket: WebSocket, session_id: str) -> None:
+        """Live events for one episode.
+
+        Polls the worker's thread-safe queue from the event loop. An asyncio queue would be
+        wrong in the other direction: the scheduler thread cannot safely write to one, and
+        getting that wrong produces a hang rather than an error.
+        """
+        await websocket.accept()
+        session = registry.get(session_id)
+        if session is None:
+            await websocket.send_json({"type": "error", "detail": f"no session {session_id}"})
+            await websocket.close()
+            return
+
+        # A viewer connecting mid-handover must see the decision it is being asked for,
+        # rather than waiting for a next event that may never come.
+        pending = session.handler.pending
+        if pending is not None:
+            await websocket.send_json(
+                {"type": "interrupt", "context": pending.model_dump(mode="json")}
+            )
+
+        try:
+            while True:
+                try:
+                    event = session.events.get_nowait()
+                except queue_module.Empty:
+                    if session.state.finished and session.events.empty():
+                        await websocket.send_json({"type": "finished", "state": session.snapshot()})
+                        break
+                    await asyncio.sleep(_POLL_INTERVAL_S)
+                    continue
+                await websocket.send_json(event)
+        except WebSocketDisconnect:
+            # Losing a viewer is not a reason to stop the body. The episode continues, and
+            # a reconnecting shell receives the pending interrupt on connect.
+            return
 
     return app

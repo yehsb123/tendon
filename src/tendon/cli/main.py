@@ -229,6 +229,25 @@ def serve(
 
 
 @app.command()
+def shell(
+    port: int = typer.Option(8000, help="Port the runtime listens on"),
+    skills_dir: str = typer.Option("skills", help="Where to look for skill packages"),
+) -> None:
+    """Serve the runtime and print how to open the interface.
+
+    The shell is a separate dev server that proxies to this one. Keeping them apart means
+    the runtime does not have to serve static files, and the interface can be reloaded
+    without restarting an episode.
+    """
+    console = Console()
+    console.print(f"[dim]runtime on http://127.0.0.1:{port}[/dim]")
+    console.print("[dim]then, in another terminal:[/dim]")
+    console.print("  cd shell && npm install && npm run dev")
+    console.print()
+    serve(port=port, host="127.0.0.1", skills_dir=skills_dir)
+
+
+@app.command()
 def episodes() -> None:
     """List recorded episodes."""
     raise NotImplementedError("v0.1")

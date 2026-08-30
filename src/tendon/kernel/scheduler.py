@@ -147,6 +147,11 @@ class Scheduler:
     #: Below this confidence, hand over. Ignored when the policy reports no source.
     confidence_threshold: float = 0.5
     handler: InterruptHandler | None = None
+    #: Called with each action chunk as it is produced, before any of it executes.
+    #: This is what the shell renders — the whole reason a chunk exists as an artifact
+    #: rather than an implementation detail. Publishing it after execution would make the
+    #: preview a replay.
+    on_intent: Callable[[Observation, Intent], None] | None = None
     #: Called after an operator resolves an interrupt, with the observation the
     #: decision was made against. This is where a policy is given the chance to learn
     #: from a correction. The kernel does not know what learning is — it hands over the
@@ -189,6 +194,13 @@ class Scheduler:
                 # denominator of a success rate while representing nothing.
                 result.exhausted = True
                 break
+
+            if self.on_intent is not None:
+                # Before the confidence check, so a viewer sees the plan even when it is
+                # about to be handed over — that plan is exactly what the operator is
+                # being asked about.
+                with contextlib.suppress(Exception):
+                    self.on_intent(observation, intent)
 
             # ---- deliberation tier: is this worth handing over before it executes?
             if should_raise(intent.confidence, self.confidence_threshold):
