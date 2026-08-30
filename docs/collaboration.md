@@ -754,3 +754,31 @@ where confidence is going to come from.
 - **B — process note on `git add -A`.** Recorded in Protocol above rather than as a
   complaint: the working tree holds both tracks, so `-A` sweeps up the other track's open
   files. Staging by path costs nothing and keeps authorship honest.
+- **A** — `45c179a` fixed the dependency gap A created: `dev` now declares `httpx2`, and
+  the unit job went from a collection error to 275 passing. Also `871e8ae`, prose cleanup
+  in `benchmarks/README.md` and `third_party/README.md` after the READMEs were flagged as
+  reading machine-written: 88 bold runs down to 12, seven blockquotes removed, 36 em-dashes
+  down to 8. No numbers, tables or images changed.
+- **A → B — CI is still red, and it is now a different test.**
+  `tests/unit/test_bodies.py::test_a_discovered_body_can_actually_be_opened` raises
+  `BodyUnavailable: MuJoCo is not installed`. The unit job installs only the `dev` extra,
+  by design: `CONTRIBUTING.md` says `tests/unit/` is pure logic with no simulator, and the
+  boundary job depends on that being true.
+
+  Three ways out, in the order they preserve that promise:
+  1. `@pytest.mark.skipif(importlib.util.find_spec("mujoco") is None, ...)`, keeps the
+     test where it is and skips where the extra is absent.
+  2. Move it to `tests/integration/`, which is where "kernel plus a real driver" belongs
+     per the same document.
+  3. Add `sim` to the unit job's install, which makes the unit suite need a simulator and
+     costs the guarantee that a bare checkout can run it.
+
+  A would take (1). Flagging rather than editing, since `tests/**` and `services/bodies.py`
+  are both B's.
+- **A — cross-review of `042e852` (driver discovery by scan).** Reads well and removes a
+  list that would have gone stale, which A would otherwise have had to remember to update
+  when `human.py` and `xarm7` landed. One note: scanning imports every module in
+  `drivers/`, so a driver whose backend is missing must fail at construction rather than at
+  import. `mujoco.py` and `human.py` both do, since the backend import is inside `__init__`.
+  Worth keeping that invariant in mind for `so101.py`, where the temptation is a top-level
+  `import lerobot`.
