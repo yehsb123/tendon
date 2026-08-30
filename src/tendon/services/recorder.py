@@ -1,25 +1,433 @@
 """Every run becomes an episode — design decision 1.
 
-A bus subscriber, not a mode. There is no flag to enable it, because a recorder that can
-be switched off will be switched off the first time it costs something.
+There is no flag to enable this, because a recorder that can be switched off will be
+switched off the first time it costs something.
 
-Writes LeRobotDataset (parquet + mp4) plus a sidecar table holding what that format does
-not model: confidence traces, interrupt spans, operator corrections, curation scores.
-See ADR 0001.
+Writes LeRobotDataset (parquet, plus mp4 once cameras are wired) alongside a sidecar
+table holding what that format does not model: confidence traces, interrupt spans,
+operator corrections, curation scores. See ADR 0001.
 
 The constraint that governs this module: recording must not measurably slow the control
-loop. Frame writes are offloaded; the hot path only enqueues.
+loop. `record` therefore only appends to in-memory buffers — LeRobot's own writer batches
+and encodes on `save_episode`, and the sidecar is written once per episode rather than
+per frame. Nothing here touches the disk at control rate.
+
+## Why the schema is derived rather than declared
+
+`LeRobotDataset.create` needs a feature dict up front and it is expensive to change
+afterwards, so it is built from the body's `Capability` at `start`. A five-joint arm and
+a seven-joint arm produce different schemas from the same code, which is what makes
+design decision 3 hold on the data side too: swapping the body swaps the schema, and no
+skill has to know.
 """
 
 from __future__ import annotations
 
-from tendon.kernel.types import EpisodeMeta
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from tendon.kernel.types import (
+    Action,
+    Capability,
+    EpisodeMeta,
+    InterruptContext,
+    InterruptResolution,
+    Observation,
+)
+
+# Where episodes go when nothing says otherwise. A single-host runtime, so a user-level
+# directory rather than anything system-wide.
+DEFAULT_ROOT = Path.home() / ".tendon" / "episodes"
+
+# LeRobot requires a Hub-shaped identifier even for a dataset that is never pushed.
+# Namespaced under the local user so that a later `push_to_hub` is a rename, not a
+# restructure.
+DEFAULT_REPO_ID = "tendon/local"
+
+# Feature keys. LeRobot's convention is `observation.*` for what the body reported and a
+# bare `action` for what was commanded; policies and the wider ecosystem index on exactly
+# these names, so they are not ours to rename.
+_STATE = "observation.state"
+_GRIPPER = "observation.gripper"
+_ACTION = "action"
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class RecorderError(RuntimeError):
+    """Raised when a recording call arrives out of order.
+
+    Loud on purpose. A recorder that quietly ignores a misordered call produces an
+    episode that is short rather than absent, and a short episode looks like data.
+    """
+
+
+def features_for(
+    capability: Capability,
+    *,
+    cameras: tuple[str, ...] = (),
+    frame_size: tuple[int, int] = (480, 640),
+    use_videos: bool = True,
+) -> dict[str, dict]:
+    """Build the LeRobotDataset feature schema a body implies.
+
+    Separate from `Recorder` so it can be tested without touching a filesystem, and so
+    the kernel-side question "what would this body record?" can be answered before
+    anything is opened.
+
+    Args:
+        capability: The body's declared capability.
+        cameras: Cameras actually being recorded — not `capability.cameras`. A body can
+            expose a camera that this run does not render, and LeRobot rejects a frame
+            that omits any declared feature. Declaring a camera we will not supply turns
+            every `add_frame` into an error, so the schema follows what is recorded
+            rather than what exists.
+        frame_size: Recorded frame size as (height, width) [px]. Must match what the
+            driver renders; a mismatch fails at the first frame.
+        use_videos: Whether camera streams are declared as video features. False stores
+            frames as images, which is slower to read but simpler to inspect.
+    """
+    joints = [f"joint_{i}" for i in range(capability.dof)]
+
+    features: dict[str, dict] = {
+        # [rad] for revolute joints, [m] for prismatic. The body knows which; the schema
+        # cannot express per-joint units, so the unit lives with the driver.
+        _STATE: {"dtype": "float32", "shape": (capability.dof,), "names": joints},
+        # Commanded joint targets, plus one trailing channel for the gripper when the
+        # body has one. Kept in a single `action` feature because that is the key every
+        # LeRobot policy trains against.
+        _ACTION: {
+            "dtype": "float32",
+            "shape": (capability.dof + (1 if capability.gripper.value != "none" else 0),),
+            "names": joints + (["gripper"] if capability.gripper.value != "none" else []),
+        },
+    }
+
+    if capability.gripper.value != "none":
+        # Normalised 0 closed, 1 open. Recorded separately from `action` because this is
+        # what the body reported, not what was asked of it, and the difference is the
+        # whole point when a grasp fails.
+        features[_GRIPPER] = {"dtype": "float32", "shape": (1,), "names": ["open"]}
+
+    unknown = [c for c in cameras if c not in capability.cameras]
+    if unknown:
+        raise ValueError(
+            f"body {capability.body_id} exposes {list(capability.cameras)}, "
+            f"asked to record {unknown}"
+        )
+
+    height, width = frame_size
+    for camera in cameras:
+        features[f"observation.images.{camera}"] = {
+            "dtype": "video" if use_videos else "image",
+            "shape": (height, width, 3),
+            "names": ["height", "width", "channel"],
+        }
+
+    return features
 
 
 class Recorder:
-    async def start(self, skill: str, body_id: str) -> str:
-        """Open an episode and return its episode_id."""
-        raise NotImplementedError("v0.1")
+    """Writes one episode at a time to a LeRobotDataset plus a sidecar.
 
-    async def finish(self, episode_id: str, success: bool | None = None) -> EpisodeMeta:
-        raise NotImplementedError("v0.1")
+    Not a bus subscriber yet. `kernel/bus.py` is unimplemented, so for now the scheduler
+    calls `record` directly. The method boundary is the same either way: when the bus
+    lands, `record` becomes its callback and nothing else here changes.
+    """
+
+    def __init__(
+        self,
+        *,
+        root: str | Path | None = None,
+        repo_id: str = DEFAULT_REPO_ID,
+        use_videos: bool = True,
+    ) -> None:
+        self._root = Path(root) if root is not None else DEFAULT_ROOT
+        self._repo_id = repo_id
+        self._use_videos = use_videos
+
+        self._dataset: Any | None = None
+        self._episode_id: str | None = None
+        self._meta: EpisodeMeta | None = None
+        self._task: str = ""
+        self._cameras: tuple[str, ...] = ()
+        self._frames = 0
+
+        # Sidecar rows for the open episode, flushed on `finish`. Held per episode rather
+        # than per frame because writing at control rate is what design decision 1
+        # forbids.
+        self._sidecar: list[dict[str, Any]] = []
+        self._interrupts: list[dict[str, Any]] = []
+
+    # -------------------------------------------------------------- lifecycle
+
+    def start(
+        self,
+        skill: str,
+        capability: Capability,
+        *,
+        fps: int | None = None,
+        cameras: tuple[str, ...] = (),
+        frame_size: tuple[int, int] = (480, 640),
+    ) -> str:
+        """Open an episode and return its id.
+
+        Takes the whole `Capability` rather than a `body_id` because the schema is
+        derived from it. A recorder that only knew the body's name would have to look the
+        body up, which would make services depend on drivers — the import the boundary
+        test forbids.
+
+        Args:
+            skill: Skill being run. Recorded as the LeRobot `task` string, which is what
+                a language-conditioned policy reads.
+            capability: The body's declared capability.
+            fps: Frame rate to declare [Hz]. Defaults to the body's control rate, since
+                one frame is recorded per control step.
+            cameras: Cameras this run records. Must match what is passed to `record`.
+            frame_size: Recorded frame size as (height, width) [px].
+        """
+        if self._episode_id is not None:
+            raise RecorderError(
+                f"episode {self._episode_id} is still open; call finish() before start()"
+            )
+
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+        rate = int(fps if fps is not None else round(capability.control_hz))
+        episode_id = uuid.uuid4().hex[:12]
+        root = self._root / self._repo_id.replace("/", "__")
+
+        if root.exists():
+            # Append to the existing store. Every run lands in one dataset rather than
+            # one dataset per run, because a training set of 300 single-episode datasets
+            # is not a training set.
+            self._dataset = LeRobotDataset.resume(self._repo_id, root=root)
+        else:
+            self._dataset = LeRobotDataset.create(
+                repo_id=self._repo_id,
+                fps=rate,
+                features=features_for(
+                    capability,
+                    cameras=cameras,
+                    frame_size=frame_size,
+                    use_videos=self._use_videos,
+                ),
+                root=root,
+                robot_type=capability.body_id,
+                use_videos=self._use_videos,
+            )
+
+        self._episode_id = episode_id
+        self._task = skill
+        self._cameras = tuple(cameras)
+        self._frames = 0
+        self._sidecar.clear()
+        self._interrupts.clear()
+        self._meta = EpisodeMeta(
+            episode_id=episode_id,
+            skill=skill,
+            body_id=capability.body_id,
+            started_at=_now(),
+        )
+        return episode_id
+
+    def record(
+        self,
+        observation: Observation,
+        action: Action,
+        *,
+        frames: dict[str, Any] | None = None,
+        confidence: float | None = None,
+        intervention: bool = False,
+    ) -> None:
+        """Append one timestep. Called at control rate, so it only buffers.
+
+        `confidence` and `intervention` go to the sidecar rather than into the dataset
+        itself: an episode stays valid LeRobotDataset for any external consumer, and
+        tendon sees the richer view by joining. ADR 0001.
+
+        Args:
+            observation: What the body reported.
+            action: What was commanded.
+            frames: Rendered pixels keyed by camera name, from the driver's `render()`.
+                Required for exactly the cameras named at `start`, because LeRobot
+                rejects a frame missing any declared feature.
+            confidence: Policy confidence for this step, if the policy reports one. Most
+                do not — see docs/collaboration.md.
+            intervention: Whether a human was driving at this step.
+        """
+        if self._episode_id is None:
+            raise RecorderError("no episode is open; call start() first")
+
+        supplied = set(frames or {})
+        if supplied != set(self._cameras):
+            raise RecorderError(
+                f"episode declared cameras {sorted(self._cameras)}, "
+                f"this frame supplied {sorted(supplied)}"
+            )
+
+        import numpy as np
+
+        frame: dict[str, Any] = {
+            _STATE: np.asarray(observation.proprio.joint_positions, dtype=np.float32),
+            "task": self._task,
+        }
+
+        values = list(action.values)
+        if action.gripper is not None:
+            values = values + [float(action.gripper)]
+        frame[_ACTION] = np.asarray(values, dtype=np.float32)
+
+        if observation.proprio.gripper_open is not None:
+            frame[_GRIPPER] = np.asarray([observation.proprio.gripper_open], dtype=np.float32)
+
+        for camera, pixels in (frames or {}).items():
+            frame[f"observation.images.{camera}"] = pixels
+
+        self._dataset.add_frame(frame)
+
+        self._sidecar.append(
+            {
+                "episode_id": self._episode_id,
+                "frame_index": self._frames,
+                "confidence": confidence,
+                "intervention": intervention,
+                "sim_time_s": observation.extra.get("sim_time_s"),
+            }
+        )
+        self._frames += 1
+
+    def note_interrupt(self, context: InterruptContext, resolution: InterruptResolution) -> None:
+        """Record that control was handed to a human, and what they decided.
+
+        The most valuable rows in the store. Demonstration data almost never contains
+        recovery from failure, and this is the only place it gets written down.
+        """
+        if self._episode_id is None:
+            raise RecorderError("no episode is open; call start() first")
+
+        self._interrupts.append(
+            {
+                "episode_id": self._episode_id,
+                "frame_index": context.step,
+                "reason": context.reason.value,
+                "resolution": resolution.resolution.value,
+                "note": resolution.note,
+                "corrected": resolution.correction is not None,
+            }
+        )
+
+    def finish(self, success: bool | None = None) -> EpisodeMeta:
+        """Close the episode, encode it, and write the sidecar.
+
+        The expensive call in this module, and deliberately the only one. `save_episode`
+        encodes video and writes parquet; doing it here rather than per frame is what
+        keeps `record` off the disk.
+        """
+        if self._episode_id is None or self._meta is None:
+            raise RecorderError("no episode is open")
+
+        if self._frames == 0:
+            # Nothing was recorded. Discard rather than write an empty episode: a
+            # zero-frame episode is indistinguishable from a broken one downstream.
+            self._dataset.clear_episode_buffer()
+        else:
+            self._dataset.save_episode()
+        self._dataset.finalize()
+
+        self._write_sidecar()
+
+        meta = self._meta.model_copy(
+            update={
+                "ended_at": _now(),
+                "steps": self._frames,
+                "interrupts": len(self._interrupts),
+                "success": success,
+            }
+        )
+        self._episode_id = None
+        self._meta = None
+        self._dataset = None
+        return meta
+
+    # --------------------------------------------------------------- sidecar
+
+    @property
+    def sidecar_path(self) -> Path:
+        """DuckDB file holding what LeRobotDataset does not model.
+
+        Kept beside the dataset rather than inside it so the dataset directory stays
+        exactly what an external LeRobot consumer expects.
+        """
+        return self._root / self._repo_id.replace("/", "__") / "tendon_sidecar.duckdb"
+
+    def _write_sidecar(self) -> None:
+        """Flush this episode's sidecar rows. One transaction, once per episode."""
+        if not self._sidecar and not self._interrupts:
+            return
+
+        import duckdb
+
+        self.sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        con = duckdb.connect(str(self.sidecar_path))
+        try:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS frames (
+                    episode_id   VARCHAR,
+                    frame_index  BIGINT,
+                    confidence   DOUBLE,
+                    intervention BOOLEAN,
+                    sim_time_s   DOUBLE
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS interrupts (
+                    episode_id  VARCHAR,
+                    frame_index BIGINT,
+                    reason      VARCHAR,
+                    resolution  VARCHAR,
+                    note        VARCHAR,
+                    corrected   BOOLEAN
+                )
+                """
+            )
+            if self._sidecar:
+                con.executemany(
+                    "INSERT INTO frames VALUES (?, ?, ?, ?, ?)",
+                    [
+                        (
+                            r["episode_id"],
+                            r["frame_index"],
+                            r["confidence"],
+                            r["intervention"],
+                            r["sim_time_s"],
+                        )
+                        for r in self._sidecar
+                    ],
+                )
+            if self._interrupts:
+                con.executemany(
+                    "INSERT INTO interrupts VALUES (?, ?, ?, ?, ?, ?)",
+                    [
+                        (
+                            r["episode_id"],
+                            r["frame_index"],
+                            r["reason"],
+                            r["resolution"],
+                            r["note"],
+                            r["corrected"],
+                        )
+                        for r in self._interrupts
+                    ],
+                )
+        finally:
+            con.close()
+        self._sidecar.clear()
+        self._interrupts.clear()

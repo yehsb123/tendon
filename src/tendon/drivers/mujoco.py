@@ -106,6 +106,8 @@ class MujocoDriver(Driver):
         *,
         control_hz: float = 100.0,
         gripper_actuator: str = _GRIPPER_ACTUATOR,
+        render_cameras: tuple[str, ...] = (),
+        render_size: tuple[int, int] = (480, 640),
     ) -> None:
         """
         Args:
@@ -115,6 +117,12 @@ class MujocoDriver(Driver):
                 physics by 1/control_hz [s], however many solver substeps that takes.
             gripper_actuator: Name of the actuator that closes the gripper. Excluded from
                 the arm's joint vector and surfaced through `Action.gripper` instead.
+            render_cameras: Cameras to render when `render()` is called. Empty by
+                default: rendering costs milliseconds per frame per camera, and a run
+                that records no video should not pay for it. Naming a camera the scene
+                does not define is refused here rather than at the first frame.
+            render_size: Rendered frame size as (height, width) [px]. Must fit the
+                scene's `offwidth`/`offheight`, which bound MuJoCo's offscreen buffer.
         """
         try:
             import mujoco
@@ -157,6 +165,18 @@ class MujocoDriver(Driver):
             mujoco.mj_id2name(self._model, mujoco.mjtObj.mjOBJ_CAMERA, i)
             for i in range(self._model.ncam)
         )
+
+        unknown = [c for c in render_cameras if c not in self._cameras]
+        if unknown:
+            raise DriverError(
+                f"scene defines cameras {list(self._cameras)}, cannot render {unknown}"
+            )
+        self._render_cameras = tuple(render_cameras)
+        self._render_size = render_size
+        # Built on first use. A Renderer allocates an offscreen GL context, which is
+        # wasted on a run that never renders — and on some headless machines, fails.
+        # Deferring it means those runs work rather than dying at construction.
+        self._renderer: object | None = None
 
         self._reset_key = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_KEY, _RESET_KEYFRAME)
         if self._reset_key < 0:
@@ -315,11 +335,39 @@ class MujocoDriver(Driver):
             self._mj.mj_step(self._model, self._data)
         self._step += 1
 
+    def render(self) -> dict[str, np.ndarray]:
+        """Rendered frames for the cameras this driver was told to render.
+
+        Not part of the `Driver` protocol, and deliberately separate from `observe`.
+        `Observation.frames` carries references rather than pixels because an observation
+        crosses process and network boundaries many times per second (see
+        `kernel/types.py`); the pixels themselves go straight to whatever writes video.
+
+        Returns `{camera_name: uint8 array of shape (height, width, 3)}`. Empty when no
+        cameras were requested, which is the default.
+        """
+        self._require_open()
+        if not self._render_cameras:
+            return {}
+
+        if self._renderer is None:
+            height, width = self._render_size
+            self._renderer = self._mj.Renderer(self._model, height=height, width=width)
+
+        frames: dict[str, np.ndarray] = {}
+        for camera in self._render_cameras:
+            self._renderer.update_scene(self._data, camera=camera)
+            frames[camera] = self._renderer.render()
+        return frames
+
     def close(self) -> None:
-        """Release the model and data. Safe to call twice, as the protocol requires."""
+        """Release the model, data and any GL context. Safe to call twice."""
         if self._closed:
             return
         self._closed = True
+        if self._renderer is not None:
+            self._renderer.close()
+            self._renderer = None
         self._data = None
         self._model = None
 
