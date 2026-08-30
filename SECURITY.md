@@ -88,22 +88,30 @@ intervention rate look better than it is — and that number is the single metri
 project is judged on, so distorting it is both a safety issue and a research integrity
 issue.
 
-**A connection loss must not leave a body mid-motion.** This is the intended property and
-**it is only partly implemented**, which is worth stating precisely because the sentence
-that used to be here claimed more than the code does.
+**A connection loss must not leave a body mid-motion.** Implemented, and worth describing
+precisely — an earlier version of this section claimed it while the code did nothing of the
+kind, and the sentence that replaced *that* said it was only partly done. Both have now been
+outlived, which is the direction a safety notice should move in only after the code moves
+first.
 
-What happens today: losing the shell does not stop the episode. `api/app.py` returns from
-the socket handler and says why — a viewer going away is not a reason to stop a moving
-body, and stopping abruptly can be the less safe of the two. The episode runs to its step
-limit, and a reconnecting shell is sent the pending interrupt.
+What happens: an episode that loses its **last** operator stops proposing new motion. The
+committed chunk finishes and the scheduler declines to ask for another, which is the
+deliberation tier stopping while the control tier holds. Cutting a chunk short would be the
+opposite of safe — a stop that is itself a motion nobody chose, on a body mid-reach.
 
-What that leaves: if the policy hands over while nobody is connected, `ShellHandler` waits
-`timeout_s` (300 seconds by default) and then **aborts** rather than approving — nobody
-answered, so nobody approved. But if no interrupt is raised, an episode continues
-unattended to its step limit.
+If the policy had already handed over, the pending decision is given up on rather than
+waited out: `ShellHandler` checks between short slices of its wait instead of sleeping the
+full `timeout_s`. A handover with nobody connected is the case most worth ending — the body
+is held, the question has been asked, and the only thing that could answer it has gone.
+Either way the episode is **aborted, never approved**: nobody answered, so nobody approved.
 
-Stopping new intent at the deliberation tier when the last operator disconnects is not
-implemented, and is required work before a physical body is driven from the shell.
+The session records which of the two ended it, so a short run is not mistaken for a
+completed one.
+
+The condition is *somebody was watching and now nobody is*, not *nobody is watching*. An
+episode nobody has connected to yet is ordinary — the shell posts and then opens the socket,
+and `tendon run` never connects at all — and stopping those would stop the runs this
+protects.
 
 **Skills are remote code.** `tendon install` fetches weights and configuration from the
 Hugging Face Hub. A skill declares its own safety limits, which means an installed skill

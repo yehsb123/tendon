@@ -84,12 +84,17 @@ def test_an_interrupt_that_cannot_resume_is_reported_as_a_fault() -> None:
 def test_the_document_does_not_claim_a_disconnect_stops_the_policy() -> None:
     """It did, and it was not true.
 
-    Pinned as a negative because this is the claim somebody would restore while tidying:
-    it is the sentence the design *wants* to be able to make, and writing it before it is
-    implemented is how a safety document becomes something you cannot rely on.
+    It did, while the code did nothing of the kind. The behaviour exists now — an episode
+    that loses its last operator stops proposing new motion, and a pending decision is
+    given up on rather than waited out — so the document may say so.
+
+    What is pinned is the *shape* of the old sentence, which described the property in the
+    abstract with nothing behind it. The replacement has to name what actually stops it, so
+    a reader can go and check.
     """
     assert "stops new intent at the deliberation tier" not in SECURITY
-    assert "only partly implemented" in SECURITY
+    assert "declines to ask for another" in SECURITY
+    assert "aborted, never approved" in SECURITY
 
 
 def test_the_unimplemented_gaps_are_still_named() -> None:

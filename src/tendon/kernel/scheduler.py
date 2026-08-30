@@ -127,6 +127,10 @@ class EpisodeResult:
     #: the first step only — velocity needs a previous action — is a different situation
     #: from one unevaluable throughout, and a bare list says neither.
     unchecked: dict[str, int] = field(default_factory=dict)
+    #: Why the episode ended early, when something outside it asked. Distinct from
+    #: `state`: the interrupt machine describes what an operator decided, and this
+    #: describes a condition that stopped new intent being issued at all.
+    stopped_because: str | None = None
     #: True when a finite policy ran out of actions. A normal ending; distinguished
     #: from hitting `max_steps` because a replay that finished and a replay that was cut
     #: short are different results.
@@ -161,6 +165,15 @@ class Scheduler:
     #: else subscribe. Design decision 1 is structural because of this: recording is not a
     #: mode that can be switched off, it is a subscriber that is always attached.
     bus: Bus[StepRecord] | None = None
+    #: Asked between chunks, never during one. Returning a reason ends the episode after
+    #: the actions already committed have run.
+    #:
+    #: Between chunks on purpose. The two tiers exist because deliberation is slow and
+    #: control is not, and this is the deliberation tier being told to stop proposing —
+    #: the control tier finishes what it was given and the body is not left mid-motion.
+    #: Cutting a chunk short would be the opposite: a stop that is itself a motion nobody
+    #: chose.
+    stop_when: Callable[[], str | None] | None = None
 
     def run_episode(
         self,
@@ -191,6 +204,12 @@ class Scheduler:
         previous: Action | None = None
 
         while result.steps < max_steps:
+            if self.stop_when is not None:
+                reason = self.stop_when()
+                if reason is not None:
+                    result.stopped_because = reason
+                    break
+
             try:
                 intent = policy.predict(observation)
             except PolicyExhausted:

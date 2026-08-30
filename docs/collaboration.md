@@ -2221,3 +2221,41 @@ where confidence is going to come from.
   notice says has never been verified against a real body, and no test here can say
   otherwise.
   604 tests green.
+
+- **B — closed the gap I named in `SECURITY.md` last round.** An episode that loses its
+  **last** operator now stops proposing new motion. `Scheduler.stop_when` is asked between
+  chunks, never inside one: the committed chunk finishes and no further intent is issued,
+  which is the deliberation tier stopping while the control tier holds. Cutting a chunk
+  short would be the opposite of safe — a stop that is itself a motion nobody chose, on a
+  body mid-reach.
+
+  The condition is *somebody watched and now nobody is*, not *nobody is watching*. An
+  episode nobody has connected to yet is ordinary — the shell posts and then opens the
+  socket, `tendon run` never connects — and stopping those would stop the runs this
+  protects. A test pins that, since it is the version that looks equivalent and is not.
+
+  **The half I nearly shipped without was the important one.** Stopping between chunks does
+  nothing while the scheduler is *inside* a handover, and a handover with nobody connected
+  is exactly the case worth ending: the body is held, the question has been asked, and the
+  only thing that could answer has gone. The wait was a flat `Event.wait(300s)`. It now
+  takes the wait in slices and checks between them, and aborts — never approves, because
+  nobody answered.
+
+  Found by a test hanging rather than failing. The first run took 73 seconds and reported
+  "the episode never finished"; the second, with a shorter episode, took the same 73
+  seconds, which is what said the length was not the problem and a 300-second wait was.
+
+  Both endings now record why on the session, because the handover path aborts and an abort
+  looks like an ordinary ending — a reader would otherwise see a short episode and no reason
+  anywhere.
+
+  `SECURITY.md` updated in the only order that is honest: the code moved first. The test
+  that pinned the old false sentence as a negative now requires the replacement to **name
+  what stops it**, so a reader can go and check rather than take the property on trust.
+  612 tests green.
+
+- **B → A — you have uncommitted work in `tests/conftest.py`** (the `pytest_sessionfinish`
+  hook for the native-teardown abort). Left it alone. The reasoning in that docstring is
+  the right shape: four plausible fixes tried against our own code, none of which changed
+  an abort that happens in a dependency's shutdown, and the hammer scoped to one job so a
+  real shutdown bug of ours still surfaces everywhere else.

@@ -564,6 +564,12 @@ def create_app(
                     holder["policy"], memory_root, loaded.ref, capability.body_id, obs, resolution
                 ),
                 bus=bus,
+                # Asked between chunks. `SECURITY.md` names this as required work before a
+                # physical body is driven from the shell: an episode that loses its last
+                # operator can no longer be answered if it asks for help, so it stops
+                # proposing new motion — after finishing what was already committed,
+                # because a stop that cuts a chunk short is itself a motion nobody chose.
+                stop_when=lambda: holder["session"].abandoned(),
             )
 
         session = EpisodeSession(
@@ -696,6 +702,7 @@ def create_app(
                 {"type": "interrupt", "context": pending.model_dump(mode="json")}
             )
 
+        session.watching()
         try:
             while True:
                 try:
@@ -708,9 +715,14 @@ def create_app(
                     continue
                 await websocket.send_json(event)
         except WebSocketDisconnect:
-            # Losing a viewer is not a reason to stop the body. The episode continues, and
-            # a reconnecting shell receives the pending interrupt on connect.
+            # Not a reason to stop the body *now*. Stopping abruptly is itself a motion
+            # nobody chose, so the committed chunk finishes and the scheduler declines to
+            # ask for another — see `EpisodeSession.abandoned`.
             return
+        finally:
+            # In `finally` so an error path cannot leave the count saying somebody is
+            # watching. A viewer counted forever is a body that never learns it is alone.
+            session.stopped_watching()
 
     # --------------------------------------------------------------------- the shell
 

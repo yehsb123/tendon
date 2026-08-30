@@ -32,6 +32,7 @@ from __future__ import annotations
 import contextlib
 import queue
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -51,6 +52,11 @@ __all__ = ["EpisodeSession", "SessionState", "ShellHandler"]
 #: How long an interrupt waits for a human before giving up [s]. Aborting is the safe
 #: answer: a body must not resume because nobody was watching.
 _DEFAULT_TIMEOUT_S = 300.0
+
+#: How often a pending decision checks whether anybody is still there [s]. Short enough
+#: that an abandoned handover ends promptly, long enough that this is a wait rather than a
+#: spin — the thread is holding a body in position while it runs.
+_DECISION_POLL_S = 0.1
 
 #: Live state is dropped rather than queued without bound. A slow viewer must not make the
 #: control loop wait, and stale state is worse than missing state.
@@ -78,6 +84,12 @@ class SessionState:
     #: way to know. ADR 0003 says confidence has no upstream source yet; this is the
     #: sentence that carries that decision to the person in front of it.
     uncertainty: str = "stand-in"
+    #: Why the episode ended early, if something outside it decided. Set from either of the
+    #: two places that can stop one: the scheduler declining to ask for another chunk, and
+    #: a pending decision being given up on. Both are the same condition and they surface
+    #: differently, so an operator reading a short run would otherwise see a reason in one
+    #: case and nothing in the other.
+    stopped_because: str | None = None
 
 
 class ShellHandler:
@@ -94,9 +106,13 @@ class ShellHandler:
         *,
         timeout_s: float = _DEFAULT_TIMEOUT_S,
         on_resolved: Callable[[InterruptContext, InterruptResolution], None] | None = None,
+        give_up_when: Callable[[], str | None] | None = None,
     ) -> None:
         """
         Args:
+            give_up_when: Checked while waiting for a decision. Returning a reason ends the
+                wait and aborts, rather than holding the body for the full timeout with
+                nobody able to answer.
             on_resolved: Called with the context and the decision once an interrupt is
                 answered, including when it timed out. This is where the recorder writes
                 the interrupt into the episode. It gets the `InterruptContext`, which is
@@ -108,6 +124,8 @@ class ShellHandler:
         self._events = events
         self._timeout_s = timeout_s
         self._on_resolved = on_resolved
+        self._give_up_when = give_up_when
+        self._gave_up: str | None = None
         self._pending: InterruptContext | None = None
         self._decision: InterruptResolution | None = None
         self._answered = threading.Event()
@@ -127,13 +145,13 @@ class ShellHandler:
 
         _offer(self._events, {"type": "interrupt", "context": context.model_dump(mode="json")})
 
-        if not self._answered.wait(timeout=self._timeout_s):
+        if not self._wait_for_a_decision():
             with self._lock:
                 self._pending = None
             # Aborting rather than approving. Nobody answered, so nobody approved.
             timed_out = InterruptResolution(
                 resolution=Resolution.ABORTED,
-                note=f"no operator decision within {self._timeout_s:g}s",
+                note=self._gave_up or f"no operator decision within {self._timeout_s:g}s",
             )
             # Recorded like any other outcome. An episode that stopped because nobody was
             # watching is a fact about the run, and leaving it out of the store would make
@@ -148,6 +166,33 @@ class ShellHandler:
         resolution = decision or InterruptResolution(resolution=Resolution.ABORTED)
         self._notify(context, resolution)
         return resolution
+
+    def _wait_for_a_decision(self) -> bool:
+        """Block until an operator answers, or until waiting stops making sense.
+
+        The plain `Event.wait(timeout)` this replaced was the more dangerous half of the
+        disconnect gap. Stopping between chunks does nothing while the scheduler is
+        *inside* a handover — and a handover with nobody connected is exactly the case
+        worth stopping: the body is held, the question has been asked, and the only thing
+        that could answer it has gone.
+
+        So the wait is taken in slices and the abandonment check runs between them. The
+        slice is short enough that an operator does not notice and long enough that this
+        is not a spin.
+        """
+        self._gave_up = None
+        if self._give_up_when is None:
+            return self._answered.wait(timeout=self._timeout_s)
+
+        deadline = time.monotonic() + self._timeout_s
+        while time.monotonic() < deadline:
+            if self._answered.wait(timeout=_DECISION_POLL_S):
+                return True
+            reason = self._give_up_when()
+            if reason is not None:
+                self._gave_up = f"{reason} while a decision was pending"
+                return False
+        return False
 
     def _notify(self, context: InterruptContext, resolution: InterruptResolution) -> None:
         """Tell whoever is listening what was decided, without letting them stop the body.
@@ -231,12 +276,26 @@ class EpisodeSession:
         """
         self.state = SessionState(session_id=uuid.uuid4().hex, skill=skill, body_id=body_id)
         self.events: queue.Queue = queue.Queue(maxsize=_EVENT_QUEUE_SIZE)
-        self.handler = ShellHandler(self.events, timeout_s=timeout_s, on_resolved=on_resolved)
+        self.handler = ShellHandler(
+            self.events,
+            timeout_s=timeout_s,
+            on_resolved=on_resolved,
+            # The handler asks the session, so the same condition ends a wait and stops the
+            # next chunk. Two answers to "is anybody there" would eventually disagree.
+            give_up_when=self._give_up_on_a_decision,
+        )
 
         self._scheduler_factory = scheduler_factory
         self._policy_factory = policy_factory
         self._max_steps = max_steps
         self._seed = seed
+        #: Sockets currently attached, and whether one ever was. Both are needed: an
+        #: episode that nobody has watched yet is ordinary — the shell posts and then
+        #: connects — while an episode that had a viewer and now has none has lost the only
+        #: thing that can answer an interrupt.
+        self._viewers = 0
+        self._ever_watched = False
+
         self._before_episode = before_episode
         self._after_episode = after_episode
         self._on_result = on_result
@@ -269,6 +328,11 @@ class EpisodeSession:
             self.state.steps = result.steps
             self.state.interventions = result.interventions
             self.state.corrections = result.corrections
+            if result.stopped_because is not None and self.state.stopped_because is None:
+                # The scheduler declined to ask for another chunk. Not overwritten if a
+                # pending decision was already given up on: that one happened first and
+                # says more about what the operator missed.
+                self.state.stopped_because = result.stopped_because
 
             if self._on_result is not None:
                 # After the episode succeeded, not in the `finally` above: this is for
@@ -333,6 +397,45 @@ class EpisodeSession:
             },
         )
 
+    def watching(self) -> None:
+        """A socket attached."""
+        self._viewers += 1
+        self._ever_watched = True
+
+    def stopped_watching(self) -> None:
+        """A socket detached. Never negative: a handler that unwinds twice must not make
+        the count say somebody is still there."""
+        self._viewers = max(0, self._viewers - 1)
+
+    def abandoned(self) -> str | None:
+        """Why the deliberation tier should stop, or None to keep going.
+
+        `SECURITY.md` states the intended property: a connection loss must not leave a body
+        mid-motion. It used to claim the deliberation tier stopped, which was not
+        implemented — an episode ran on unattended to its step limit with nobody able to
+        answer if it asked for help.
+
+        Only after somebody has actually watched. An episode nobody ever connected to is
+        the ordinary case for `tendon run` and for a test, and stopping those would be
+        stopping the thing this is meant to protect.
+        """
+        if self._ever_watched and self._viewers == 0:
+            return "the last operator disconnected"
+        return None
+
+    def _give_up_on_a_decision(self) -> str | None:
+        """The same condition the scheduler asks, recorded when it actually fires.
+
+        Two answers to "is anybody there" would eventually disagree, so both paths call
+        `abandoned`. Only this one can record why, because the abort it produces is a
+        normal-looking ending: without this a reader sees a short episode, an aborted
+        state, and no reason anywhere on the session.
+        """
+        reason = self.abandoned()
+        if reason is not None and self.state.stopped_because is None:
+            self.state.stopped_because = f"{reason} while a decision was pending"
+        return reason
+
     def snapshot(self) -> dict[str, Any]:
         state = self.state
         return {
@@ -346,6 +449,10 @@ class EpisodeSession:
             "corrections": state.corrections,
             "error": state.error,
             "uncertainty": state.uncertainty,
+            # Why it ended early, when something outside the episode asked. An operator
+            # who reconnects to a finished run should be told it stopped because they were
+            # gone, rather than left to read a short step count as a completed episode.
+            "stopped_because": state.stopped_because,
             "ended": (
                 state.result.state.value
                 if state.result is not None
