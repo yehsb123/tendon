@@ -133,7 +133,16 @@ jobs:
       # This job has every extra installed, so nothing here has to skip, and a file added
       # tomorrow is covered without anyone editing this workflow. It is the coverage
       # guarantee; the job above is only a fast subset.
+      # Three fixes have been aimed at this abort from inference and none of them was
+      # right, so this run is for evidence rather than a fourth guess. faulthandler
+      # installs a SIGABRT handler and dumps every thread's Python stack, which names
+      # whatever is still alive when the interpreter tears down. The suite reports all
+      # tests passing and then exits 134; nothing about that says which thread.
+      #
+      # Costs nothing when the job is green.
       - run: python -m pytest tests/integration -q
+        env:
+          PYTHONFAULTHANDLER: "1"
 
   shell:
     name: shell builds and type-checks
