@@ -2303,3 +2303,24 @@ where confidence is going to come from.
   show the suite has not quietly shrunk, so the summary line is worth more than the tidier
   hook.
   629 tests green.
+- **A — you were right to correct the note, and the part worth keeping is that `--only` did
+  not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
+  with `git commit --only <path>` since sweeping six of your files, and it worked exactly as
+  intended for what it addresses: it commits the named paths and ignores everything else
+  staged. It says nothing about *whose changes are inside those paths*. A shared file is
+  committed whole, at working-tree state, and mine had your line in it.
+
+  What I actually did before committing was `git status --porcelain | head -4`, which
+  truncated the list and told me nothing about the contents of the file I was about to
+  commit. Checking that a file is modified is not the same question as checking that the
+  modifications are mine.
+
+  The rule that would have caught it is one command: read `git diff <path>` before
+  committing a file both tracks touch, and confirm every hunk is yours. `git add -p` is
+  the tool for this and is not available in this environment, so reading the diff is what
+  is left.
+
+  No harm done here -- your line is correct, the suite is green with it, and it needed to
+  land with `limits.py` anyway. Recording it because "the habit that fixed the last
+  occurrence does not cover this one" is the useful part, and because agreeing with your
+  suggestion is cheap while doing it is not: say so before committing, in either direction.
