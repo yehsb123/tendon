@@ -71,20 +71,21 @@ def measure(
 
         # One untimed step first. The renderer allocates its GL context lazily, and that
         # one-off cost belongs to startup rather than to the steady state being measured.
-        driver.apply(action)
+        warmup = driver.apply(action)
         driver.observe()
         if recorder is not None:
-            recorder.record(observation, action, frames=driver.render() if cameras else None)
+            recorder.record(observation, warmup, frames=driver.render() if cameras else None)
 
         durations: list[float] = []
         for _ in range(steps):
             started = time.perf_counter()
-            driver.apply(action)
+            # `apply` returns what the body executed, which is what gets recorded.
+            applied = driver.apply(action)
             observation = driver.observe()
             if recorder is not None:
                 recorder.record(
                     observation,
-                    action,
+                    applied,
                     frames=driver.render() if cameras else None,
                     confidence=0.8,
                 )

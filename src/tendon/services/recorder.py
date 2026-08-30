@@ -150,7 +150,10 @@ class Recorder:
         self._repo_id = repo_id
         self._use_videos = use_videos
 
-        self._dataset: Any | None = None
+        # Typed `Any` rather than `Any | None`: whether a dataset is open is tracked by
+        # `_episode_id`, checked at the top of every method that touches it. Encoding
+        # the same invariant twice would mean two places to keep in agreement.
+        self._dataset: Any = None
         self._episode_id: str | None = None
         self._meta: EpisodeMeta | None = None
         self._task: str = ""
@@ -252,7 +255,10 @@ class Recorder:
 
         Args:
             observation: What the body reported.
-            action: What was commanded.
+            action: What the body **applied** — the value `Driver.apply` returned, not the
+                one handed to it. The two differ whenever hardware clips, and recording
+                the command instead would train a policy on its own requests as though
+                they were outcomes.
             frames: Rendered pixels keyed by camera name, from the driver's `render()`.
                 Required for exactly the cameras named at `start`, because LeRobot
                 rejects a frame missing any declared feature.

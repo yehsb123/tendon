@@ -20,6 +20,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -176,7 +177,7 @@ class MujocoDriver(Driver):
         # Built on first use. A Renderer allocates an offscreen GL context, which is
         # wasted on a run that never renders — and on some headless machines, fails.
         # Deferring it means those runs work rather than dying at construction.
-        self._renderer: object | None = None
+        self._renderer: Any = None
 
         self._reset_key = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_KEY, _RESET_KEYFRAME)
         if self._reset_key < 0:
@@ -303,14 +304,15 @@ class MujocoDriver(Driver):
             extra={"sim_time_s": float(self._data.time)},
         )
 
-    def apply(self, action: Action) -> None:
-        """Command one control step.
+    def apply(self, action: Action) -> Action:
+        """Command one control step, and report what the body actually executed.
 
         Setpoints are written to `ctrl` and physics advances by one control period.
 
-        Values are clipped to each actuator's range. That is a hardware bound rather than
-        a policy decision — MuJoCo clips internally regardless, and clipping here keeps
-        the commanded value and the executed value from diverging without anyone seeing.
+        Values are clipped to each actuator's range and the clipped values are what comes
+        back. That is a hardware bound rather than a policy decision: MuJoCo clips
+        internally regardless, so the only question is whether the record says what was
+        asked or what was done. It says what was done.
         """
         self._require_open()
         if action.space is not ActionSpace.JOINT_POSITION:
@@ -323,17 +325,27 @@ class MujocoDriver(Driver):
             )
 
         ranges = self._model.actuator_ctrlrange
+        applied: list[float] = []
         for slot, value in zip(self._arm_actuators, action.values, strict=True):
             low, high = ranges[slot]
-            self._data.ctrl[slot] = float(np.clip(value, low, high))  # [rad]
+            clipped = float(np.clip(value, low, high))  # [rad]
+            self._data.ctrl[slot] = clipped
+            applied.append(clipped)
 
+        applied_gripper: float | None = None
         if action.gripper is not None and self._gripper_actuator is not None:
+            # Reported back in the same normalised [0, 1] the caller used, not in the
+            # joint's radians. A round trip through `Action` has to produce something that
+            # can be commanded again.
+            applied_gripper = float(np.clip(action.gripper, 0.0, 1.0))
             low, high = self._gripper_range
-            self._data.ctrl[self._gripper_actuator] = low + float(action.gripper) * (high - low)
+            self._data.ctrl[self._gripper_actuator] = low + applied_gripper * (high - low)
 
         for _ in range(self._substeps):
             self._mj.mj_step(self._model, self._data)
         self._step += 1
+
+        return Action(space=action.space, values=applied, gripper=applied_gripper)
 
     def render(self) -> dict[str, np.ndarray]:
         """Rendered frames for the cameras this driver was told to render.

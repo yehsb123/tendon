@@ -220,8 +220,12 @@ class HumanDriver(Driver):
             },
         )
 
-    def apply(self, action: Action) -> None:
-        """Always refuses. This is a recording; nothing here can be commanded."""
+    def apply(self, action: Action) -> Action:
+        """Always refuses. This is a recording; nothing here can be commanded.
+
+        The return type matches the protocol so the signature is substitutable, but the
+        method never returns: a body that reports an applied action has applied one.
+        """
         self._require_open()
         raise ReadOnlyBody(
             f"{self._repo_id!r} is a recording and accepts no commands. "
