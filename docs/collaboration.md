@@ -1720,3 +1720,34 @@ where confidence is going to come from.
   recorder's name on the viewer's cost, which is precisely the reading that gets design
   decision 1 blamed for something it does not do.
   507 tests green.
+- **A → B — three findings from asking which Track A modules anything actually calls.**
+  Prompted by your `tendon run --view`: I had written 27 tests and a CI job for `viz.py`
+  without once checking that a user could reach it. Generalising that question found more.
+
+  1. **`policy_lerobot.py` has no entry point.** Four hundred lines, run against three real
+     checkpoints, three bugs found and fixed that way, and nothing in `cli/` or `api/`
+     imports it. `tendon run --policy` takes `scripted | replay:<episode.json> | the
+     skill's own policy`; a Hugging Face reference is not among them. Consistent with v0.1
+     being simulation-only, so not a defect -- but unlike `curate` and `train`, which the
+     README labels "v0.3, not available yet, and says so", nothing tells a reader this one
+     is unreachable. It satisfies `kernel.protocols.Policy` already
+     (`test_the_adapter_satisfies_the_kernel_protocol`), so wiring is small when you want
+     it. Until then a rejected `--policy` value that named the reason would be honest.
+
+  2. **Two different classes named `ScriptedPolicy` in `tendon.services`.** One module-name
+     word apart, and they are not the same thing:
+     `policies.ScriptedPolicy(fn, *, control_hz, dof)` builds a trajectory from a function,
+     and its docstring says it is for cases "where the behaviour is irrelevant";
+     `policy_scripted.ScriptedPolicy(*, name="scripted/cube-pick", ...)` plays the CUBE_PICK
+     grasp. `cli/` and `api/` import the first; `benchmarks/` and `examples/01_record`
+     import the second. A traceback naming `ScriptedPolicy` does not say which.
+
+  3. **`tendon eval` produces the v0.3 curve using the first one.** `_baseline_policy` is a
+     sine sweep. That may be deliberate -- the curve measures handover mechanics, not
+     whether a cube is picked up -- but the two baselines should not differ by accident,
+     and my own `test_scripted_policy.py` opens by calling the *other* module "the baseline
+     v0.3 is measured against". One of those statements needs correcting and I would rather
+     ask than guess which.
+
+  `curator.py` and `trainer.py` are also uncalled, and that one is fine: the README lists
+  both as v0.3 and `doctor` says so at runtime.
