@@ -18,6 +18,7 @@ they exercise the same paths. They do not need torch except where a test says so
 
 from __future__ import annotations
 
+import importlib.util
 from typing import Any
 
 import pytest
@@ -30,6 +31,19 @@ CHUNK = 8
 #: SmolVLA pads its action head to this. A five-joint arm with a gripper uses six columns
 #: and the rest is padding, which the adapter has to drop rather than command.
 PADDED_DIMS = 32
+
+#: `_build_batch` turns an observation into torch tensors, because that is what a LeRobot
+#: policy consumes. Everything downstream of it therefore needs torch, and the CI unit job
+#: installs only the dev extra. The construction and protocol checks below do not, and
+#: those are the ones that still run there.
+#:
+#: `find_spec` rather than a try/except import: blocking an import does not unload a module
+#: that is already in `sys.modules`, which is how a local run of this file passed while CI
+#: failed on every test that calls `predict`.
+requires_torch = pytest.mark.skipif(
+    importlib.util.find_spec("torch") is None,
+    reason="predict builds torch tensors; needs the train extra",
+)
 
 
 class FakeConfig:
@@ -122,6 +136,7 @@ def test_impossible_bodies_are_refused(bad: dict[str, Any]) -> None:
 # -------------------------------------------------------------------- confidence
 
 
+@requires_torch
 def test_a_deterministic_policy_reports_no_confidence(observation: Observation) -> None:
     """The bug a real checkpoint found, held down.
 
@@ -137,6 +152,7 @@ def test_a_deterministic_policy_reports_no_confidence(observation: Observation) 
     assert intent.confidence.reasons, "a refusal with no reason cannot be acted on"
 
 
+@requires_torch
 def test_a_scattered_policy_scores_below_an_agreeing_one(observation: Observation) -> None:
     agreeing = make(FakePolicy(scatter=0.0005)).predict(observation)
     scattered = make(FakePolicy(scatter=0.5)).predict(observation)
@@ -147,12 +163,14 @@ def test_a_scattered_policy_scores_below_an_agreeing_one(observation: Observatio
     assert scattered.confidence.reasons, "a low score has to say why"
 
 
+@requires_torch
 def test_too_few_samples_is_reported_as_no_measurement(observation: Observation) -> None:
     """One sample cannot support a spread, and saying so is the point."""
     intent = make(FakePolicy(scatter=0.5), samples=1).predict(observation)
     assert intent.confidence.source is ConfidenceSource.NONE
 
 
+@requires_torch
 def test_confidence_costs_one_forward_pass_per_sample(observation: Observation) -> None:
     policy = FakePolicy(scatter=0.01)
     make(policy, samples=3).predict(observation)
@@ -162,6 +180,7 @@ def test_confidence_costs_one_forward_pass_per_sample(observation: Observation) 
 # ------------------------------------------------------------------------ shape
 
 
+@requires_torch
 def test_padding_is_dropped_and_the_gripper_split_out(observation: Observation) -> None:
     """SmolVLA pads to 32 dimensions. Reading them as joints commands axes that do not exist."""
     intent = make(FakePolicy(scatter=0.01)).predict(observation)
@@ -171,12 +190,14 @@ def test_padding_is_dropped_and_the_gripper_split_out(observation: Observation) 
     assert action.gripper == pytest.approx(0.7, abs=0.05)
 
 
+@requires_torch
 def test_a_policy_narrower_than_the_body_is_refused(observation: Observation) -> None:
     with pytest.raises(PolicyError) as caught:
         make(FakePolicy(scatter=0.01, dims=3)).predict(observation)
     assert "dimensions" in str(caught.value)
 
 
+@requires_torch
 def test_the_horizon_is_the_chunk_against_the_body_rate(observation: Observation) -> None:
     """A chunk length means nothing without a rate; the shell shows the seconds."""
     intent = make(FakePolicy(scatter=0.01, steps=50), control_hz=100.0).predict(observation)
@@ -184,6 +205,7 @@ def test_the_horizon_is_the_chunk_against_the_body_rate(observation: Observation
     assert intent.horizon_s == pytest.approx(0.5)
 
 
+@requires_torch
 def test_the_goal_reaches_the_operator(observation: Observation) -> None:
     intent = make(FakePolicy(scatter=0.01)).predict(observation)
     assert intent.goal == "pick up the cube"
@@ -192,6 +214,7 @@ def test_the_goal_reaches_the_operator(observation: Observation) -> None:
 # ----------------------------------------------------------------------- cameras
 
 
+@requires_torch
 def test_frames_go_to_the_key_the_checkpoint_declares(observation: Observation) -> None:
     """Regression: the adapter wrote only the plural form.
 
@@ -199,7 +222,6 @@ def test_frames_go_to_the_key_the_checkpoint_declares(observation: Observation) 
     view `top`. Refusing on that mismatch would be right only if the names meant
     something, so the frame follows the checkpoint's declaration by position.
     """
-    pytest.importorskip("torch")
     import numpy as np
 
     policy = FakePolicy(scatter=0.01, image_keys=("observation.images.top",))
@@ -210,9 +232,9 @@ def test_frames_go_to_the_key_the_checkpoint_declares(observation: Observation) 
     assert "observation.images.wrist" not in policy.batches[0]
 
 
+@requires_torch
 def test_a_singular_camera_key_is_honoured(observation: Observation) -> None:
     """`lerobot/diffusion_pusht` declares `observation.image`, with no name."""
-    pytest.importorskip("torch")
     import numpy as np
 
     policy = FakePolicy(scatter=0.01, image_keys=("observation.image",))
@@ -222,9 +244,9 @@ def test_a_singular_camera_key_is_honoured(observation: Observation) -> None:
     assert "observation.image" in policy.batches[0]
 
 
+@requires_torch
 def test_a_policy_declaring_nothing_gets_the_plural_convention(observation: Observation) -> None:
     """Which is what tendon's own recorder writes."""
-    pytest.importorskip("torch")
     import numpy as np
 
     policy = FakePolicy(scatter=0.01)
@@ -234,9 +256,8 @@ def test_a_policy_declaring_nothing_gets_the_plural_convention(observation: Obse
     assert "observation.images.wrist" in policy.batches[0]
 
 
+@requires_torch
 def test_the_state_carries_the_gripper_when_the_body_has_one(observation: Observation) -> None:
-    pytest.importorskip("torch")
-
     policy = FakePolicy(scatter=0.01)
     make(policy).predict(observation)
     state = policy.batches[0]["observation.state"]

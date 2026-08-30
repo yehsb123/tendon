@@ -160,12 +160,24 @@ tendon serve                  # terminal one
 cd shell && npm run dev       # terminal two, http://localhost:5273
 ```
 
-Adding the simulator, once the MuJoCo driver lands:
+Adding the simulator and the recorder:
 
 ```bash
-python -m pip install -e ".[sim,dev]"
-python examples/01_record/run.py --overhead
+python -m pip install -e ".[sim,robot,dev]"
+python examples/01_record/run.py
 ```
+
+That runs a grasp in MuJoCo, then reads the store back through a module that cannot import
+the recorder, and reports what recording cost:
+
+```
+with recorder      steps=400   loop= 0.309ms  recorder= 0.027ms  ( 0.27% of a 10.0ms period)
+1 episode(s) written to ~/.tendon/episodes
+```
+
+Recording takes 0.27% of the control period, so nothing is gained by switching it off —
+which is the whole of design decision 1. The example fails rather than passes when the
+store does not grow, and refuses to run at all without the recorder installed.
 
 ## Commands
 

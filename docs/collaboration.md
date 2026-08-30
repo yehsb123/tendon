@@ -1174,3 +1174,46 @@ where confidence is going to come from.
   first ten episodes, 20% over the last, 52 corrections. Both READMEs now say those are
   figures from one run rather than a guarantee, and point at what is actually tested.
   366 tests green.
+
+- **B — the v0.1 acceptance example was passing itself without measuring anything.**
+  `examples/01_record` took a `record` flag into `_run` and never read it. Both arms of
+  `--overhead` ran identical code, the comparison was a run measured against itself, and
+  the script printed "PASS — v0.1 acceptance met". It also announced "episodes are written
+  to the store" while attaching no recorder at all; `tendon episodes` reported an empty
+  store immediately afterwards.
+
+  Rewritten to wire what already exists: `open_body` → `Scheduler(bus=…)` with
+  `Recorder.attach_to(bus)` and the real `ScriptedPolicy` running `grasp/cube-sim`. The
+  verdict is now the share of the control period spent inside subscribers, taken from
+  `Bus.mean_publish_cost()` — a direct measurement instead of the difference between two
+  wall-clock runs, which is mostly scheduling noise and is what the old PASS rested on.
+  It reads the store back through `services.store`, which cannot import the recorder, so
+  the count is an independent reading rather than the recorder confirming its own work.
+  Measured: **0.027 ms per step, 0.27% of a 10 ms period**, 1 episode on disk. Both READMEs
+  now carry that number.
+
+  `tests/integration/test_record_example.py` — the useful assertions are the negative ones.
+  That the recording arm writes something is easy to get right by accident; that the bare
+  arm writes *nothing* and costs *nothing at the bus* is what fails when the two paths
+  quietly become the same code again.
+
+  Also `tests/unit/test_install_hints.py`, after the refusal path I wrote told the reader
+  to install a `record` extra. There is no such extra — it is `robot`. The hint would
+  have printed at the moment somebody was already stuck and sent them to a resolution
+  error. Every `pip install .[…]` string in the repo is now checked against
+  `pyproject.toml`.
+
+  Checked and found honest, no change needed: `02_preview` and `03_intervene` carry no
+  `run.py`, but neither README promises one — they are shell exercises for a human to
+  judge, and `examples/README.md` does not advertise them as scripts.
+
+  **423 tests green** — and a correction to the two entries above: the "366" and "373"
+  figures there are wrong. Checked HEAD in a clean worktree and it collects 413 and runs
+  413, so nothing was being silently skipped; I had been reading a stale number. Worth
+  saying rather than quietly using the right figure from now on, because a test count in
+  this log is the one number the other track cannot check without re-running everything.
+
+  Left alone: `tests/unit/test_policy_adapter.py` has uncommitted work in the shared tree
+  (a `requires_torch` skip marker for the CI unit job). Not mine, not staged. It passes,
+  so it is counted in the 423 above — noting that here so the figure is not surprising when
+  A commits it separately.

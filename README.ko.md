@@ -159,12 +159,24 @@ tendon serve                  # 터미널 1
 cd shell && npm run dev       # 터미널 2, http://localhost:5273
 ```
 
-MuJoCo 드라이버가 붙은 뒤 시뮬레이터까지:
+시뮬레이터와 레코더까지:
 
 ```bash
-python -m pip install -e ".[sim,dev]"
-python examples/01_record/run.py --overhead
+python -m pip install -e ".[sim,robot,dev]"
+python examples/01_record/run.py
 ```
+
+MuJoCo에서 잡기 동작을 한 번 실행한 뒤, **레코더를 import할 수 없는 모듈로** 저장소를
+다시 읽어서 실제로 무엇이 기록됐는지와 기록에 든 비용을 보고합니다.
+
+```
+with recorder      steps=400   loop= 0.309ms  recorder= 0.027ms  ( 0.27% of a 10.0ms period)
+1 episode(s) written to ~/.tendon/episodes
+```
+
+기록은 제어 주기의 0.27%를 씁니다. 끌 이유가 없다는 뜻이고, 그게 설계 결정 1의 전부입니다.
+저장소가 늘지 않으면 이 예제는 통과가 아니라 **실패**하고, 레코더가 설치돼 있지 않으면
+아예 실행을 거부합니다.
 
 ## 명령
 
