@@ -147,17 +147,26 @@ def test_teaching_it_makes_it_ask_less(arms) -> None:
     assert after < before, f"interventions did not fall through the shell: {taught}"
 
 
-def test_only_approving_changes_nothing(arms) -> None:
+def test_only_approving_never_stops_it_asking(arms) -> None:
     """The control, and the reason the test above is worth anything.
 
-    An approval is stored nowhere on purpose. If this arm also fell, the fall would be
-    caused by something other than the corrections and the claim would be unsupported.
+    An approval is stored nowhere on purpose, so a policy that is only approved keeps
+    handing over.
+
+    This first said the control arm was *flat* — `after >= before` — and that is not true.
+    Each episode starts from a different seed, so how many times the sweep crosses the
+    uncertain region varies by one either way, and a run of `[2, 1, 1, 1, 1, 1]` failed an
+    assertion that nothing had been taught. Nothing had been. The assertion was measuring
+    the start state.
+
+    A test that passes on about half its runs is worse than no test, because the half that
+    passes is the half people remember. So this asserts what is actually true of the
+    control: it goes on asking. The causal claim lives in the comparison below, where it
+    belongs.
     """
     told = arms["told"]
-    before = sum(told[:2]) / 2
-    after = sum(told[2:]) / (EPISODES - 2)
 
-    assert after >= before, f"the rate fell without anything being taught: {told}"
+    assert sum(told[2:]) > 0, f"the policy stopped asking without being taught: {told}"
 
 
 def test_the_two_arms_end_apart(arms) -> None:

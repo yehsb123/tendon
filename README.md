@@ -216,7 +216,7 @@ tendon eval <skill>      run it repeatedly, record it, and report what happened
 tendon episodes          list what has been recorded
 tendon serve             the runtime API, and the shell when it is built
 tendon shell             the same, with instructions for the dev server
-tendon curate <skill>    v0.3 — not available yet, and says so
+tendon curate <skill>    rank recorded episodes by what is worth training on
 tendon train <skill>     v0.3 — not available yet, and says so
 ```
 
@@ -255,6 +255,15 @@ between collecting data and meaning to.
 If the recorder cannot run — LeRobot is an optional extra — the command says so and keeps
 going rather than pretending; if it starts and then fails, the command exits non-zero,
 because a run that collected nothing should not report success.
+
+`tendon curate` reads episodes back from the store and ranks them — jerk, idle time,
+gripper churn, length against the population — with the reasons beside each score, because
+a bare number gives a reviewer nothing to disagree with. It never deletes and never filters
+by a threshold: a curator that is wrong about an episode is wrong about it permanently.
+
+It reads the parquet with duckdb rather than through LeRobot, so **curation runs on a
+machine that cannot record** — no simulator, no torch. That is the machine somebody
+actually does this on: a laptop, against data collected somewhere else.
 
 A body that moves real hardware is refused unless you pass `--physical`, and `doctor` says
 which bodies those are. Driver arguments go through `--driver-arg key=value`.

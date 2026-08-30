@@ -498,32 +498,121 @@ def episodes(
 
 
 @app.command()
-def curate(skill: str) -> None:
-    """[v0.3] Score and select episodes worth training on.
+def curate(
+    skill: str,
+    store: str = typer.Option("", help="Where episodes live. Defaults to ~/.tendon/episodes"),
+    limit: int = typer.Option(0, help="Show only the top N. Default shows every episode."),
+) -> None:
+    """Score recorded episodes and rank them by what is worth training on.
 
-    Not available yet. `services/curator.py` computes the signals and is tested, but
-    scoring real episodes means reading them, which needs LeRobot and the `[robot]` extra.
+    Never deletes and never filters by a threshold. An automated curator that is wrong
+    about an episode is wrong about it permanently, so this prints an ordering and leaves
+    removal to a person, which is also why every score comes with its reasons.
+
+    This said "not available yet, reading episodes back needs the [robot] extra" for
+    months. That was an assumption nobody checked: a LeRobotDataset on disk is parquet with
+    an ordinary schema, and duckdb reads it. So curation runs on a machine that cannot
+    record, which is the machine somebody actually does this on.
     """
-    _not_yet(
-        "curate",
-        "v0.3",
-        "services/curator.py has the signals and is tested. What is missing is reading "
-        "recorded episodes back, which needs the [robot] extra.",
-    )
+    console = Console()
+
+    from tendon.services.curator import ScoredEpisode, score_episode, select, signals_for
+    from tendon.services.episodes import EpisodeReadError, read_episodes
+    from tendon.services.skill import SkillError, load_skill
+    from tendon.services.store import DEFAULT_ROOT
+
+    try:
+        loaded = load_skill(skill)
+    except SkillError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    root = Path(store) if store else DEFAULT_ROOT
+    directory = root / loaded.ref.replace("/", "__")
+
+    try:
+        episodes = read_episodes(directory)
+    except EpisodeReadError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print(f"[dim]record some first: tendon run {escape(loaded.ref)}[/dim]")
+        raise typer.Exit(code=1) from exc
+
+    if not episodes:
+        console.print(f"[dim]nothing recorded for {escape(loaded.ref)} under {escape(str(root))}")
+        raise typer.Exit(code=1)
+
+    # Both references are population scales, not absolutes. Jerk that is violent on a
+    # 6-axis arm is nothing on a delta robot, and an episode is only long or short
+    # relative to the others of the same skill — scoring against fixed numbers would be
+    # scoring the hardware.
+    lengths = sorted(len(e.actions) for e in episodes)
+    median_steps = float(lengths[len(lengths) // 2])
+
+    measured = [
+        (
+            episode,
+            signals_for(
+                episode.actions,
+                episode.dt_s,
+                median_steps,
+                had_interrupt=bool(episode.had_interrupt),
+            ),
+        )
+        for episode in episodes
+    ]
+    jerks = sorted(signals.peak_jerk for _, signals in measured)
+    jerk_reference = jerks[len(jerks) // 2] or 1.0
+
+    scored = []
+    for episode, signals in measured:
+        value, reasons = score_episode(signals, jerk_reference=jerk_reference)
+        scored.append(
+            ScoredEpisode(
+                episode_id=episode.episode_id, score=value, signals=signals, reasons=reasons
+            )
+        )
+
+    ranked = select(scored, limit=limit or None)
+
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("episode")
+    table.add_column("score", justify="right")
+    table.add_column("steps", justify="right")
+    table.add_column("why")
+
+    for entry in ranked:
+        table.add_row(
+            entry.episode_id,
+            f"{entry.score:.2f}",
+            str(entry.signals.steps),
+            escape(", ".join(entry.reasons)) if entry.reasons else "[dim]nothing notable[/dim]",
+        )
+    console.print(table)
+
+    if any(e.had_interrupt is None for e in episodes):
+        # The signal the curator values most, and the store cannot attribute it. Said
+        # loudly rather than left to be inferred from a ranking that looks complete.
+        console.print()
+        console.print(
+            "[yellow]note:[/yellow] this store cannot say which episodes were interrupted, "
+            "so none were promoted. Those are the episodes worth keeping most: they are "
+            "the only recordings of recovery from failure."
+        )
 
 
 @app.command()
 def train(skill: str) -> None:
     """[v0.3] LoRA fine-tune on curated data.
 
-    Not available yet. `services/trainer.py` exists; wiring it to the CLI waits until
-    curation can select what to train on.
+    Not available yet, and no longer for the reason this used to give. `tendon curate`
+    now ranks real episodes, so the thing it was waiting on is done.
     """
     _not_yet(
         "train",
         "v0.3",
-        "services/trainer.py exists. Wiring it up waits on curate, which has to choose "
-        "what to train on first.",
+        "tendon curate now ranks recorded episodes, so what to train on can be chosen. "
+        "services/trainer.py is Track A work (PEFT, transformers); see "
+        "docs/collaboration.md.",
     )
 
 

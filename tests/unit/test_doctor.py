@@ -161,8 +161,11 @@ def test_an_unavailable_command_explains_rather_than_tracebacks() -> None:
 
     They asked what the command does. The useful answer is when it will do it and what is
     already there.
+
+    Was written against `curate`, which now works. Moved to `train` rather than deleted:
+    the property is about how a stub behaves, and there is still a stub.
     """
-    result = runner.invoke(app, ["curate", "grasp/cube-sim"])
+    result = runner.invoke(app, ["train", "grasp/cube-sim"])
 
     assert result.exit_code == 1
     assert "not available yet" in result.output

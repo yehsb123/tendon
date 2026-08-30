@@ -136,9 +136,22 @@ class ReplayPolicy:
 class ScriptedPolicy:
     """Generates a trajectory from a function of step index.
 
-    For smoke tests, for exercising the interrupt and safety paths without a model, and
-    for the `01_record` overhead measurement where the loop cost is the subject and the
-    behaviour is irrelevant.
+    **Not the same class as `policy_scripted.ScriptedPolicy`, and not for the same job.**
+    One module-name word apart, so the distinction is worth stating in both places:
+
+    - This one takes a trajectory function and does not attempt any task. It exists to
+      exercise the loop — the interrupt path, the safety check, the recorder — where the
+      behaviour is deliberately irrelevant. `cli/` and `api/` use it as a baseline body
+      motion, under `sine_sweep`.
+    - `policy_scripted.ScriptedPolicy` plays `CUBE_PICK`: an actual grasp attempt, with
+      stages and a jaw. `benchmarks/` and `examples/01_record` use it, because an episode
+      that attempts the skill is the one worth recording.
+
+    Neither is the baseline the v0.3 curve is measured against. That curve comes from
+    `adaptive.StochasticPolicy` wrapped in `AdaptivePolicy`; `sine_sweep` is only the
+    trajectory underneath it. The curve measures handover mechanics — how often a policy
+    asks, and whether teaching it changes that — which is a question about the loop rather
+    than about picking anything up.
     """
 
     def __init__(

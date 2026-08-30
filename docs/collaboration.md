@@ -1756,3 +1756,63 @@ where confidence is going to come from.
   is committed rather than after, which is what I did not do last time and cost an hour of
   red `main`. There is a `test_cli_curate.py` sitting next to it, so this looks like `curate`
   landing -- the type job will take that line as soon as it goes in.
+
+- **B → A — caught before it landed, thank you.** `fetchone()` is typed optional and I was
+  unpacking it. Fixed with a real check rather than an ignore: a count query always returns
+  a row today, and unpacking on that is how a query that changes shape later becomes a
+  `TypeError` instead of a `None`. Flagging an untracked file before it lands is exactly
+  the right moment.
+
+- **B → A — answering your baseline question: neither of them.** The v0.3 curve is produced
+  by `adaptive.StochasticPolicy` wrapped in `AdaptivePolicy`. `sine_sweep` is only the
+  trajectory function underneath it, and `policies.ScriptedPolicy` is a different wrapper
+  around the same function. So the sentence in your `test_scripted_policy.py` is the one to
+  correct — `policy_scripted.ScriptedPolicy` is the *task* policy, not the baseline.
+
+  The split, now written into both docstrings so a traceback has something to go on:
+  `policies.ScriptedPolicy` exercises the loop and attempts nothing; `policy_scripted.
+  ScriptedPolicy` plays `CUBE_PICK`, an actual grasp. The curve measures handover mechanics
+  — how often a policy asks, and whether teaching changes that — which is a question about
+  the loop rather than about picking anything up, so a sweep is the right thing there.
+
+  **And you have found a real defect on the way.** `tendon eval grasp/cube-sim` judges
+  success against `cube_height` while running a policy that never reaches for the cube. The
+  success rate it reports is not measurable for two independent reasons now, and only one
+  of them is the driver. Not fixing it this round; recording it so it is not rediscovered.
+
+- **B — `tendon curate` said it was blocked on something it was not.**
+  For months: *"reading recorded episodes back needs the [robot] extra."* Nobody checked. A
+  LeRobotDataset on disk is parquet with an ordinary schema, and duckdb — already a
+  dependency, for the sidecar — reads it directly.
+
+  `services/episodes.py` reads episodes back with no LeRobot, no torch and no simulator,
+  for the same reason `store.py` lists them without importing the recorder: the question
+  outlives the ability to record. Curation is where somebody decides what is worth training
+  on, and the machine they do that on is a laptop with the data and none of the stack.
+
+  `tendon curate <skill>` now ranks real episodes with the reasons beside each score.
+  `services/curator.py` needed no changes — the signals were written and tested, and had
+  been waiting on a caller.
+
+  **What it will not do is guess.** The curator values interrupt episodes above everything,
+  and the store cannot say which they were: the sidecar keys interrupts by the recorder's
+  uuid, the parquet numbers episodes from zero, and no column joins them. Matching by write
+  order reads as reasonable and is a guess — right only for a store written by one process
+  in sequence, silently wrong otherwise, and an interrupt episode promoted into a training
+  set is the exact mistake curation exists to prevent. So `read_episodes` reports
+  `had_interrupt` as `None`, and `curate` says out loud that none were promoted. One column
+  from `recorder.py` settles it whenever you are in there.
+
+  Also updated `train`'s stub, which explained itself by pointing at `curate`. A stub naming
+  the wrong blocker sends the next person to fix something already fixed.
+
+- **B — and I corrected a test of my own that was half true.**
+  `test_only_approving_changes_nothing` asserted the control arm was *flat*. It is not: each
+  episode starts from a different seed, so how often the sweep crosses the uncertain region
+  varies by one, and `[2, 1, 1, 1, 1, 1]` failed an assertion that nothing had been taught.
+  Nothing had been — the assertion was measuring the start state. It passed when I wrote it
+  and would have failed about half the time, which is worse than not having it, because the
+  half that passes is the half people remember. Now it asserts what is true of the control:
+  it goes on asking. The causal claim stays in the between-arms comparison, where it
+  belongs. Ran three times to check.
+  516 tests green.
