@@ -2186,3 +2186,38 @@ where confidence is going to come from.
   `torch` or `mujoco`* — as claims that those modules exist, which would have failed a
   correct document. There is a test for that specifically.
   598 tests green.
+
+- **B — `SECURITY.md` contradicted itself, and the false half was the alarming one.**
+  Two paragraphs apart it said `drivers/so101.py` exists — true — and that the `so101`
+  driver "is v0.4 work; **until it exists, and until the scheduler actually routes every
+  action through `kernel/safety`**, connecting this to a robot means running a policy with
+  no limit enforcement at all". Both were written truthfully; the second went stale when the
+  driver landed and when the scheduler grew a single `driver.apply` call site with `_check`
+  in front of it.
+
+  A reader deciding whether to connect an arm got two answers about whether limits are
+  enforced. Replaced with what changed and why, rather than deleted: a safety notice that
+  quietly loses a paragraph reads as reassurance.
+
+- **B — and it claimed something about disconnects that is not true.**
+  *"Losing the shell holds position at the control tier and stops new intent at the
+  deliberation tier."* It does not. `api/app.py` returns from the socket handler and says
+  why — a viewer going away is not a reason to stop a moving body, and stopping abruptly
+  can be the less safe of the two — so an episode continues unattended to its step limit.
+
+  That design is defensible and it is not what the document said. Rewritten to what happens:
+  the episode continues; an unanswered interrupt aborts after `timeout_s` because nobody
+  answered and so nobody approved; and **stopping new intent when the last operator
+  disconnects is not implemented**, listed as required work before a physical body is driven
+  from the shell.
+
+  `tests/test_security_claims.py` holds the mechanical claims — the driver file exists, one
+  `apply` call site (counted with the parser, so a mention in a docstring cannot satisfy
+  it), `UnsafeCorrection` exists, `fault_reason` exists — and pins the disconnect sentence
+  as a **negative**. That one is the claim somebody restores while tidying, because it is
+  what the design wants to be able to say.
+
+  What it deliberately does not test is whether the limits are right. That is what the
+  notice says has never been verified against a real body, and no test here can say
+  otherwise.
+  604 tests green.

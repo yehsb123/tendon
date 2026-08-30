@@ -25,12 +25,22 @@ a servo that browns out under load, or a person standing where the arm is about 
 So the instruction is the same and the reason is stronger: do not connect this to hardware
 you are not prepared to have moved unexpectedly, and do not stand where it can reach.
 
-Also still missing: authentication between the shell and the runtime, and a local policy able to override a skill-declared safety limit.
+Also still missing: authentication between the shell and the runtime, and a local policy
+able to override a skill-declared safety limit.
 
-The `so101` driver named in `docs/roadmap.md` is v0.4 work. Until it exists, and until the
-scheduler actually routes every action through `kernel/safety`, connecting this to a robot
-means running a policy with no limit enforcement at all — the limits being written down
-changes nothing on its own.
+**What has changed since this notice was first written.** Two paragraphs used to stand here
+saying the `so101` driver was v0.4 work that did not exist yet, and that until the scheduler
+routed every action through `kernel/safety` a robot would be running with no limit
+enforcement at all. Both were true when written and neither is true now, and a safety
+document that contradicts itself two paragraphs apart is worse than one that says less:
+
+- `drivers/so101.py` exists, which is what the top of this section says.
+- The scheduler has exactly one `driver.apply` call site and every action reaches it
+  through `_check`. That is checkable by reading `kernel/scheduler.py`, and
+  `tests/unit/test_scheduler.py` holds it.
+
+So limit enforcement is real. **What is still missing is evidence that the limits are
+right**, which is the paragraph above and the reason this notice stands.
 
 This notice will be revised, not removed, when that changes.
 
@@ -78,8 +88,22 @@ intervention rate look better than it is — and that number is the single metri
 project is judged on, so distorting it is both a safety issue and a research integrity
 issue.
 
-**A connection loss must not leave a body mid-motion.** Losing the shell holds position at
-the control tier and stops new intent at the deliberation tier.
+**A connection loss must not leave a body mid-motion.** This is the intended property and
+**it is only partly implemented**, which is worth stating precisely because the sentence
+that used to be here claimed more than the code does.
+
+What happens today: losing the shell does not stop the episode. `api/app.py` returns from
+the socket handler and says why — a viewer going away is not a reason to stop a moving
+body, and stopping abruptly can be the less safe of the two. The episode runs to its step
+limit, and a reconnecting shell is sent the pending interrupt.
+
+What that leaves: if the policy hands over while nobody is connected, `ShellHandler` waits
+`timeout_s` (300 seconds by default) and then **aborts** rather than approving — nobody
+answered, so nobody approved. But if no interrupt is raised, an episode continues
+unattended to its step limit.
+
+Stopping new intent at the deliberation tier when the last operator disconnects is not
+implemented, and is required work before a physical body is driven from the shell.
 
 **Skills are remote code.** `tendon install` fetches weights and configuration from the
 Hugging Face Hub. A skill declares its own safety limits, which means an installed skill
