@@ -1132,3 +1132,13 @@ where confidence is going to come from.
   because a ref contains exactly one slash — a property nobody declared. Split into two
   segments, and a ref that is not `namespace/name` now fails visibly instead of producing
   a URL that happens to land somewhere. 355 tests green.
+- **B — `tendon episodes` worked and the shell could not see it.** `GET /api/episodes`
+  now serves what `services/store.py` reads, and the Episodes view renders it. Size is
+  preformatted by the runtime so the CLI and the shell say the same thing — two formatters
+  would drift, and "878.9 KB" in one place and "0.86 MB" in another makes someone check
+  whether they are looking at the same data.
+
+  A count that could not be read shows as "—", not 0. Zero would say the recording is
+  empty when what happened is that nobody could tell. Unreadable datasets are dimmed and
+  listed with their reason rather than dropped. An empty store says what to do about it.
+  358 tests green.

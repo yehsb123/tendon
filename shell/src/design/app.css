@@ -516,3 +516,49 @@
   color: var(--danger);
   font-size: var(--text-sm);
 }
+
+/* ------------------------------------------------------------------------ episodes */
+
+.episodes {
+  padding: var(--space-6);
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+.episodes h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.episodes-table {
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.episodes-table th,
+.episodes-table td {
+  padding: var(--space-2) var(--space-4) var(--space-2) 0;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.episodes-table th {
+  color: var(--fg-muted);
+  font-weight: var(--weight-medium);
+}
+.episodes-table .numeric {
+  text-align: right;
+  font-variant-numeric: var(--numeric);
+}
+
+/* A dataset that could not be read is dimmed, not hidden. Something unreadable sitting
+   on disk is a more useful thing to know about than a shorter list. */
+.episodes-table tr[data-unreadable="true"] {
+  color: var(--fg-subtle);
+}
+
+.episodes-problems {
+  margin: 0;
+  padding-left: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}

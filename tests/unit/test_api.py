@@ -192,3 +192,64 @@ def test_the_compatibility_endpoint_is_actually_used() -> None:
     repo = Path(__file__).resolve().parents[2]
     source = (repo / "shell" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
     assert "compatibility" in source
+
+
+# ------------------------------------------------------------------------- episodes
+
+
+def test_episodes_answers_on_an_empty_store(client: TestClient) -> None:
+    """Nothing recorded is the normal state before anything has run, not an error."""
+    response = client.get("/api/episodes")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_an_episode_carries_what_both_front_ends_need(tmp_path: Path) -> None:
+    """Size is preformatted by the runtime so the CLI and the shell say the same thing.
+
+    Two formatters would drift, and "878.9 KB" in one place and "0.86 MB" in another is
+    the kind of difference that makes someone check whether they are looking at the same
+    data.
+    """
+    import json
+
+    from tendon.services import store
+
+    dataset = tmp_path / "grasp__cube-sim" / "meta"
+    dataset.mkdir(parents=True)
+    (dataset / "info.json").write_text(json.dumps({"total_episodes": 4}), encoding="utf-8")
+    (tmp_path / "grasp__cube-sim" / "data.bin").write_bytes(b"x" * 2048)
+
+    original = store.DEFAULT_ROOT
+    store.DEFAULT_ROOT = tmp_path
+    try:
+        payload = TestClient(create_app(skill_root=SKILLS)).get("/api/episodes").json()
+    finally:
+        store.DEFAULT_ROOT = original
+
+    assert len(payload) == 1
+    entry = payload[0]
+    assert entry["ref"] == "grasp/cube-sim"
+    assert entry["episodes"] == 4
+    assert entry["readable"] is True
+    assert entry["size"].endswith("KB")
+
+
+def test_an_unreadable_dataset_is_listed_with_its_reason(tmp_path: Path) -> None:
+    """Not omitted. A partial write looks exactly like this, and a shorter list hides it."""
+    from tendon.services import store
+
+    (tmp_path / "partial").mkdir()
+    (tmp_path / "partial" / "data.bin").write_bytes(b"x" * 16)
+
+    original = store.DEFAULT_ROOT
+    store.DEFAULT_ROOT = tmp_path
+    try:
+        payload = TestClient(create_app(skill_root=SKILLS)).get("/api/episodes").json()
+    finally:
+        store.DEFAULT_ROOT = original
+
+    assert len(payload) == 1
+    assert payload[0]["readable"] is False
+    assert payload[0]["episodes"] is None
+    assert payload[0]["detail"]

@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Episodes } from "./views/Episodes";
 import { Live } from "./views/Live";
 
 type View = "live" | "episodes" | "skills" | "training";
@@ -32,7 +33,9 @@ export function App() {
       </nav>
 
       <main className="app-main">
-        {view === "live" ? <Live /> : <NotBuiltYet view={view} />}
+        {view === "live" ? <Live /> : null}
+        {view === "episodes" ? <Episodes /> : null}
+        {view === "skills" || view === "training" ? <NotBuiltYet view={view} /> : null}
       </main>
     </div>
   );

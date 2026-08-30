@@ -78,6 +78,18 @@ export interface Compatibility {
   reasons: string[];
 }
 
+export interface Episode {
+  ref: string;
+  /** Null when the count could not be read. Not the same as zero. */
+  episodes: number | null;
+  size_bytes: number;
+  /** Preformatted by the runtime so both the CLI and the shell say the same thing. */
+  size: string;
+  modified: string;
+  readable: boolean;
+  detail: string | null;
+}
+
 export interface SessionSnapshot {
   session_id: string;
   skill: string;
@@ -98,6 +110,7 @@ export const api = {
   health: () => request<Health>("/api/health"),
   bodies: () => request<Body[]>("/api/bodies"),
   skills: () => request<SkillSummary[]>("/api/skills"),
+  episodes: () => request<Episode[]>("/api/episodes"),
 
   startSession: (skill: string, body: string, maxSteps = 500) =>
     request<SessionSnapshot>("/api/sessions", {

@@ -210,6 +210,32 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
 
         return {"compatible": not reasons, "reasons": list(reasons)}
 
+    @app.get("/api/episodes")
+    async def episodes() -> list[dict[str, Any]]:
+        """What has been recorded.
+
+        Reads the layout on disk rather than opening datasets through LeRobot, so it
+        answers on a machine that cannot currently record — see `services/store.py`.
+
+        A dataset that cannot be read is listed with the reason rather than omitted. A
+        partial write looks exactly like that, and knowing something unreadable is sitting
+        there is the useful half.
+        """
+        from tendon.services.store import human_size, list_datasets
+
+        return [
+            {
+                "ref": dataset.ref,
+                "episodes": dataset.episodes,
+                "size_bytes": dataset.size_bytes,
+                "size": human_size(dataset.size_bytes),
+                "modified": dataset.modified.isoformat(),
+                "readable": dataset.readable,
+                "detail": dataset.unreadable_because,
+            }
+            for dataset in list_datasets()
+        ]
+
     # -------------------------------------------------------------------- sessions
 
     @app.post("/api/sessions")
