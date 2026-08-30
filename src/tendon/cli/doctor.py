@@ -110,6 +110,23 @@ def _drivers() -> Check:
     return Check("drivers", Status.OK, ", ".join(available))
 
 
+def _import_remedy(exc: Exception) -> str:
+    """Turn an import failure into something actionable.
+
+    A stack trace tells a reader that something is broken. This tells them what to do,
+    which is the only reason they ran the command.
+    """
+    message = str(exc)
+    if "Visual C++" in message or "vc_redist" in message:
+        return (
+            "install the Microsoft Visual C++ Redistributable: "
+            "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        )
+    if "DLL load failed" in message:
+        return "a native dependency is missing or mismatched; reinstall torch"
+    return 'reinstall torch, or run `python -c "import torch"` to see the full error'
+
+
 def _training() -> Check:
     if not _installed("torch"):
         return Check(
@@ -121,16 +138,50 @@ def _training() -> Check:
 
     # Import is unavoidable to ask about CUDA, and by this point torch is present, so the
     # cost is already accepted by whoever installed it.
-    import torch
+    #
+    # Broad except on purpose. `find_spec` found the package, so it is installed — but an
+    # installed package can still fail to import: a missing VC++ runtime on Windows raises
+    # OSError, a mismatched CUDA runtime raises RuntimeError, and neither is an
+    # ImportError. Diagnosing a broken environment is what this command is for, so it must
+    # not become the thing that crashes on one.
+    try:
+        import torch
+    except Exception as exc:  # noqa: BLE001
+        return Check(
+            "training",
+            Status.LIMITED,
+            f"torch is installed but fails to import: {type(exc).__name__}",
+            _import_remedy(exc),
+        )
 
     if torch.cuda.is_available():
         name = torch.cuda.get_device_name(0)
-        return Check("training", Status.OK, f"torch with CUDA — {name}")
+        memory_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        if memory_gb < 6.0:
+            return Check(
+                "training",
+                Status.LIMITED,
+                f"torch with CUDA — {name}, {memory_gb:.1f} GB. Tight for LoRA on a VLA",
+                "reduce batch size and chunk length, or fine-tune a smaller policy",
+            )
+        return Check("training", Status.OK, f"torch with CUDA — {name}, {memory_gb:.1f} GB")
+
+    # A CPU-only wheel on a machine with a GPU is a different problem from having no GPU,
+    # and reporting them the same way sends someone shopping for hardware they already own.
+    if torch.version.cuda is None:
+        return Check(
+            "training",
+            Status.LIMITED,
+            f"torch {torch.__version__} is a CPU-only build, so any GPU here is unusable",
+            "reinstall torch from the CUDA index: "
+            "pip install torch --index-url https://download.pytorch.org/whl/cu124",
+        )
+
     return Check(
         "training",
         Status.LIMITED,
-        "torch present but no CUDA device — LoRA fine-tuning will not close overnight",
-        "a consumer GPU is enough; CPU training is not a practical loop",
+        "torch was built with CUDA but no device is visible — driver or runtime problem",
+        "check nvidia-smi; the GPU may be disabled or the driver too old for this build",
     )
 
 

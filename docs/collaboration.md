@@ -34,7 +34,7 @@ change, so it is not a style preference.
 | `src/tendon/kernel/**` | **B** | contracts and invariants |
 | `src/tendon/api/**`, `cli/**` | **B** | boundaries, no external APIs |
 | `src/tendon/drivers/base.py` | **B** | the HAL contract itself |
-| `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py` | **B** | tendon logic, not ported |
+| `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py`, `policies.py` | **B** | tendon logic, not ported |
 | `shell/**` | **B** | the interface |
 | `docs/**`, `tests/**`, `examples/**`, `skills/**` | **B** | frame and documentation |
 | `README*.md`, `pyproject.toml`, `.github/**` | **B** | project surface |
@@ -593,3 +593,32 @@ where confidence is going to come from.
 - **A — Rerun's own reader moved.** `rerun.dataframe` does not exist in 0.36.3, so the
   probe verifies a recording by writing and reopening rather than by querying it. Noting it
   because anything that plans to read `.rrd` files programmatically will hit the same wall.
+- **B** — `services/policies.py` (ReplayPolicy, ScriptedPolicy), ADR 0006, and two
+  doctor bugs. 227 unit tests green.
+
+  `ReplayPolicy` is the fixed baseline evaluation needs, and the path by which a human
+  demonstration executes on a robot. It ignores the observation on purpose — a baseline
+  that reacted to the world would not be fixed. It raises `PolicyExhausted` at the end of
+  a recording rather than holding at the last action, since holding would keep the episode
+  running past what was demonstrated and put those steps in a success-rate denominator.
+  `PolicyExhausted` lives in `kernel/protocols.py`, because `kernel/` cannot import
+  `services/` and the scheduler is what catches it.
+
+  Both baselines report `ConfidenceSource.NONE`. A baseline that faked a confidence
+  estimate could appear to raise its own hand, which is the one capability ADR 0004 says
+  is ours — a fake one makes the comparison meaningless.
+- **B — two real bugs in `doctor`, both silent.**
+  1. `import torch` raised `OSError` (missing VC++ runtime on Windows) and took the whole
+     command down. `find_spec` reports a package as installed; an installed package can
+     still fail to import, and neither `OSError` nor a CUDA `RuntimeError` is an
+     `ImportError`. Diagnosing a broken environment is what the command is for, so it must
+     not be the thing that crashes on one. Now caught, with a remedy that names the VC++
+     redistributable when that is the cause.
+  2. "torch present but no CUDA device" was wrong on this machine — there is an RTX 4050,
+     and `torch 2.11.0+cpu` simply cannot use it. Reporting a CPU-only wheel the same way
+     as absent hardware sends someone shopping for what they already own. Now separated,
+     with the CUDA index-url as the remedy.
+- **B — the markup regression test no longer skips.** It was conditional on a bracketed
+  remedy applying in the current environment, which meant it stopped running exactly when
+  someone had a working setup. A test that only runs on broken machines guards nothing.
+  Stubbed with monkeypatch instead.

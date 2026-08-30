@@ -95,30 +95,42 @@ def test_doctor_runs_and_prints_every_check() -> None:
         assert check.name in result.output
 
 
-def test_remedies_survive_rich_markup() -> None:
+def test_remedies_survive_rich_markup(monkeypatch: pytest.MonkeyPatch) -> None:
     """The regression. Square brackets in a remedy must reach the terminal intact.
 
     Before escaping, `pip install -e ".[view]"` printed as `pip install -e "."` — a command
     that runs, installs the wrong thing, and gives no sign anything was lost.
+
+    The checks are stubbed rather than read from the environment. An earlier version of
+    this test skipped itself on a machine where every bracketed remedy happened to be
+    satisfied, which meant the regression test stopped running exactly when someone had a
+    working setup — and a test that only runs on broken machines guards nothing.
     """
+    bracketed = Check(
+        "visualisation",
+        Status.LIMITED,
+        "missing — install with the [view] extra",
+        'pip install -e ".[view]"',
+    )
+    monkeypatch.setattr("tendon.cli.main.run_checks", lambda: [bracketed])
+
     result = runner.invoke(app, ["doctor"])
-    bracketed = [c for c in run_checks() if "[" in c.remedy]
 
-    if not bracketed:
-        pytest.skip("no bracketed remedy applies in this environment")
+    assert 'pip install -e ".[view]"' in result.output, f"remedy was mangled: {result.output!r}"
+    assert "[view] extra" in result.output, "a bracketed detail was mangled"
 
-    for check in bracketed:
-        assert check.remedy in result.output, (
-            f"remedy for {check.name} was mangled: expected {check.remedy!r}"
+
+def test_a_cpu_only_torch_is_not_reported_as_a_missing_gpu() -> None:
+    """Different problems must not be reported the same way.
+
+    A CPU-only wheel on a machine that has a GPU is a reinstall; no GPU at all is a
+    hardware purchase. Conflating them sends someone shopping for what they already own.
+    """
+    training = next(c for c in run_checks() if c.name == "training")
+    if "CPU-only build" in training.detail:
+        assert "index-url" in training.remedy, (
+            "a CPU-only build must be remedied by reinstalling torch, not by buying a GPU"
         )
-
-
-def test_details_survive_rich_markup_too() -> None:
-    """Details are shown through the same path and can contain brackets."""
-    result = runner.invoke(app, ["doctor"])
-    for check in run_checks():
-        if "[" in check.detail:
-            assert check.detail in result.output
 
 
 def test_doctor_touches_no_hardware(tmp_path: Path) -> None:

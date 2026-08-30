@@ -83,6 +83,17 @@ class Driver(Protocol):
         ...
 
 
+class PolicyExhausted(RuntimeError):
+    """A finite policy has no more actions to produce.
+
+    Raised by replays and any other policy with an end. The scheduler treats it as a normal
+    ending rather than an error — a recording that finished is not a failure.
+
+    Defined here rather than beside the implementations because `kernel/` cannot import
+    `services/`, and the scheduler is what catches it.
+    """
+
+
 @runtime_checkable
 class Policy(Protocol):
     """Whatever decides what the body should do next.

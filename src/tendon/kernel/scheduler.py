@@ -49,7 +49,7 @@ from tendon.kernel.interrupt import (
     InterruptState,
     should_raise,
 )
-from tendon.kernel.protocols import Driver, Policy
+from tendon.kernel.protocols import Driver, Policy, PolicyExhausted
 from tendon.kernel.types import (
     Action,
     Intent,
@@ -124,6 +124,10 @@ class EpisodeResult:
     #: Every limit that went unevaluated at least once, deduplicated. Surfaced so a caller
     #: knows the episode ran partly unverified rather than having to infer it.
     unchecked: tuple[str, ...] = ()
+    #: True when a finite policy ran out of actions. A normal ending; distinguished
+    #: from hitting `max_steps` because a replay that finished and a replay that was cut
+    #: short are different results.
+    exhausted: bool = False
     #: Subscribers that raised and were dropped mid-episode. A run where the recorder died
     #: at step 12 produced 12 steps of data and otherwise looked normal; nobody should have
     #: to discover that by finding a short file later.
@@ -168,7 +172,15 @@ class Scheduler:
         previous: Action | None = None
 
         while result.steps < max_steps:
-            intent = policy.predict(observation)
+            try:
+                intent = policy.predict(observation)
+            except PolicyExhausted:
+                # A recording that finished is a normal ending, not a failure. Holding at
+                # the last action instead would keep the episode running past the end of
+                # what was demonstrated, and every extra step would land in the
+                # denominator of a success rate while representing nothing.
+                result.exhausted = True
+                break
 
             # ---- deliberation tier: is this worth handing over before it executes?
             if should_raise(intent.confidence, self.confidence_threshold):
