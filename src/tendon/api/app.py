@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from tendon import __version__
@@ -41,6 +42,9 @@ _DEFAULT_SKILL_ROOT = Path("skills")
 
 #: How often the socket checks the worker queue when it is empty [s].
 _POLL_INTERVAL_S = 0.02
+
+#: Built shell assets, served when they exist so one command is enough.
+_SHELL_DIST = Path("shell") / "dist"
 
 
 class StartRequest(BaseModel):
@@ -373,5 +377,13 @@ def create_app(*, skill_root: Path | None = None) -> FastAPI:
             # Losing a viewer is not a reason to stop the body. The episode continues, and
             # a reconnecting shell receives the pending interrupt on connect.
             return
+
+    # --------------------------------------------------------------------- the shell
+
+    # Mounted last so /api and /ws win. Served only when a build exists: during
+    # development the Vite dev server proxies here instead, and mounting a stale dist
+    # underneath it would serve yesterday's interface to someone who just edited it.
+    if _SHELL_DIST.is_dir():
+        app.mount("/", StaticFiles(directory=_SHELL_DIST, html=True), name="shell")
 
     return app

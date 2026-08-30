@@ -136,11 +136,23 @@ python -m pip install -e ".[dev]"
 pytest tests/unit
 ```
 
-The shell runs too, and will tell you plainly that no runtime is connected rather than
-rendering an empty scene that looks live:
+Watch an episode and intervene in it:
 
 ```bash
-cd shell && npm install && npm run dev     # http://localhost:5273
+cd shell && npm install && npm run build && cd ..
+python -m pip install -e ".[sim]"
+tendon serve                               # http://127.0.0.1:8000
+```
+
+One command serves both the runtime and the interface. Start an episode from the page; when
+the policy is unsure it hands over and waits for you.
+
+While working on the shell itself, run it against a live runtime instead — the dev server
+reloads on edit and proxies `/api` and `/ws` through:
+
+```bash
+tendon serve                  # terminal one
+cd shell && npm run dev       # terminal two, http://localhost:5273
 ```
 
 Adding the simulator, once the MuJoCo driver lands:

@@ -135,11 +135,23 @@ python -m pip install -e ".[dev]"
 pytest tests/unit
 ```
 
-셸도 실행됩니다. 런타임이 연결되지 않았을 때 빈 화면을 라이브인 척 보여주지 않고,
-연결되지 않았다고 분명히 말합니다.
+에피소드를 보면서 개입하려면:
 
 ```bash
-cd shell && npm install && npm run dev     # http://localhost:5273
+cd shell && npm install && npm run build && cd ..
+python -m pip install -e ".[sim]"
+tendon serve                               # http://127.0.0.1:8000
+```
+
+명령 하나로 런타임과 인터페이스가 함께 뜹니다. 페이지에서 에피소드를 시작하면, 정책이
+확신하지 못할 때 제어권을 넘기고 기다립니다.
+
+셸 자체를 고칠 때는 dev 서버를 쓰세요. 수정하면 바로 반영되고 `/api`와 `/ws`를 런타임으로
+프록시합니다.
+
+```bash
+tendon serve                  # 터미널 1
+cd shell && npm run dev       # 터미널 2, http://localhost:5273
 ```
 
 MuJoCo 드라이버가 붙은 뒤 시뮬레이터까지:
