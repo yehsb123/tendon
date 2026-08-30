@@ -38,6 +38,13 @@ intervention rate over a trailing window of 10 episodes
 the rate falls, corrections accumulate, and the policy asks for help before it stops
 asking. Pinning the exact numbers would make the test a check on a random seed.
 
+That graph comes from a script. The same thing now happens through the interface an
+operator actually uses — episodes started over the API, corrections sent from the shell —
+and [`tests/integration/test_shell_loop_closes.py`](tests/integration/test_shell_loop_closes.py)
+runs the same episodes twice to show the fall is caused by the teaching: correcting, the
+policy stops asking; approving only, it asks exactly as often as before. A falling line
+without that control would prove very little.
+
 A policy runs on an SO-ARM100 in MuJoCo. Where it is uncertain, confidence falls, and the
 scheduler hands over **before the body moves** rather than after something goes wrong. An
 operator corrects it. The correction is stored against the situation it was given in, and

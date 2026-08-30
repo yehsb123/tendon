@@ -1609,3 +1609,33 @@ where confidence is going to come from.
   Worth saying plainly, because it is the argument for the job: a pin nobody could satisfy
   survived in `pyproject.toml` through a full survey, an ADR, and months of green CI. It
   took about ninety seconds to find once something actually tried the install.
+
+- **B — the loop closes through the shell, and there is now a control saying so.**
+  Everything was wired over the last three rounds — the step bus, `on_intervention`, a
+  memory that outlives a session — and nobody had checked that the rate actually falls
+  when episodes are started the way an operator starts them. It does. Measured over twelve
+  episodes through the API:
+
+  | | first half | last half | episodes with an interrupt |
+  |---|---|---|---|
+  | corrections sent | 0.33 | **0.0** | 1 of 12 |
+  | approvals only | 2.0 | **2.0** | **12 of 12** |
+
+  The control is the part worth keeping. A falling line on its own proves very little: a
+  policy that stopped handing over for any reason draws the same line, and so does one
+  that never hands over at all. Approving is the null treatment — `learn_from` stores
+  nothing for it on purpose — and that arm is flat. So the fall is caused by the teaching.
+
+  `tests/integration/test_shell_loop_closes.py` runs both arms at six episodes each and
+  checks direction only. Not how many interrupts, not how far it falls: those depend on
+  where the uncertain region sits, the recall radius and the sweep, and pinning them would
+  make it a test of those constants.
+
+  Same discipline as `test_improve_example.py`, with one addition — that file could not
+  have a control, because the example only runs one way. This one can, so it does.
+
+  Dropped a fifth test I had written to assert "the numbers are not pinned" by grepping
+  this file for `== 2`; it matched `status_code == 200`. A substring search cannot
+  establish that property anyway, so the reasoning is in the module docstring instead. A
+  test that cannot do its job should not stand in for the discipline it is imitating.
+  497 tests green.
