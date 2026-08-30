@@ -93,6 +93,12 @@ jobs:
       # These three need mujoco and nothing else: no rendering, so no GL on a headless
       # box, and they finish in about two seconds. The menagerie scenes are vendored
       # under third_party/, so a fresh checkout has everything they load.
+      #
+      # A named list is right here and wrong below. The whole directory cannot run in this
+      # environment -- the files that need lerobot import it at module scope and fail
+      # collection rather than skipping -- so this job takes the subset that works without
+      # it, for a signal that arrives in seconds. It is not the coverage guarantee, and a
+      # new file missing from this list loses nothing: the recording job runs everything.
       - run: python -m pip install --quiet -e ".[dev,sim]"
       - run: >
           python -m pytest
@@ -119,18 +125,15 @@ jobs:
           python -m pip install --quiet torch
           --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install --quiet -e ".[dev,sim,robot]"
-      # These are the ones that record, which is design decision 1. The claim that running
-      # is collecting is not something the unit suite can check: it needs a body to move, a
-      # dataset on disk afterwards, and the episode read back. About twenty seconds once
-      # the wheels are cached.
-      - run: >
-          python -m pytest
-          tests/integration/test_cli_eval.py
-          tests/integration/test_cli_run.py
-          tests/integration/test_record_example.py
-          tests/integration/test_shell_correction.py
-          tests/integration/test_shell_session.py
-          -q
+      # The whole directory, deliberately, rather than a list of files. The first version
+      # of this job named five, and within the hour two new integration files existed that
+      # matched none of them. This repository already learned that in bodies.py: a list you
+      # have to remember to update is a list that will be wrong.
+      #
+      # This job has every extra installed, so nothing here has to skip, and a file added
+      # tomorrow is covered without anyone editing this workflow. It is the coverage
+      # guarantee; the job above is only a fast subset.
+      - run: python -m pytest tests/integration -q
 
   shell:
     name: shell builds and type-checks
