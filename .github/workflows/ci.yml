@@ -83,6 +83,10 @@ jobs:
           cache-dependency-path: shell/package-lock.json
       - run: npm ci
         working-directory: shell
+      # The arithmetic behind what an operator sees and what a robot does. A drawing
+      # that is subtly wrong is worse than one that is missing.
+      - run: npm test
+        working-directory: shell
       # tsc runs with exactOptionalPropertyTypes and noUncheckedIndexedAccess, so this
       # catches the class of mistake that only shows up when an operator is looking at it.
       - run: npm run build

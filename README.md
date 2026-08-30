@@ -168,9 +168,11 @@ python examples/01_record/run.py --overhead
 action through `kernel/safety`, raises interrupts on low confidence, and applies operator
 corrections under the same limits as policy actions.
 
-**Still do not connect this to physical hardware.** No physical driver exists, nothing has
-been verified against a real body, and there is no authentication between the shell and the
-runtime. See [SECURITY.md](SECURITY.md) before going anywhere near a robot.
+**Still do not connect this to physical hardware.** A driver for the SO-101 exists, which
+makes this warning load-bearing rather than theoretical: nothing here has been verified
+against a real body, every safety limit has only ever held in simulation, and there is no
+authentication between the shell and the runtime. See [SECURITY.md](SECURITY.md) before
+going anywhere near a robot.
 
 The project is proven or discarded at **v0.3**, where a single graph must show:
 *after N human corrections, the intervention rate drops.*
@@ -186,10 +188,11 @@ the load-bearing part of the structure, not decoration.
 src/tendon/
   kernel/        scheduler, step bus, interrupt, safety, and the contracts
                  other layers implement (types.py, protocols.py)
-  drivers/       the embodiment HAL — mujoco, lerobot, so101, human video
-  services/      recorder, curator, trainer, evaluator, registry
-  api/           REST for precomputable state, WebSocket for live intent
-  cli/           the tendon command
+  drivers/       the embodiment HAL — mujoco, human video, more to come
+  services/      recorder, curator, confidence, adaptive, evaluator,
+                 policies, skill, bodies, trainer, registry
+  api/           REST, WebSocket, and the session that bridges the two
+  cli/           doctor, run, eval, serve, shell
 
 shell/src/
   views/         Live, Episodes, Skills, Training

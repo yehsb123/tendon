@@ -13,9 +13,17 @@ scheduler routes every action through it before the action reaches a driver, inc
 corrections supplied by an operator. The interrupt path is implemented and exercised end
 to end by `examples/04_improve`.
 
-What remains missing is what matters most here: **no physical driver exists**, so none of
-this has been verified against a real body. A limit that has only ever held in simulation
-has not been shown to hold.
+**A physical driver now exists.** `drivers/so101.py` drives an SO-101 over a serial port,
+which changes what this notice is about. Until this commit the honest summary was "nothing
+here can move a real robot". That is no longer true.
+
+What has not changed is the evidence: **none of this has been verified against a real
+body.** Every safety limit in this repository has only ever held in simulation, and a limit
+that has only held in simulation has not been shown to hold. MuJoCo does not have backlash,
+a servo that browns out under load, or a person standing where the arm is about to be.
+
+So the instruction is the same and the reason is stronger: do not connect this to hardware
+you are not prepared to have moved unexpectedly, and do not stand where it can reach.
 
 Also still missing: authentication between the shell and the runtime, and a local policy able to override a skill-declared safety limit.
 

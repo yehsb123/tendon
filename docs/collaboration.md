@@ -950,3 +950,25 @@ where confidence is going to come from.
   milestone lists is on screen. What it is actually judged on — whether the drawing is
   legible in a few seconds — is a question about a person, and no test settles it. Someone
   has to sit in front of it with an episode running.
+- **B — the safety documents were wrong the moment `so101` landed.** `SECURITY.md` and
+  both READMEs said "no physical driver exists", which was the load-bearing half of why
+  the warning was mild. Track A's SO-101 driver made that false. Corrected: the
+  instruction is unchanged, the reason is stronger. Every safety limit here has only ever
+  held in simulation, and MuJoCo has no backlash, no servo browning out under load, and
+  nobody standing where the arm is about to be.
+- **B — the shell had no tests while accumulating maths that decides what a person sees.**
+  `panels/trajectory.ts` and `panels/correction.ts` extract it from the JSX, 22 vitest
+  cases cover it, and CI runs them. A drawing that is subtly wrong is worse than one that
+  is missing — an operator reads it, believes it, and approves something it does not
+  depict.
+
+  Covered specifically: one shared vertical scale (per-joint scaling would make a
+  0.002 rad wobble look like a 0.4 rad sweep), Cartesian spaces drawing nothing rather
+  than a plausible picture of something that is not happening, offsets applying across
+  the whole chunk rather than one step, and `nudge` returning a new array so React
+  re-renders — a mutation would leave an operator pressing a button and seeing nothing.
+- **B → A — `tendon run --driver so101` cannot work yet.** `open_body(name)` takes no
+  driver arguments, so a body needing a serial port has no way to receive one. Not urgent
+  while the warning says not to connect hardware, but the CLI currently offers a driver it
+  cannot construct. Happy to add a `--driver-arg key=value` pass-through on the CLI side
+  if the constructor shape is settled.

@@ -1,4 +1,5 @@
 import type { Intent, Observation } from "../api/types";
+import { busiest, caption, scaleFor, toSeries } from "./trajectory";
 
 /**
  * What the arm is about to do, drawn.
@@ -34,9 +35,6 @@ const WIDTH = 320;
 const HEIGHT = 96;
 const PADDING = 8;
 
-/** Below this, a joint has not meaningfully moved [rad]. Roughly a hobby servo's step. */
-const MOTION_EPSILON = 1e-3;
-
 export function TrajectoryPreview({ intent, observation }: TrajectoryPreviewProps) {
   if (intent === null || intent.actions.length === 0) {
     return (
@@ -55,18 +53,9 @@ export function TrajectoryPreview({ intent, observation }: TrajectoryPreviewProp
     );
   }
 
-  const travels = series.map((values) => Math.max(...values) - Math.min(...values));
-  const busiest = travels.indexOf(Math.max(...travels));
-  const moving = travels[busiest] ?? 0;
-
-  // One scale across every joint. Per-joint scaling would make a 0.002 rad wobble look
-  // exactly like a 0.4 rad sweep, which is the single most misleading thing this panel
-  // could do.
-  const all = series.flat();
+  const { joint: busiestJoint, travel: moving } = busiest(series);
+  const { low, span } = scaleFor(series, observation);
   const start = observation?.proprio.joint_positions ?? [];
-  const low = Math.min(...all, ...start);
-  const high = Math.max(...all, ...start);
-  const span = Math.max(high - low, MOTION_EPSILON);
 
   const x = (index: number, length: number) =>
     PADDING + (index / Math.max(1, length - 1)) * (WIDTH - 2 * PADDING);
@@ -82,59 +71,31 @@ export function TrajectoryPreview({ intent, observation }: TrajectoryPreviewProp
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         className="trajectory-plot"
         role="img"
-        aria-label={
-          moving < MOTION_EPSILON
-            ? "The arm is about to hold position."
-            : `Joint ${busiest} moves ${moving.toFixed(3)} radians over this chunk.`
-        }
+        aria-label={caption(moving, intent.horizon_s, busiestJoint)}
       >
         {series.map((values, joint) =>
-          joint === busiest ? null : (
+          joint === busiestJoint ? null : (
             // eslint-disable-next-line react/no-array-index-key
             <path key={joint} d={path(values)} className="trajectory-line" />
           ),
         )}
 
         {/* Drawn last so it sits above the faint ones. */}
-        <path d={path(series[busiest] ?? [])} className="trajectory-line is-busiest" />
+        <path d={path(series[busiestJoint] ?? [])} className="trajectory-line is-busiest" />
 
-        {start[busiest] !== undefined ? (
+        {start[busiestJoint] !== undefined ? (
           <circle
-            cx={x(0, series[busiest]?.length ?? 1)}
-            cy={y(start[busiest])}
+            cx={x(0, series[busiestJoint]?.length ?? 1)}
+            cy={y(start[busiestJoint])}
             r={3.5}
             className="trajectory-now"
           />
         ) : null}
       </svg>
 
-      <p className="trajectory-caption">
-        {moving < MOTION_EPSILON ? (
-          "holding position"
-        ) : (
-          <>
-            <strong>J{busiest}</strong> moves {moving.toFixed(3)} rad over{" "}
-            {intent.horizon_s.toFixed(2)} s
-          </>
-        )}
-      </p>
+      {/* The same sentence the SVG carries as its label, so a screen reader and a person
+          looking at it are told the same thing. */}
+      <p className="trajectory-caption">{caption(moving, intent.horizon_s, busiestJoint)}</p>
     </div>
-  );
-}
-
-/**
- * Joint-space values per joint over the chunk.
- *
- * Empty for Cartesian action spaces: drawing an end-effector pose as though it were joint
- * angles would produce a plausible-looking picture of something that is not happening.
- */
-function toSeries(intent: Intent): number[][] {
-  const first = intent.actions[0];
-  if (first === undefined) return [];
-  if (first.space !== "joint_position" && first.space !== "joint_velocity") return [];
-
-  const width = first.values.length;
-  return Array.from({ length: width }, (_, joint) =>
-    intent.actions.map((action) => action.values[joint] ?? 0),
   );
 }

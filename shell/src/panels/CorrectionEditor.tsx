@@ -1,6 +1,7 @@
 import { useState } from "react";
 
-import type { Action, Intent } from "../api/types";
+import type { Intent } from "../api/types";
+import { applyOffsets, isTouched, jointCount, nudge as nudgeOffsets } from "./correction";
 
 /**
  * Showing the robot what to do instead.
@@ -29,35 +30,19 @@ export interface CorrectionEditorProps {
   busy?: boolean | undefined;
 }
 
-/** How much one press moves a joint [rad]. Small enough to be a nudge, not a lunge. */
-const STEP_RAD = 0.02;
-
 export function CorrectionEditor({ intent, onCancel, onSubmit, busy }: CorrectionEditorProps) {
-  const width = intent.actions[0]?.values.length ?? 0;
+  const width = jointCount(intent);
   const [offsets, setOffsets] = useState<number[]>(() => new Array(width).fill(0));
   const [note, setNote] = useState("");
 
   const nudge = (joint: number, direction: 1 | -1) => {
-    setOffsets((current) =>
-      current.map((value, index) => (index === joint ? value + direction * STEP_RAD : value)),
-    );
+    setOffsets((current) => nudgeOffsets(current, joint, direction));
   };
 
-  const touched = offsets.some((value) => value !== 0);
+  const touched = isTouched(offsets);
 
   const submit = () => {
-    const corrected: Intent = {
-      ...intent,
-      issued_at: new Date().toISOString(),
-      actions: intent.actions.map(
-        (action): Action => ({
-          ...action,
-          values: action.values.map((value, index) => value + (offsets[index] ?? 0)),
-        }),
-      ),
-      goal: "operator correction",
-    };
-    onSubmit(corrected, note.trim());
+    onSubmit(applyOffsets(intent, offsets), note.trim());
   };
 
   return (

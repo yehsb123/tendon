@@ -167,9 +167,10 @@ python examples/01_record/run.py --overhead
 `kernel/safety`로 통과시키고, 확신도가 낮으면 인터럽트를 발생시키고, 오퍼레이터 교정도
 정책 액션과 동일한 한계 아래에서 적용합니다.
 
-**그래도 실물 로봇에 연결하면 안 됩니다.** 물리 드라이버가 없고, 실제 바디로 검증된 적이
-없으며, 셸과 런타임 사이에 인증이 없습니다. 로봇 근처에 가시기 전에
-[SECURITY.md](SECURITY.md)를 먼저 읽어주세요.
+**그래도 실물 로봇에 연결하면 안 됩니다.** SO-101 드라이버가 생겼기 때문에 이 경고는
+이론이 아니라 실질적인 것이 됐습니다. 실제 바디로 검증된 적이 없고, 모든 안전 한계는
+시뮬레이션에서만 성립을 확인했으며, 셸과 런타임 사이에 인증이 없습니다. 로봇 근처에
+가시기 전에 [SECURITY.md](SECURITY.md)를 먼저 읽어주세요.
 
 이 프로젝트는 **v0.3에서 증명되거나 폐기됩니다.** 그래프 하나가 나와야 합니다.
 *사람이 N번 교정한 뒤, 개입률이 떨어진다.*
@@ -184,10 +185,11 @@ python examples/01_record/run.py --overhead
 src/tendon/
   kernel/        스케줄러 · 스텝 버스 · 인터럽트 · 안전, 그리고 다른 계층이 구현할
                  계약 (types.py, protocols.py)
-  drivers/       신체 추상화(HAL) — mujoco, lerobot, so101, 사람 영상
-  services/      recorder · curator · trainer · evaluator · registry
-  api/           REST(미리 계산 가능한 것) + WebSocket(실시간 의도)
-  cli/           tendon 명령
+  drivers/       신체 추상화(HAL) — mujoco, 사람 영상, 이후 추가
+  services/      recorder · curator · confidence · adaptive · evaluator ·
+                 policies · skill · bodies · trainer · registry
+  api/           REST · WebSocket · 둘을 잇는 세션
+  cli/           doctor · run · eval · serve · shell
 
 shell/src/
   views/         Live · Episodes · Skills · Training
