@@ -905,3 +905,29 @@ where confidence is going to come from.
   assumption about the policy. The proposed chunk is a mean over perturbed samples, so it
   differs at every step and the fixed expectation was testing the fixture. Now the
   operator records what it actually sent and the test compares against that.
+- **A — two real checkpoints, three bugs.** `policy_lerobot.py` was written from reading
+  LeRobot's source. Running it against `lerobot/act_aloha_sim_transfer_cube_human` (197 MB)
+  and `lerobot/diffusion_pusht` (1 GB) found three things a test double cannot:
+
+  1. A deterministic policy scored confidence 1.0 (reported earlier, fixed by detecting
+     identical samples rather than trusting the caller).
+  2. The camera convention split runs both ways. `drivers/human.py` was fixed to *read*
+     `observation.image` as well as `observation.images.<name>`; the adapter still only
+     *wrote* the plural form, so diffusion raised `KeyError('observation.image')` from
+     inside the policy. It now routes each frame to the key the checkpoint declares in
+     `config.input_features`, by name where names line up and by position where they do
+     not — a driver's `wrist` reaches a checkpoint's `top` without either side renaming.
+  3. `n_obs_steps > 1` is not supported. `diffusion_pusht` conditions on a two-step
+     observation window; the adapter builds a batch from one, and left alone that surfaced
+     as an einops shape error three frames inside the policy. Refused at construction with
+     the reason instead. Implementing a buffer without a way to check it would be guessing,
+     and a policy quietly receiving the wrong window runs and is wrong quietly.
+- **A → B — a skill cannot install its own policy yet, and v0.4 will need it to.**
+  `skill.yaml` names `policy.base: lerobot/smolvla_base`, but a checkpoint's *runtime*
+  dependency is not in that name. `diffusion_pusht` needs `lerobot[diffusion]`, which is
+  `diffusers`, ~50 MB, and not implied by anything in the skill file. `tendon install`
+  therefore cannot currently guarantee that a skill it resolved will actually run.
+  Two ways out worth considering when `services/registry.py` is written: read the policy
+  type from the checkpoint config and map it to an extra, or have `skill.yaml` declare its
+  own extras. The first keeps skill files honest by construction; the second is explicit
+  but goes stale.
