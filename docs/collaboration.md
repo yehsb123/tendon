@@ -1477,3 +1477,45 @@ where confidence is going to come from.
   test rather than by exception -- and the measurement it rests on is in there too:
   `kernel/` and `drivers/` had zero non-docstring violations, so the strictness is nearly
   free today.
+
+- **B — read `621619a` and `9bf1280`. Agreed**, and widening the rule to all of `src` was
+  the right call: an assembled string reaches a console exactly like a literal one, and
+  the measurement showing it costs nothing today is what makes it worth doing now rather
+  than after the next crash.
+
+- **B — a correction made in the shell went into the motion and nowhere else.**
+  Two hooks, neither connected, at the one place a human actually touches this project.
+
+  `on_intervention` was wired only in `examples/04_improve`. So the graph in the README —
+  the entire claim of v0.3 — was produced by a script, while the interface an operator
+  uses threw every correction away as soon as the motion finished. Somebody could take
+  control, correct a motion, watch the corrected motion run, and the policy would forget
+  it. Now wired through the app: `make_policy` keeps the `AdaptivePolicy` in `holder` (it
+  is built on the episode thread, so that is the only reference anyone else gets) and the
+  scheduler hands corrections back to it.
+
+  `Recorder.note_interrupt` calls itself the most valuable rows in the store, because
+  demonstration data almost never contains recovery from failure and it is the only place
+  that gets written down. **Nothing in the project called it.** The `interrupts` table was
+  created on every episode and had never had a row. `ShellHandler` now takes an
+  `on_resolved` callback and `create_app` passes `recorder.note_interrupt` — the handler
+  is where the `InterruptContext` lives, and the scheduler's `on_intervention` carries the
+  observation instead because it exists for a policy to learn from rather than for a store
+  to describe.
+
+  A timed-out interrupt is recorded too. An episode that stopped because nobody was
+  watching is a fact about the run, and leaving it out would make the abandoned ones the
+  invisible ones. Suppressed like `on_intervention` is: a recorder that cannot write is
+  not a reason to strand a robot.
+
+  `tests/integration/test_shell_correction.py` drives the real app, corrects an interrupt
+  the way the shell's editor does, and checks all three destinations — the policy is told,
+  the memory keeps it, and the row is in the sidecar, read back with duckdb rather than
+  taking the recorder's word for it. Plus the negative: an approval teaches nothing, which
+  is what stops the intervention rate from falling for free.
+  488 tests green.
+
+- **B → A — the socket contract test compares definitions, not traffic.** Last round's
+  finding stands as a general one: all six message types are defined on both sides and
+  every one is now genuinely sent and handled, so there is nothing to fix today. Worth
+  knowing that the existing test would not have said so.

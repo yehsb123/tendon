@@ -29,6 +29,7 @@ thread — is not safe, and getting that wrong produces a hang rather than an er
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import threading
 import uuid
@@ -81,9 +82,26 @@ class ShellHandler:
     the control tier holds position underneath.
     """
 
-    def __init__(self, events: queue.Queue, *, timeout_s: float = _DEFAULT_TIMEOUT_S) -> None:
+    def __init__(
+        self,
+        events: queue.Queue,
+        *,
+        timeout_s: float = _DEFAULT_TIMEOUT_S,
+        on_resolved: Callable[[InterruptContext, InterruptResolution], None] | None = None,
+    ) -> None:
+        """
+        Args:
+            on_resolved: Called with the context and the decision once an interrupt is
+                answered, including when it timed out. This is where the recorder writes
+                the interrupt into the episode. It gets the `InterruptContext`, which is
+                what `Recorder.note_interrupt` needs and what the scheduler's
+                `on_intervention` hook does not carry — that one hands over the
+                observation, because it exists for a policy to learn from rather than for
+                a store to describe.
+        """
         self._events = events
         self._timeout_s = timeout_s
+        self._on_resolved = on_resolved
         self._pending: InterruptContext | None = None
         self._decision: InterruptResolution | None = None
         self._answered = threading.Event()
@@ -107,16 +125,35 @@ class ShellHandler:
             with self._lock:
                 self._pending = None
             # Aborting rather than approving. Nobody answered, so nobody approved.
-            return InterruptResolution(
+            timed_out = InterruptResolution(
                 resolution=Resolution.ABORTED,
                 note=f"no operator decision within {self._timeout_s:g}s",
             )
+            # Recorded like any other outcome. An episode that stopped because nobody was
+            # watching is a fact about the run, and leaving it out of the store would make
+            # the abandoned episodes the invisible ones.
+            self._notify(context, timed_out)
+            return timed_out
 
         with self._lock:
             decision = self._decision
             self._pending = None
 
-        return decision or InterruptResolution(resolution=Resolution.ABORTED)
+        resolution = decision or InterruptResolution(resolution=Resolution.ABORTED)
+        self._notify(context, resolution)
+        return resolution
+
+    def _notify(self, context: InterruptContext, resolution: InterruptResolution) -> None:
+        """Tell whoever is listening what was decided, without letting them stop the body.
+
+        Suppressed for the same reason the scheduler suppresses `on_intervention`: a
+        recorder that cannot write is not a reason to strand a robot mid-motion. The
+        failure surfaces through the bus, which is where a dropped subscriber is reported.
+        """
+        if self._on_resolved is None:
+            return
+        with contextlib.suppress(Exception):
+            self._on_resolved(context, resolution)
 
     def decide(self, resolution: InterruptResolution) -> bool:
         """Answer the pending interrupt. Returns False when there is nothing to answer.
@@ -165,6 +202,7 @@ class EpisodeSession:
         timeout_s: float = _DEFAULT_TIMEOUT_S,
         before_episode: Callable[[], None] | None = None,
         after_episode: Callable[[], None] | None = None,
+        on_resolved: Callable[[InterruptContext, InterruptResolution], None] | None = None,
     ) -> None:
         """
         Args:
@@ -176,7 +214,7 @@ class EpisodeSession:
         """
         self.state = SessionState(session_id=uuid.uuid4().hex, skill=skill, body_id=body_id)
         self.events: queue.Queue = queue.Queue(maxsize=_EVENT_QUEUE_SIZE)
-        self.handler = ShellHandler(self.events, timeout_s=timeout_s)
+        self.handler = ShellHandler(self.events, timeout_s=timeout_s, on_resolved=on_resolved)
 
         self._scheduler_factory = scheduler_factory
         self._policy_factory = policy_factory

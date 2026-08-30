@@ -157,6 +157,11 @@ The episode is recorded on the same terms as one started from the command line, 
 same dataset — an episode is an episode, whichever way it was begun, and `Episodes` shows
 it when the run ends.
 
+A correction you make goes three places: into the motion, into the policy's memory, and
+into the episode's `interrupts` table. The third is the one that matters later —
+demonstration data almost never contains recovery from failure, and that table is the only
+place it is written down.
+
 While working on the shell itself, run it against a live runtime instead — the dev server
 reloads on edit and proxies `/api` and `/ws` through:
 

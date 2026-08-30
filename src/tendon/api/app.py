@@ -315,7 +315,10 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
                 # narrower than what the recorder is set up to store.
                 gripper=1.0 if capability.gripper.value != "none" else None,
             )
-            return AdaptivePolicy(inner)
+            # Kept so the scheduler can hand corrections back to it. The policy is built
+            # on the episode thread, so this is the only reference anybody else gets.
+            holder["policy"] = AdaptivePolicy(inner)
+            return holder["policy"]
 
         bus: Bus[StepRecord] = Bus()
         recorder = _open_recorder(loaded, episode_root)
@@ -335,6 +338,14 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
                 confidence_threshold=loaded.confidence_threshold,
                 handler=handler,
                 on_intent=lambda obs, intent: holder["session"].publish_intent(obs, intent),
+                # Where a correction becomes something the policy knows. Wired only in
+                # `examples/04_improve` until now — so the graph in the README was
+                # produced by a script, while the interface an actual operator uses threw
+                # every correction away the moment the motion finished. That is the claim
+                # of this project, missing at the one place a human touches it.
+                on_intervention=lambda obs, resolution: holder["policy"].learn_from(
+                    obs, resolution
+                ),
                 bus=bus,
             )
 
@@ -350,6 +361,10 @@ def create_app(*, skill_root: Path | None = None, episode_root: Path | None = No
                 None if recorder is None else lambda: recorder.start(loaded.ref, capability)
             ),
             after_episode=None if recorder is None else recorder.finish,
+            # `note_interrupt` calls itself the most valuable rows in the store —
+            # demonstration data almost never contains recovery from failure, and this is
+            # the only place it gets written down. Nothing in the project called it.
+            on_resolved=None if recorder is None else recorder.note_interrupt,
         )
         holder["session"] = session
 
