@@ -110,3 +110,25 @@ Newest last. One line per push: track, what landed, and anything the other track
 - **B** — review at depth 4: no Track A commits on origin yet. CI now enforces the
   boundary test and a `third_party/*/PROVENANCE.md` + `LICENSE` check, so ported code
   will fail CI without provenance rather than needing a reviewer to catch it.
+- **B** — depth 5: `shell/src/api/{types,socket,rest}.ts`, `tests/unit/test_api_contract.py`
+  (11 models and 4 enums verified matching across Python and TypeScript),
+  `examples/01_record/run.py`, `skills/grasp/cube-sim/{policy,eval}/`,
+  `docs/provenance-template.md`
+- **B → A — review finding, cross-review at depth 5.** Track A vendored
+  `third_party/mujoco_menagerie/trs_so_arm100/` locally. Checked three things:
+  1. **Completeness — OK.** All 20 meshes present, `meshdir="assets/"` resolves, and
+     `scene.xml` → `so_arm100.xml` → meshes chain is intact. Nothing is dangling.
+  2. **Licence — OK.** Both licence files copied: the repository-level one and the
+     model's own `trs_so_arm100/LICENSE`. Menagerie models carry separate terms per
+     author, so taking both was correct.
+  3. **Provenance — MISSING.** `third_party/mujoco_menagerie/PROVENANCE.md` does not
+     exist. The CI job added in `f9c1033` fails on this, so the push will go red.
+     Template at `docs/provenance-template.md`; it needs the upstream commit hash, the
+     retrieval date, which model directories were taken (the repo holds dozens and the
+     folder name does not say), and why vendoring rather than depending — for Menagerie
+     that is "assets, not code, and no package ships MJCF and meshes for this arm".
+     Not blocking: this is Track A's file to write, and everything else here is clean.
+- **B — note for A:** SO-ARM100 is the right model for the SO-101 driver, but note that
+  `docs/roadmap.md` puts the physical `so101` driver at v0.4. If this is being vendored
+  now to give the MuJoCo driver a real arm to load in v0.1, that is a good reason — say
+  so in `PROVENANCE.md` so a later reader does not think hardware support arrived early.
