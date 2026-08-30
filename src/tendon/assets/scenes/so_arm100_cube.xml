@@ -1,0 +1,106 @@
+<!--
+  tendon scene: pick a cube with an SO-ARM100.
+
+  The arm is included from src/tendon/assets/robots/so_arm100_wrist_cam.xml — a
+  one-camera modification of the Menagerie model. The unmodified original and the full
+  attribution are at third_party/mujoco_menagerie/.
+
+  What this file adds is what the skill needs and a robot description does not carry,
+  because a robot description is not a task: a cube sized to the measured jaw range, a
+  scene camera for the shell, and the spawn site the cube resets to.
+
+  Distances [m], angles [rad], mass [kg].
+-->
+<mujoco model="tendon so_arm100 cube">
+  <include file="../robots/so_arm100_wrist_cam.xml"/>
+
+  <!--
+    This compiler element must stay AFTER the include, and that is not a style choice.
+
+    MuJoCo resolves meshdir against the top-level file, not the file that declared it.
+    The included model keeps upstream's meshdir="assets/", which from here would resolve
+    to src/tendon/assets/scenes/assets/ and fail. Declaring ours BEFORE the include does
+    not help — the include overwrites it. Declared after, ours wins.
+
+    If this file moves, this relative path moves with it.
+  -->
+  <compiler angle="radian" meshdir="../../../../third_party/mujoco_menagerie/trs_so_arm100/assets/"/>
+
+  <!--
+    cone and impratio are restated from the included model on purpose.
+
+    Upstream set cone="elliptic" impratio="10" specifically for no-slip gripper behaviour
+    (their README, derivation step 9). Both are friction-cone settings, and losing them
+    turns a successful grasp into a slow slide out of the jaws — a physics regression that
+    produces no error, only worse episodes. Restating them here means a later edit to this
+    <option> block cannot drop them by accident.
+
+    timestep 0.002 gives 500Hz physics against the 100Hz control tier
+    (docs/architecture.md, "Two clocks"): five substeps per control step. Fixed, so that
+    the v0.1 recorder-overhead measurement is not accidentally a solver measurement.
+  -->
+  <option timestep="0.002" integrator="implicitfast" cone="elliptic" impratio="10"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20" offwidth="640" offheight="480"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="cube_material" rgba="0.85 0.35 0.2 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- Third-person view, for the shell. -->
+    <camera name="scene" pos="0.5 -0.5 0.4" xyaxes="0.7 0.7 0 -0.35 0.35 0.87"/>
+
+    <!--
+      Reset pose of the cube. The arm extends along -y from its base, and 0.25m sits
+      inside the measured reach — 0.377m at table height — with margin, and inside the
+      workspace box skill.yaml declares (+-0.4m in x and y).
+    -->
+    <site name="cube_spawn" pos="0 -0.25 0.015" size="0.002" rgba="0 1 0 0.3"/>
+
+    <body name="cube" pos="0 -0.25 0.015">
+      <freejoint name="cube_free"/>
+      <!--
+        30mm cube, so half-extent 15mm. Measured jaw gap is 16mm fully closed and 104mm
+        fully open, so 30mm is graspable with margin at both ends: the jaws open around
+        it and still close onto it.
+
+        Friction and solver parameters are copied from the upstream jaw pads rather than
+        left at MuJoCo defaults, which slide out of a two-finger grasp.
+      -->
+      <geom name="cube" type="box" size="0.015 0.015 0.015" material="cube_material"
+            mass="0.05" friction="1 0.005 0.0001" solimp="2 1 0.01" solref="0.01 1"/>
+      <site name="cube_center" pos="0 0 0" size="0.002" rgba="1 0 0 0.3"/>
+    </body>
+  </worldbody>
+
+  <keyframe>
+    <!--
+      RESET BY NAME, NOT BY INDEX. The included model brings its own "home" and "rest"
+      keyframes, which are index 0 and 1; ours is index 2. Those two were written for a
+      6-value qpos and say nothing about the cube, so MuJoCo pads them — placing the cube
+      at the world origin, inside the arm's own base. Resetting to index 0 therefore
+      starts every episode in penetration. Look "start" up with mj_name2id.
+    -->
+    <!--
+      Restated rather than inherited: the freejoint changes nq, so the cube's 7 qpos
+      values (3 position, 4 quaternion) follow the arm's 6, and an upstream keyframe no
+      longer loads. Arm pose is upstream's "home" with the jaw opened to 0.3rad
+      (gap ~42mm), so the first approach does not begin closed on a 30mm cube.
+    -->
+    <key name="start"
+         qpos="0 -1.57 1.57 1.57 -1.57 0.3  0 -0.25 0.015 1 0 0 0"
+         ctrl="0 -1.57 1.57 1.57 -1.57 0.3"/>
+  </keyframe>
+</mujoco>
