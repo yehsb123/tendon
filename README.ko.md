@@ -161,6 +161,22 @@ python -m pip install -e ".[sim,dev]"
 python examples/01_record/run.py --overhead
 ```
 
+## 명령
+
+```
+tendon doctor            여기서 뭐가 되고, 안 되는 것 각각의 대가가 무엇인지
+tendon run <skill>       커널 위에서 정책을 바디에 실행
+tendon eval <skill>      반복 실행하고 결과를 보고
+tendon episodes          기록된 것 목록
+tendon serve             런타임 API, 셸이 빌드돼 있으면 셸까지
+tendon shell             같은 것 + dev 서버 실행 방법 안내
+tendon curate <skill>    v0.3 — 아직 안 됨, 그렇다고 말함
+tendon train <skill>     v0.3 — 아직 안 됨, 그렇다고 말함
+```
+
+실제 하드웨어를 움직이는 바디는 `--physical` 없이는 거부되고, 어느 바디가 그런지는
+`doctor`가 알려줍니다. 드라이버 인자는 `--driver-arg key=value`로 넘깁니다.
+
 ## 상태
 
 **v0.1 — 시뮬레이션 전용.** 위의 루프가 end to end로 돕니다. 스케줄러가 모든 액션을

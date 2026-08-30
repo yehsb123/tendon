@@ -162,6 +162,22 @@ python -m pip install -e ".[sim,dev]"
 python examples/01_record/run.py --overhead
 ```
 
+## Commands
+
+```
+tendon doctor            what works here, and what each missing piece costs
+tendon run <skill>       run a policy on a body under the kernel
+tendon eval <skill>      run it repeatedly and report what happened
+tendon episodes          list what has been recorded
+tendon serve             the runtime API, and the shell when it is built
+tendon shell             the same, with instructions for the dev server
+tendon curate <skill>    v0.3 — not available yet, and says so
+tendon train <skill>     v0.3 — not available yet, and says so
+```
+
+A body that moves real hardware is refused unless you pass `--physical`, and `doctor` says
+which bodies those are. Driver arguments go through `--driver-arg key=value`.
+
 ## Status
 
 **v0.1 — simulation only.** The loop above runs end to end: the scheduler routes every

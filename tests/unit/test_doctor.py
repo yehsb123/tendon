@@ -150,3 +150,39 @@ def test_version_command_prints_a_version() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
     assert result.output.strip()
+
+
+# --------------------------------------------------------- commands that are not ready
+
+
+def test_an_unavailable_command_explains_rather_than_tracebacks() -> None:
+    """A NotImplementedError reaching a user is the tool telling them its own source is
+    incomplete, in a format meant for whoever wrote it.
+
+    They asked what the command does. The useful answer is when it will do it and what is
+    already there.
+    """
+    result = runner.invoke(app, ["curate", "grasp/cube-sim"])
+
+    assert result.exit_code == 1
+    assert "not available yet" in result.output
+    assert "v0.3" in result.output
+    assert "Traceback" not in result.output
+    assert "NotImplementedError" not in result.output
+
+
+def test_every_command_either_runs_or_says_why_not() -> None:
+    """The failure this repository kept producing: a command offered and not performed.
+
+    Checked structurally, because the next stub to be added will be added by someone who
+    has forgotten this rule.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
+        encoding="utf-8"
+    )
+    assert "raise NotImplementedError" not in source, (
+        "a CLI command raises NotImplementedError; use _not_yet() so the user is told "
+        "when it will work and what already exists"
+    )

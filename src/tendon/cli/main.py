@@ -31,6 +31,20 @@ app = typer.Typer(
 )
 
 
+def _not_yet(command: str, milestone: str, detail: str) -> None:
+    """Say a command is not available yet, without a traceback.
+
+    A `NotImplementedError` reaching a user is the tool telling them its own source is
+    incomplete, in a format meant for whoever wrote it. They asked what the command does;
+    the useful answer is when it will do it and what is already there.
+    """
+    console = Console()
+    console.print(f"[yellow]{escape(command)} is not available yet[/yellow] ({milestone})")
+    console.print(f"[dim]{escape(detail)}[/dim]")
+    console.print("[dim]See docs/roadmap.md for what each milestone has to show.[/dim]")
+    raise typer.Exit(code=1)
+
+
 @app.command()
 def version() -> None:
     """Print the tendon version."""
@@ -332,14 +346,32 @@ def episodes(
 
 @app.command()
 def curate(skill: str) -> None:
-    """Score and select episodes worth training on."""
-    raise NotImplementedError("v0.3")
+    """[v0.3] Score and select episodes worth training on.
+
+    Not available yet. `services/curator.py` computes the signals and is tested, but
+    scoring real episodes means reading them, which needs LeRobot and the `[robot]` extra.
+    """
+    _not_yet(
+        "curate",
+        "v0.3",
+        "services/curator.py has the signals and is tested. What is missing is reading "
+        "recorded episodes back, which needs the [robot] extra.",
+    )
 
 
 @app.command()
 def train(skill: str) -> None:
-    """LoRA fine-tune on curated data."""
-    raise NotImplementedError("v0.3")
+    """[v0.3] LoRA fine-tune on curated data.
+
+    Not available yet. `services/trainer.py` exists; wiring it to the CLI waits until
+    curation can select what to train on.
+    """
+    _not_yet(
+        "train",
+        "v0.3",
+        "services/trainer.py exists. Wiring it up waits on curate, which has to choose "
+        "what to train on first.",
+    )
 
 
 @app.command("eval")

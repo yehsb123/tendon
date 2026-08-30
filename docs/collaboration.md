@@ -1052,3 +1052,16 @@ where confidence is going to come from.
   skipped — a partial write looks exactly like that, and knowing 4 GB of something
   unreadable is sitting there is the useful half. An empty store prints what to run next
   rather than an empty table. 349 tests green.
+- **B — `curate` and `train` described themselves as working and threw tracebacks.**
+  `--help` said "Score and select episodes worth training on"; running it produced
+  `NotImplementedError: v0.3`. A NotImplementedError reaching a user is the tool telling
+  them its own source is incomplete, in a format meant for whoever wrote it.
+
+  Both now say when they will work and what already exists — `curator.py` has the signals
+  and is tested; what is missing is reading episodes back, which needs the `[robot]`
+  extra. `test_every_command_either_runs_or_says_why_not` checks the CLI source for
+  `raise NotImplementedError`, because the next stub will be added by someone who has
+  forgotten this.
+- **B — both READMEs now list the commands.** They described the project at length and
+  never said what you can type. Includes the `--physical` guard and `--driver-arg`, which
+  a reader would otherwise meet as a refusal. 351 tests green.
