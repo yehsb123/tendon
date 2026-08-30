@@ -137,7 +137,7 @@ def main() -> int:
         )
         return 1
 
-    print("\nPASS — recording is close to free. v0.1 acceptance met.")
+    print("\nPASS - recording is close to free. v0.1 acceptance met.")
     return 0
 
 

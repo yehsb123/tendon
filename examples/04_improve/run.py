@@ -240,11 +240,33 @@ def curve(outcomes: list[Outcome], window: int) -> list[tuple[int, float]]:
     return points
 
 
+def _glyphs() -> tuple[str, str, str, str]:
+    """Block-drawing characters, or ASCII where the console cannot encode them.
+
+    The result of this example is one graph, and it is the graph the whole project is
+    judged on. Crashing while drawing it is worse than drawing it plainly.
+
+    A Windows console in a Korean locale runs cp949 and raises `UnicodeEncodeError` on
+    `U+2588 FULL BLOCK`, so the run reaches sixty episodes, computes the curve, writes the
+    CSV, and then dies on `print`. Probing the actual stream is better than guessing from
+    the platform: the same script redirected to a UTF-8 file should still get the nice
+    characters.
+    """
+    fill, bar, corner, rule = "█", "│", "└", "─"
+    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        (fill + bar + corner + rule).encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return "#", "|", "+", "-"
+    return fill, bar, corner, rule
+
+
 def sparkline(points: list[tuple[int, float]], height: int = 8, width: int = 56) -> str:
     """A plot that needs no dependency, so the result is visible from a terminal."""
     if not points:
         return "(not enough episodes for a full window)"
 
+    fill, bar, corner, rule = _glyphs()
     rates = [rate for _, rate in points]
     step = max(1, len(rates) // width)
     sampled = rates[::step][:width]
@@ -252,10 +274,10 @@ def sparkline(points: list[tuple[int, float]], height: int = 8, width: int = 56)
     rows = []
     for level in range(height, 0, -1):
         threshold = level / height
-        row = "".join("█" if r >= threshold - 0.5 / height else " " for r in sampled)
+        row = "".join(fill if r >= threshold - 0.5 / height else " " for r in sampled)
         label = f"{threshold:>4.0%} "
-        rows.append(label + "│" + row)
-    rows.append("     └" + "─" * len(sampled))
+        rows.append(label + bar + row)
+    rows.append("     " + corner + rule * len(sampled))
     rows.append(f"      0{' ' * (len(sampled) - 8)}{points[-1][0]:>3} corrections")
     return "\n".join(rows)
 
@@ -314,7 +336,7 @@ def main() -> int:
 
     if outcomes[-1].corrections_known == 0:
         print()
-        print("FAIL — no corrections were ever recorded, so nothing could have been learned.")
+        print("FAIL - no corrections were ever recorded, so nothing could have been learned.")
         print("The policy never dropped below the confidence threshold.")
         return 1
 
@@ -325,7 +347,7 @@ def main() -> int:
         return 1
 
     print()
-    print("PASS — the loop closes: corrections reduced how often the policy asked for help.")
+    print("PASS - the loop closes: corrections reduced how often the policy asked for help.")
     return 0
 
 
