@@ -153,6 +153,8 @@ class ScriptedOperator:
 
 
 def run_episodes(episodes: int, steps: int, seed: int) -> list[Outcome]:
+    import math
+
     from tendon.kernel.scheduler import Scheduler
     from tendon.kernel.types import SafetyLimits
     from tendon.services.adaptive import (
@@ -162,8 +164,6 @@ def run_episodes(episodes: int, steps: int, seed: int) -> list[Outcome]:
         UncertainRegion,
     )
     from tendon.services.bodies import open_body
-
-    import math
 
     body = open_body("mujoco")
     capability = body.capability

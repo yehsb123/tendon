@@ -151,15 +151,12 @@ class StochasticPolicy:
             for offset in range(self._chunk_size):
                 base = self._fn(self._step + offset)
                 perturbed = [
-                    value + self._perturbation(weight, joint)
-                    for joint, value in enumerate(base)
+                    value + self._perturbation(weight, joint) for joint, value in enumerate(base)
                 ]
                 chunk.append(Action(space=ActionSpace.JOINT_POSITION, values=perturbed))
             chunks.append(chunk)
 
-        confidence = estimate_from_samples(
-            chunks, reference_spread=self._reference_spread
-        )
+        confidence = estimate_from_samples(chunks, reference_spread=self._reference_spread)
 
         # The mean of the samples, not one of them: a single draw is a worse action than
         # the policy can produce, and an operator would be reviewing noise.
@@ -185,9 +182,7 @@ class StochasticPolicy:
     def _perturbation(self, weight: float, joint: int) -> float:
         if weight <= 0.0:
             return 0.0
-        scale = max(
-            (r.magnitude * weight for r in self._regions if r.joint == joint), default=0.0
-        )
+        scale = max((r.magnitude * weight for r in self._regions if r.joint == joint), default=0.0)
         return self._rng.gauss(0.0, scale) if scale > 0 else 0.0
 
 
@@ -219,9 +214,7 @@ class CorrectionMemory:
         best: tuple[float, Intent] | None = None
 
         for positions, correction in self.entries:
-            distance = math.sqrt(
-                sum((a - b) ** 2 for a, b in zip(positions, here, strict=False))
-            )
+            distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(positions, here, strict=False)))
             if best is None or distance < best[0]:
                 best = (distance, correction)
 
