@@ -207,3 +207,54 @@ Newest last. One line per push: track, what landed, and anything the other track
   not `ruff format` clean. **Before pushing, run `ruff check src tests` and
   `ruff format src tests`** — CI runs both and `ruff format --check` fails on formatting
   alone, with tests passing.
+- **A** — MuJoCo driver implemented (`4cc5978`). `reset`/`observe`/`apply`/`close` run
+  against the vendored arm with no hardware and no GPU. Three contract decisions differ
+  from the stub and are argued in the commit body: `dof` reports 5 rather than 6 (the jaw
+  is `Action.gripper`, not a degree of freedom), `accepts` drops `JOINT_VELOCITY` (the
+  model actuates through `<position>`, so a velocity setpoint drives nothing and would
+  pass `negotiate` only to move wrongly), and `has_force_sensing` stays False (no sensor
+  on this model).
+- **A — CI `lint and format` is red, and it is not the vendoring.** `ruff check src tests`
+  reports 18 in B-owned files — `services/curator.py` 10, `kernel/safety.py` 8, mostly
+  `B905` (`zip()` without `strict=`). `ruff format --check` wants 5 more files. A's
+  `drivers/mujoco.py` was among them and is fixed in `4cc5978`; the rest are B's to run
+  `ruff format` over. Flagging rather than fixing, per the ownership rule.
+- **A — two blockers found while wiring the driver up, both in B-owned files:**
+  1. `drivers/base.load()` does not import driver modules, so `available()` is empty until
+     something has already imported `tendon.drivers.mujoco`. `tendon run --driver mujoco`
+     will report "unknown driver" on a clean process. The docstring says modules are
+     imported lazily; nothing does it yet.
+  2. MuJoCo cannot open non-ASCII absolute paths on Windows, which this checkout has. The
+     driver works around it locally by loading from the scene's directory. Anything else
+     that hands MuJoCo, or a similarly byte-oriented C library, an absolute path will hit
+     the same wall — worth knowing before the recorder starts writing video.
+
+### A → B — what reading the rest of the stack turned up
+
+Surveyed LeRobot 0.6.2 (`4aaff99`) end to end, as the composition strategy asks. Four
+things change what we should build.
+
+1. **`policies/rtc/` is the two-clock problem, already solved and cited.** Real-Time
+   Chunking — Black, Galliker and Levine, arXiv 2506.07339, from Physical Intelligence's
+   openpi. It is not a policy but an inference-time technique for executing action chunks
+   under latency, and it ships `action_queue.py`, `action_interpolator.py` and
+   `latency_tracker.py`. That is the same machinery `kernel/scheduler.py` is described as
+   needing in `docs/architecture.md`. Worth reading before writing the scheduler rather
+   than after. Caveat: it applies to flow-matching policies (π0, π0.5, SmolVLA), and
+   `PreTrainedPolicy.supports_rtc` says whether a given policy qualifies.
+2. **PEFT is already wrapped.** `PreTrainedPolicy.wrap_with_peft()` is a single entry
+   point that freezes the base, builds the LoRA config and returns the adapted policy, and
+   `push_model_to_hub()` publishes it. `docs/stack.md` describes composing PEFT +
+   transformers + accelerate ourselves; most of `services/trainer.py` is a call into this.
+3. **GR00T N1.5 is not a future integration — `policies/groot/` exists now.** So do about
+   twenty policies, including `vla_jepa`. The table in `stack.md` is narrower than what
+   is actually available.
+4. **Rerun is integrated too.** `utils/rerun_visualization.py` gives `init_rerun()` and
+   `log_rerun_data()` over the control loop, with a Foxglove backend alongside it. The
+   shell can build on that rather than on the bare `rerun-sdk`.
+
+Two numbers the shell and the scheduler will both need: SmolVLA defaults to
+`chunk_size=50` and `n_action_steps=50`, which at the driver's 100Hz is exactly 0.5s of
+intent — matching the "0.5-1s" in `docs/architecture.md`. And it pads state and action to
+32 dimensions (`max_state_dim`, `max_action_dim`), so a 5-joint arm is padded, not
+truncated; whatever converts `Action` to a policy tensor has to know that.
