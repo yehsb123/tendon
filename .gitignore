@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node (shell/)
+node_modules/
+.vite/
+shell/dist/
+
+# tendon runtime state
+.tendon/
+episodes/
+checkpoints/
+*.safetensors
+*.ckpt
+outputs/
+wandb/
+mlruns/
+
+# Data — episodes are large; they live on the Hub, not in git
+*.parquet
+*.mp4
+*.hdf5
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+!.env.example

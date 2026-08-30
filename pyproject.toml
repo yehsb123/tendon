@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tendon-os"
+version = "0.1.0.dev0"
+description = "The operating layer for physical AI — every run becomes data, every human correction becomes a lesson."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "yehsb123" }]
+keywords = [
+    "physical-ai", "robotics", "vla", "human-in-the-loop",
+    "imitation-learning", "robot-learning", "lerobot",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Kernel only. Deliberately thin — heavy stacks are optional extras
+# so that `pip install tendon-os` stays fast and driver-agnostic.
+dependencies = [
+    "pydantic>=2.7",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "typer>=0.12",
+    "rich>=13.7",
+    "numpy>=1.26",
+    "duckdb>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+sim   = ["mujoco>=3.1", "gymnasium>=0.29"]
+robot = ["lerobot>=0.1"]
+train = ["torch>=2.3", "transformers>=4.44", "peft>=0.12", "accelerate>=0.33"]
+view  = ["rerun-sdk>=0.17"]
+dev   = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]
+all   = ["tendon-os[sim,robot,train,view]"]
+
+[project.scripts]
+tendon = "tendon.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/yehsb123/tendon"
+Source = "https://github.com/yehsb123/tendon"
+Issues = "https://github.com/yehsb123/tendon/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tendon"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
