@@ -37,7 +37,13 @@ dependencies = [
 
 [project.optional-dependencies]
 sim   = ["mujoco>=3.1", "gymnasium>=0.29"]
-# LeRobot 0.6.2 declares requires-python >=3.12, while tendon supports >=3.10. Pinning
+# 0.6.1 is the newest release on PyPI, and the bound said >=0.6.2 for months: a version
+# that does not exist, so `pip install -e ".[robot]"` could not succeed for anyone
+# starting from a clean environment. It went unnoticed because this machine already had
+# lerobot installed, so the command was never run clean, and because no CI job installed
+# this extra until one did and failed on the first try.
+#
+# LeRobot 0.6.1 declares requires-python >=3.12, while tendon supports >=3.10. Pinning
 # the lower bound makes that collision an explicit resolution failure on 3.10 and 3.11
 # instead of a silent downgrade to an ancient release that happens to allow 3.10 — which
 # would install, import, and then behave nothing like the documented API.
@@ -48,7 +54,7 @@ sim   = ["mujoco>=3.1", "gymnasium>=0.29"]
 # The [dataset] extra is required, not optional: LeRobotDataset needs it, and it
 # pins av>=15,<16. A bare install resolves av 18.x, which imports and then fails
 # with "module av has no attribute option" the first time a dataset is opened.
-robot = ["lerobot[dataset]>=0.6.2"]
+robot = ["lerobot[dataset]>=0.6.1"]
 train = ["torch>=2.3", "transformers>=4.44", "peft>=0.12", "accelerate>=0.33"]
 view  = ["rerun-sdk>=0.17"]
 dev   = [
