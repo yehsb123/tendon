@@ -187,6 +187,9 @@ tendon serve                               # http://127.0.0.1:8000
 얼마나 자주 물었는지를 어디에도 기록하지 않았고**, 그래서 일주일을 고쳐줘도 아무것도
 알 수 없었습니다.
 
+`tendon progress`가 터미널에 같은 선을 그립니다. **리그를 지켜본다는 건 보통 ssh
+세션이고**, 볼 값어치가 있는 단 하나가 브라우저를 요구하는 단 하나여서는 안 됩니다.
+
 셸 자체를 고칠 때는 dev 서버를 쓰세요. 수정하면 바로 반영되고 `/api`와 `/ws`를 런타임으로
 프록시합니다.
 
@@ -221,6 +224,7 @@ tendon doctor            여기서 뭐가 되고, 안 되는 것 각각의 대�
 tendon run <skill>       커널 위에서 정책을 바디에 실행하고 기록
 tendon eval <skill>      반복 실행하고 기록하고 결과를 보고
 tendon episodes          기록된 것 목록
+tendon progress          예전보다 덜 묻고 있는가
 tendon serve             런타임 API, 셸이 빌드돼 있으면 셸까지
 tendon shell             같은 것 + dev 서버 실행 방법 안내
 tendon curate <skill>    기록된 에피소드를 학습 가치 순으로 순위 매김

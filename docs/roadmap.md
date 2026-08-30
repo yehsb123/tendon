@@ -44,6 +44,22 @@ Interrupt protocol, correction recording, curation, nightly LoRA.
 That graph is the entire claim of this project. If it is flat, the loop does not close, and
 no amount of additional engineering fixes it.
 
+**Where it stands.** The line goes down, and the running system draws it. An operator
+corrects a motion in the shell; the correction reaches the policy, the episode's
+`interrupts` table and a memory that outlives both the episode and the process; and
+`Progress` — or `tendon progress` — plots the intervention rate against corrections taught.
+`tests/integration/test_shell_loop_closes.py` runs the same episodes twice, correcting in
+one arm and only approving in the other, so the fall is attributable to the teaching rather
+than to anything else. Curation ranks recorded episodes with its reasons, in the shell and
+on the command line.
+
+**What is not done.** The learner is instance-based: a correction is recalled when the body
+is near where it was given. That demonstrates the loop and it is not the *nightly LoRA* this
+milestone names — `services/trainer.py` exists and is not wired, and `tendon train` says so.
+Nor is confidence calibrated across skills (ADR 0003). So the graph is real and the
+mechanism behind it is the simplest one that could produce it, which is worth saying plainly
+rather than leaving somebody to discover.
+
 ## v0.4 — Bodies and packages  *(~6 weeks)*
 
 SO-101 driver, skill package format, install, fork, publish.

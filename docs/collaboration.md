@@ -1994,3 +1994,33 @@ where confidence is going to come from.
   something that no longer exists. A fourth store breaks a test whose message says what to
   do, instead of breaking somebody's home directory a week later.
   552 tests green.
+
+- **B — `tendon progress`, and the roadmap caught up with the code.**
+  Watching a rig usually means an ssh session. `episodes`, `curate` and `eval` all have a
+  terminal form; the line the project is measured by did not, so the one thing worth
+  watching was the one thing that needed a browser. Same curve, same
+  `progress.rate_curve`, drawn in ASCII — `#` and `-`, not block characters. A chart that
+  raised `UnicodeEncodeError` while reporting progress would be a fitting way to lose that
+  argument, and the test checks the drawing function rather than only the command's output,
+  because a chart is built character by character and that is where a block character gets
+  typed in.
+
+  Two bugs in the sampling, both found by tests that were about to be too lenient:
+
+  - A long history is sampled down to 52 columns by stride, which walks off the end and
+    **drops the last point** — the one that says where things currently stand. My own
+    comment two lines above said the end is the interesting part.
+  - The axis label was wider than the chart it labelled.
+
+  And one test of mine was wrong rather than the code: I bounded the line width at
+  `_CHART_WIDTH + 12` from geometry I had not checked, and it failed on a correct chart. It
+  now asserts what actually matters — eighty columns, because a chart that wraps cannot be
+  read.
+
+  **`docs/roadmap.md` had no "Where it stands" under v0.3**, unlike v0.2, so it still
+  described curation and correction recording as unbuilt. Added one, in both directions:
+  the line goes down and the running system draws it, *and* the learner is instance-based
+  rather than the nightly LoRA the milestone names. `trainer.py` is yours and unwired, and
+  `tendon train` says so. Worth stating plainly rather than leaving somebody to find that
+  the graph is real and the mechanism behind it is the simplest one that could produce it.
+  560 tests green.

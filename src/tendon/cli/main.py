@@ -478,6 +478,99 @@ def shell(
     serve(port=port, host="127.0.0.1", skills_dir=skills_dir)
 
 
+#: Rate levels the terminal chart draws, top to bottom. Eight rows: enough to read a fall
+#: at a glance, short enough to sit above a prompt without scrolling.
+_CHART_ROWS = (1.0, 0.875, 0.75, 0.625, 0.5, 0.375, 0.25, 0.125)
+
+#: Widest the chart gets. Points are sampled down to this rather than truncated, so a long
+#: history still shows its whole shape.
+_CHART_WIDTH = 52
+
+
+def _chart(points: tuple[tuple[int, float], ...]) -> list[str]:
+    """The curve, in ASCII.
+
+    ASCII rather than block characters. `tests/unit/test_console_output.py` exists because
+    this project keeps crashing on a cp949 console, and a chart that raises
+    `UnicodeEncodeError` while reporting progress would be a fitting way to lose the
+    argument. The README draws the same shape with block characters, which is fine: markdown
+    is not a terminal.
+    """
+    if not points:
+        return []
+
+    if len(points) > _CHART_WIDTH:
+        # Sampled, not truncated: the interesting part of this line is usually the end,
+        # and showing the first 52 points of a long history would hide exactly that.
+        #
+        # Spread across the whole range rather than stepping by a fixed stride. A stride
+        # walks off the end and drops the last point, which is the one that says where
+        # things currently stand — the first version of this did precisely that.
+        last = len(points) - 1
+        points = tuple(points[round(i * last / (_CHART_WIDTH - 1))] for i in range(_CHART_WIDTH))
+
+    width = len(points)
+    lines = []
+    for level in _CHART_ROWS:
+        bar = "".join("#" if rate >= level else " " for _, rate in points)
+        lines.append(f"{level:>4.0%} |{bar}")
+
+    lines.append("     +" + "-" * width)
+
+    # The two ends of the x-axis, padded to the chart's own width so the label cannot grow
+    # wider than the thing it labels.
+    start, end = str(points[0][0]), str(points[-1][0])
+    gap = max(1, width - len(start) - len(end))
+    lines.append(f"      {start}{' ' * gap}{end} corrections")
+    return lines
+
+
+@app.command()
+def progress(
+    window: int = typer.Option(10, help="Episodes the intervention rate is measured over"),
+    store: str = typer.Option("", help="Where progress lives. Defaults to ~/.tendon/progress"),
+) -> None:
+    """Is it asking less often than it used to.
+
+    The graph `docs/roadmap.md` measures v0.3 by, for somebody who is not sitting in front
+    of the shell. Watching a rig usually means an ssh session, and a line that only exists
+    in a browser is a line that person does not have.
+
+    Blank until a full window of episodes exists. A rate over three episodes is not a rate,
+    and drawing one invites reading a trend off noise.
+    """
+    console = Console()
+
+    from tendon.services.progress import DEFAULT_PROGRESS_ROOT, logs, rate_curve
+
+    root = Path(store) if store else DEFAULT_PROGRESS_ROOT
+    found = logs(root)
+
+    if not found:
+        console.print(f"[dim]nothing has run yet under {escape(str(root))}[/dim]")
+        console.print("[dim]start an episode from the shell: tendon serve[/dim]")
+        raise typer.Exit(code=1)
+
+    for skill, body, records in found:
+        console.print(
+            f"[dim]{escape(skill)} on {escape(body)} - "
+            f"{len(records)} episodes, {records[-1].corrections_known} corrections[/dim]"
+        )
+
+        curve = rate_curve(records, window=window)
+        if not curve:
+            console.print(
+                f"[yellow]not enough yet[/yellow] [dim]- the rate is measured over "
+                f"{window} episodes and there are {len(records)}[/dim]"
+            )
+        else:
+            console.print()
+            for line in _chart(curve):
+                console.print(f"[dim]{escape(line)}[/dim]")
+            console.print(f"[dim]  intervention rate over a trailing {window} episodes[/dim]")
+        console.print()
+
+
 @app.command()
 def episodes(
     store: str = typer.Option("", help="Where episodes live. Defaults to ~/.tendon/episodes"),

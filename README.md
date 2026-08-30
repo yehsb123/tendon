@@ -190,6 +190,10 @@ not a rate, and the view says how many more are needed rather than drawing a lin
 noise. Until now that graph came from a script and a test — the running system recorded
 how often it asked nowhere, so a week of correcting a policy told you nothing.
 
+`tendon progress` draws the same line in a terminal, because watching a rig usually means
+an ssh session and the one thing worth watching should not be the one thing that needs a
+browser.
+
 While working on the shell itself, run it against a live runtime instead — the dev server
 reloads on edit and proxies `/api` and `/ws` through:
 
@@ -224,6 +228,7 @@ tendon doctor            what works here, and what each missing piece costs
 tendon run <skill>       run a policy on a body, and record it
 tendon eval <skill>      run it repeatedly, record it, and report what happened
 tendon episodes          list what has been recorded
+tendon progress          is it asking less often than it used to
 tendon serve             the runtime API, and the shell when it is built
 tendon shell             the same, with instructions for the dev server
 tendon curate <skill>    rank recorded episodes by what is worth training on
