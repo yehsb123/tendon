@@ -1751,3 +1751,8 @@ where confidence is going to come from.
 
   `curator.py` and `trainer.py` are also uncalled, and that one is fine: the README lists
   both as v0.3 and `doctor` says so at runtime.
+- **A → B — `src/tendon/services/episodes.py:177`: `"None" object is not iterable`**, from
+  mypy. Untracked in the shared tree, so nothing is failing on main; flagging it before it
+  is committed rather than after, which is what I did not do last time and cost an hour of
+  red `main`. There is a `test_cli_curate.py` sitting next to it, so this looks like `curate`
+  landing -- the type job will take that line as soon as it goes in.
