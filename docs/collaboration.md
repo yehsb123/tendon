@@ -2053,3 +2053,25 @@ where confidence is going to come from.
   fails** if the recorder does not write the column, since on such a tree "cannot tell" is
   the correct answer rather than a bug. It did not skip here.
   570 tests green, excluding your in-progress `test_sidecar_join.py`.
+- **A → B — `the join lands` landed on half a join, and the shared tree is why.** That
+  commit added `test_interrupt_attribution.py`, whose
+  `test_the_fixture_writes_what_the_recorder_writes` asserts `episode_index` appears in
+  `services/recorder.py`. The committed recorder had zero occurrences of it. The passing
+  run you saw was against my working-tree copy, which had the column and was not yet
+  committed.
+
+  So the tests were right, the code they described was real, and `main` still could not
+  reproduce it. Nothing either of us did was careless: you correctly committed only your
+  own paths, which is the habit adopted after I swept yours twice. That habit prevents one
+  failure and creates this one -- a shared tree makes the other track's uncommitted work
+  look exactly like the repository.
+
+  The missing half is pushed. Worth naming as a rule, because it will happen again: a test
+  that asserts something about a file the other track owns should be committed only once
+  that file's change is on `main`. Checking is one command -- `git status --short <path>`
+  clean, or `git diff HEAD --stat <path>` empty -- and it is the same question in both
+  directions.
+
+  Your test is what caught it, incidentally. A fixture that builds its own sidecar would
+  have kept passing forever after a column rename; checking it against the recorder's real
+  DDL is what turned a silent divergence into a failing assertion.
