@@ -28,8 +28,12 @@ from tendon.kernel.types import (
     Confidence,
     ConfidenceSource,
     Intent,
+    InterruptContext,
+    InterruptReason,
+    InterruptResolution,
     Observation,
     Proprioception,
+    Resolution,
 )
 
 rerun = pytest.importorskip("rerun", reason="viz needs the view extra")
@@ -106,8 +110,8 @@ def test_a_step_reaches_the_logger_through_the_bus(logger) -> None:
     bus.handlers["rerun"](make_step(3))
 
 
-def test_intent_and_interrupt_logging_do_not_raise(logger) -> None:
-    intent = Intent(
+def make_intent() -> Intent:
+    return Intent(
         horizon_s=0.5,
         actions=(Action(space=ActionSpace.JOINT_POSITION, values=[0.0] * DOF),),
         confidence=Confidence(
@@ -117,7 +121,61 @@ def test_intent_and_interrupt_logging_do_not_raise(logger) -> None:
         ),
         goal="pick up the cube",
     )
-    logger.log_intent(intent, step=10)
+
+
+def make_interrupt(
+    reason: InterruptReason = InterruptReason.LOW_CONFIDENCE, step: int = 12
+) -> InterruptContext:
+    return InterruptContext(
+        episode_id="ep-0",
+        step=step,
+        reason=reason,
+        intent=make_intent(),
+        observation=Observation(
+            step=step, proprio=Proprioception(joint_positions=[0.0] * DOF)
+        ),
+    )
+
+
+def test_logging_an_intent_does_not_raise(logger) -> None:
+    logger.log_intent(make_intent(), step=10)
+
+
+@pytest.mark.parametrize("reason", list(InterruptReason))
+@pytest.mark.parametrize("resolution", list(Resolution))
+def test_every_handover_can_be_logged(logger, reason, resolution) -> None:
+    """Every reason a run can stop, against every way an operator can answer.
+
+    Design decision 2 says an intervention is an interrupt rather than an exception, and
+    the pair here is the whole event. A combination the logger could not render would
+    lose the one moment in an episode worth looking at, and would lose it by raising
+    inside the subscriber that was supposed to be watching.
+    """
+    logger.log_interrupt(make_interrupt(reason), InterruptResolution(resolution=resolution), step=12)
+
+
+def test_the_operator_note_survives_into_the_log(logger) -> None:
+    """The words are the reason the correction happened, and nothing else records them.
+
+    A joint trajectory shows that the arm moved somewhere else. It does not show that a
+    person said to approach from the left, which is the part a later reader needs.
+    """
+    logger.log_interrupt(
+        make_interrupt(),
+        InterruptResolution(resolution=Resolution.CORRECTED, note="approach from the left"),
+        step=12,
+    )
+
+
+def test_a_closed_logger_ignores_further_handovers(logger) -> None:
+    """Same reason steps are dropped: closing is not an error state.
+
+    An interrupt arriving during teardown must not turn a completed episode into a
+    subscriber failure.
+    """
+    logger.close()
+    logger.log_interrupt(make_interrupt(), InterruptResolution(resolution=Resolution.ABORTED), step=12)
+    logger.log_intent(make_intent(), step=13)
 
 
 def test_a_closed_logger_ignores_further_steps(logger) -> None:
