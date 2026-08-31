@@ -227,9 +227,14 @@ def coerce_driver_arguments(name: str, kwargs: dict[str, object]) -> dict[str, o
     available()
 
     try:
-        driver = driver_base._REGISTRY[name]
-        hints = typing.get_type_hints(driver.__init__)
-        parameters = inspect.signature(driver).parameters
+        # Typed loose deliberately. This is a class object out of the registry, and reading
+        # `__init__` off it is exactly what `get_type_hints` needs, but mypy sees the
+        # `type[Driver]` annotation and warns that an instance could rebind `__init__`.
+        # It cannot here, and narrowing the registry's type to say so would be a larger
+        # claim than this one call is worth.
+        driver_cls: typing.Any = driver_base._REGISTRY[name]
+        hints = typing.get_type_hints(driver_cls.__init__)
+        parameters = inspect.signature(driver_cls).parameters
     except Exception:
         # A driver whose annotations do not resolve is not a reason to refuse to open it.
         # Strings are what the caller typed and what this function was handed.
