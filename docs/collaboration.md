@@ -2759,6 +2759,31 @@ where confidence is going to come from.
   which made it a test of the machine. It now passes without the extra, and asserts the
   ordering directly — `--driver absent` in the output means the body was consulted first.
   752 tests green.
+- **B — the same rule at the other end of `tendon train`, where it costs the most.**
+  `Trainer.fine_tune` creates the output directory *after* the training loop. That is the
+  right place for the mkdir and the worst possible place to discover it cannot happen: a
+  path that is a file, a directory without permission, a disk with nothing left — and the
+  entire run is gone, for a 700KB write. A night on a GPU, then nothing.
+
+  `train` now proves the destination is writable before it starts, by writing and removing
+  a probe rather than inspecting permission bits: permission is not the only reason a write
+  fails, and the only reliable test of a write is a write. The directory is left in place,
+  because `fine_tune` creates it anyway and removing it to put it back seconds later would
+  only add a way for the two to disagree.
+
+  This is the third instance of one rule in three days — the body opened before the policy
+  name was read, the checkpoint loaded before the store was looked at, and now this. The
+  general form is worth naming: **whatever is cheap to check and expensive to discover goes
+  first**, and "expensive" means the thing you cannot get back, not the thing that takes
+  longest.
+
+  Checked and clear: `--view-save` opens its `.rrd` at construction, before the episode,
+  and creates missing parents. `curate` is read-only. `eval` writes per episode.
+
+  `e1eda50` landed while this ran — the SO-101 tests are the answer to the thing
+  `SECURITY.md` has said all along, that nothing has been verified against a real body.
+  Verifying the driver without the arm is the honest half of that and it is a lot of it.
+  771 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

@@ -6,6 +6,7 @@ against the MuJoCo driver with no hardware attached.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import typer
@@ -1012,6 +1013,38 @@ def curate(
         )
 
 
+def _ensure_writable(console: Console, destination: Path) -> None:
+    """Prove the adapter can be written before spending a night producing it.
+
+    `Trainer.fine_tune` creates the output directory after the training loop, which is the
+    correct place for it to happen and the worst possible place to *discover* it cannot.
+    A path that is a file, a directory without permission, or a disk with nothing left on
+    it costs the entire run and yields nothing — for a 700KB write.
+
+    Same rule as refusing a `--policy` name before opening a body, at the other end of the
+    command and with far more at stake: the question "can this be written" is answerable
+    now, and answering it later throws away work that cannot be recovered.
+
+    Writes and removes a probe rather than inspecting permission bits, because permission
+    is not the only reason a write fails and the only reliable test of a write is a write.
+    """
+    probe = destination / ".tendon-write-test"
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+        probe.write_bytes(b"")
+    except OSError as exc:
+        console.print(f"[red]cannot write the adapter to {escape(str(destination))}: {exc}[/red]")
+        console.print("[dim]pass --out somewhere writable. Checked now rather than after[/dim]")
+        console.print("[dim]the run, because a finished run that cannot be saved is lost.[/dim]")
+        raise typer.Exit(code=1) from exc
+    finally:
+        # The directory is left in place. It is where the adapter is about to go, and
+        # `fine_tune` would create it anyway; removing it here to put it back seconds later
+        # would only add a way for the two to disagree.
+        with contextlib.suppress(OSError):
+            probe.unlink()
+
+
 def _recorded_streams(directory: Path) -> list[str] | None:
     """Feature names in a LeRobot store, or None when they cannot be read.
 
@@ -1130,6 +1163,7 @@ def train(
 
     destination = Path(out) if out else DEFAULT_ROOT.parent / "adapters"
     destination = destination / loaded.ref.replace("/", "__")
+    _ensure_writable(console, destination)
 
     trainer = Trainer(root=root, repo_id=loaded.ref)
     try:

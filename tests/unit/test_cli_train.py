@@ -191,6 +191,68 @@ def _store_with(directory: Path, features: list[str]) -> Path:
     return directory
 
 
+class _NeverRuns(_Recorded):
+    """Records that `fine_tune` was reached, which for these tests it should not be."""
+
+    reached = False
+
+    def fine_tune(self, skill: str, episodes: list[int], **kwargs: Any) -> Any:
+        _NeverRuns.reached = True
+        return super().fine_tune(skill, episodes, **kwargs)
+
+
+def test_an_unwritable_output_is_refused_before_the_run_not_after(
+    skill_dir: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """`Trainer.fine_tune` creates the output directory after the training loop. That is
+    the right place for it to happen and the worst place to discover it cannot: a night on
+    a GPU, then nothing, because 700KB could not be written.
+
+    Same rule as refusing a `--policy` name before opening a body, with far more at stake.
+    """
+    import tendon.services.trainer as trainer_module
+
+    _NeverRuns.reached = False
+    monkeypatch.setattr(trainer_module, "Trainer", _NeverRuns)
+    monkeypatch.setattr(
+        "tendon.services.episodes.rank_episodes",
+        lambda directory, limit=None: _ranking([("0", [])]),
+    )
+
+    # A file where a directory has to go. `destination` is `<out>/<skill ref>`, so creating
+    # it has to fail whatever the platform calls that.
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("", encoding="utf-8")
+
+    result = RUNNER.invoke(app, ["train", str(skill_dir / "skill.yaml"), "--out", str(blocked)])
+
+    assert result.exit_code == 1
+    assert "cannot write the adapter" in result.output
+    assert "--out" in result.output, "the way out should be in the message"
+    assert not _NeverRuns.reached, "training started against an output that cannot be written"
+
+
+def test_a_writable_output_is_left_ready(skill_dir: Path, tmp_path: Path, monkeypatch) -> None:
+    """The probe is removed; the directory is not. It is where the adapter is about to go
+    and `fine_tune` creates it anyway, so removing it to put it back seconds later would
+    only add a way for the two to disagree."""
+    import tendon.services.trainer as trainer_module
+
+    monkeypatch.setattr(trainer_module, "Trainer", _Recorded)
+    monkeypatch.setattr(
+        "tendon.services.episodes.rank_episodes",
+        lambda directory, limit=None: _ranking([("0", [])]),
+    )
+
+    out = tmp_path / "adapters"
+    result = RUNNER.invoke(app, ["train", str(skill_dir / "skill.yaml"), "--out", str(out)])
+
+    assert result.exit_code == 0, result.output
+    destination = out / "grasp__cube-sim"
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == [], "the write probe was left behind"
+
+
 def test_a_store_with_no_video_says_so_before_a_checkpoint_is_loaded(
     skill_dir: Path, tmp_path: Path, monkeypatch
 ) -> None:
