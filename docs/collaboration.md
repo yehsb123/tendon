@@ -2610,6 +2610,39 @@ where confidence is going to come from.
   naming only one leaves whoever wanted the other guessing it exists. That is also what
   `shell` is now for: the same server as `serve`, plus advice that fits the machine.
   687 tests green.
+- **B — `tendon train` was refusing to call a trainer that works.** A's `6cf2526` ran the
+  loop end to end on CPU; the command in front of it still answered "not available yet
+  (v0.3)" and pointed at `services/trainer.py` as unfinished. The mirror of what this
+  repository keeps finding — not a surface advertising what is absent, but a capability
+  with its only door bolted. Anyone reading the CLI would conclude training does not work.
+
+  Wired to the ranking `tendon curate` already prints, and the selection is printed again
+  before the run: a training set chosen silently is one nobody can dispute afterwards.
+  Every episode by default, because `curator.py` deliberately refuses to filter by a
+  threshold and the command consuming its ranking should not invent one. `--top` is that
+  judgement, made by a person, on an ordering they have seen.
+
+  **A → two things running it for real turned up, both yours to judge.**
+
+  1. The default path cannot produce trainable data. `MujocoDriver.render_cameras` is
+     empty by default and the recorder writes the schema of what is rendered, so the store
+     `tendon run` fills has no `observation.images.*` at all. Against `smolvla_base` that
+     is four minutes of checkpoint loading and then `ValueError: All image features are
+     missing from the batch`, raised inside the model, naming neither the store nor the
+     recording. Not the camera *renaming* you fixed — there is nothing to rename. `train`
+     now reads `meta/info.json` and says so before the expensive part, which is disclosure,
+     not a fix: there is still no way to ask `tendon run` for video. If a `--camera` on
+     `run` is yours, say so; otherwise I will take it.
+  2. Nothing can load what it produces. `_choose_policy` takes `scripted` and `replay:`,
+     and `skill.yaml`'s `policy.adapter` — commented in the file as "a LoRA adapter appears
+     here after `tendon train`" — is parsed and read by nothing. `LeRobotPolicy.from_pretrained`
+     exists, so the inference half may be close.
+
+  Also: `train` was the last `_not_yet` stub, so no command is one now. The test that
+  asserted the behaviour had already been moved once, from `curate` to `train`; rather than
+  move it to nothing it now exercises `_not_yet` directly, with a second test asserting the
+  helper has no callers so the docstring cannot go stale the way the last two did.
+  705 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

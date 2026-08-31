@@ -842,19 +842,163 @@ def curate(
         )
 
 
-@app.command()
-def train(skill: str) -> None:
-    """[v0.3] LoRA fine-tune on curated data.
+def _recorded_streams(directory: Path) -> list[str] | None:
+    """Feature names in a LeRobot store, or None when they cannot be read.
 
-    Not available yet, and no longer for the reason this used to give. `tendon curate`
-    now ranks real episodes, so the thing it was waiting on is done.
+    `meta/info.json` and nothing else: this runs before the decision to spend minutes on a
+    checkpoint, so it must not need torch, LeRobot, or a single frame off disk.
+
+    None rather than an empty list when the file is missing or unreadable, because "this
+    store records no cameras" and "I could not tell" lead a reader to opposite conclusions,
+    and the second one is not worth a warning.
     """
-    _not_yet(
-        "train",
-        "v0.3",
-        "tendon curate now ranks recorded episodes, so what to train on can be chosen. "
-        "services/trainer.py is Track A work (PEFT, transformers); see "
-        "docs/collaboration.md.",
+    import json
+
+    try:
+        info = json.loads((directory / "meta" / "info.json").read_text(encoding="utf-8"))
+        return list(info["features"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+@app.command()
+def train(
+    skill: str,
+    store: str = typer.Option("", help="Where episodes live. Defaults to ~/.tendon/episodes"),
+    out: str = typer.Option(
+        "", help="Where the adapter is written. Defaults to ~/.tendon/adapters"
+    ),
+    top: int = typer.Option(0, help="Train on the best N of the ranking. Default uses all of it."),
+    base: str = typer.Option("", help="Override the skill's policy.base"),
+    steps: int = typer.Option(2000, help="Optimiser steps. A budget, not a convergence test."),
+    batch_size: int = typer.Option(8, help="Frames per step"),
+    lora_rank: int = typer.Option(16, help="Adapter rank"),
+) -> None:
+    """LoRA fine-tune a skill's base policy on its curated episodes.
+
+    The selection comes from the same ranking `tendon curate` prints, so what gets trained
+    on is what you can already inspect. It is printed again here before the run starts,
+    because a training set chosen silently is one nobody can dispute afterwards.
+
+    Every episode by default. `services/curator.py` deliberately never filters by a
+    threshold, because an automated curator that is wrong about an episode is wrong about
+    it permanently, so the command that consumes its ranking does not invent one either.
+    `--top` is that judgement, made by a person, on an ordering they have seen.
+
+    Needs the `robot` and `train` extras and, realistically, a GPU.
+    """
+    console = Console()
+
+    from tendon.services.episodes import EpisodeReadError, rank_episodes
+    from tendon.services.skill import SkillError, load_skill
+    from tendon.services.store import DEFAULT_ROOT
+    from tendon.services.trainer import Trainer, TrainerError
+
+    try:
+        loaded = load_skill(skill)
+    except SkillError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    base_policy = base or loaded.policy_base
+    if not base_policy:
+        # A skill is allowed to have no base policy - that is how a scripted baseline runs
+        # without weights. There is simply nothing to adapt, and saying so beats letting
+        # `fine_tune` fail on an empty Hub id further in.
+        console.print(f"[red]{escape(loaded.ref)} declares no policy.base to fine-tune[/red]")
+        console.print("[dim]add policy.base to skill.yaml, or pass --base <hub id>[/dim]")
+        raise typer.Exit(code=1)
+
+    root = Path(store) if store else DEFAULT_ROOT
+    directory = root / loaded.ref.replace("/", "__")
+
+    try:
+        ranking = rank_episodes(directory, limit=top or None)
+    except EpisodeReadError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print(f"[dim]record some first: tendon run {escape(loaded.ref)}[/dim]")
+        raise typer.Exit(code=1) from exc
+
+    if not ranking.scored:
+        console.print(f"[dim]nothing recorded for {escape(loaded.ref)} under {escape(str(root))}")
+        raise typer.Exit(code=1)
+
+    # `episode_id` is `episode_index` as a string; LeRobot's subset filter wants integers.
+    selection = [int(entry.episode_id) for entry in ranking.scored]
+
+    console.print(f"[bold]{escape(loaded.ref)}[/bold] on {escape(base_policy)}")
+    console.print(f"[dim]{len(selection)} episodes, best first: {selection}[/dim]")
+    if not ranking.interrupts_known:
+        console.print(
+            "[yellow]note:[/yellow] this store cannot say which episodes were interrupted, "
+            "so none were promoted. The ordering is weaker than it looks."
+        )
+
+    # What the recordings actually contain, before a checkpoint is fetched and loaded.
+    # Running this for real against the store `tendon run` had filled took four minutes to
+    # reach `ValueError: All image features are missing from the batch`, raised inside the
+    # model — which names neither the store nor the recording that produced it.
+    #
+    # The cause is not a defect in either: `MujocoDriver.render_cameras` is empty by
+    # default because rendering costs milliseconds per frame, and the recorder writes the
+    # schema of what is rendered. So the default path records no video, and a
+    # vision-language-action policy cannot be trained on it. Stated rather than refused —
+    # this reads `meta/info.json` and cannot know what any given base policy consumes, and
+    # a state-only policy trains on exactly this data.
+    streams = _recorded_streams(directory)
+    if streams is not None:
+        cameras = [name for name in streams if name.startswith("observation.images.")]
+        if cameras:
+            console.print(f"[dim]camera streams: {', '.join(sorted(cameras))}[/dim]")
+        else:
+            console.print(
+                "[yellow]no camera streams in these recordings.[/yellow] [dim]`tendon run` "
+                "renders none by default, so a policy that expects images will fail once "
+                "the checkpoint has loaded, not now.[/dim]"
+            )
+    console.print()
+
+    destination = Path(out) if out else DEFAULT_ROOT.parent / "adapters"
+    destination = destination / loaded.ref.replace("/", "__")
+
+    trainer = Trainer(root=root, repo_id=loaded.ref)
+    try:
+        result = trainer.fine_tune(
+            loaded.ref,
+            selection,
+            base_policy=base_policy,
+            output_dir=destination,
+            steps=steps,
+            batch_size=batch_size,
+            lora_rank=lora_rank,
+        )
+    except TrainerError as exc:
+        # Every failure inside `fine_tune` already names what to do about it - a missing
+        # extra, a policy with no LoRA targets, a selection with no frames. Printing it is
+        # the whole handling; a traceback on top would only bury it.
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[green]adapter written to {escape(str(result.adapter_path))}[/green]")
+    console.print(
+        f"[dim]{result.frames} frames, {result.steps} steps, final loss {result.final_loss:.4f}"
+        f"[/dim]"
+    )
+    # The fraction, not the raw count: "4.2M trainable" reads as a large number either way,
+    # while 1.2% of the model is immediately either an adapter or a mistake.
+    console.print(
+        f"[dim]trained {result.trainable_fraction:.2%} of the model "
+        f"({result.trainable_parameters:,} of {result.total_parameters:,})[/dim]"
+    )
+    # Not "try it: tendon run --policy adapter". There is no such policy: `_choose_policy`
+    # takes `scripted` and `replay:` and nothing else, and `skill.yaml`'s `policy.adapter`
+    # is parsed and read by nothing. So this command can now produce an adapter that
+    # nothing in the project can load, and saying so is better than a suggestion that
+    # exits 1 the moment somebody follows it.
+    console.print(
+        "[yellow]nothing can load this adapter yet.[/yellow] [dim]`tendon run` accepts "
+        "scripted and replay: only, and the policy.adapter field skill.yaml reserves for "
+        "it is parsed and read by nothing. See docs/collaboration.md.[/dim]"
     )
 
 

@@ -162,16 +162,48 @@ def test_an_unavailable_command_explains_rather_than_tracebacks() -> None:
     They asked what the command does. The useful answer is when it will do it and what is
     already there.
 
-    Was written against `curate`, which now works. Moved to `train` rather than deleted:
-    the property is about how a stub behaves, and there is still a stub.
+    Written against `curate`, then moved to `train`, and now against neither: `train` was
+    the last stub and it runs. No command calls `_not_yet` any more.
+
+    So this tests the helper directly. Deleting it with the last stub would mean the next
+    person to add one writes `raise NotImplementedError`, which is exactly the shape this
+    was written to prevent — and a rule with no instance left is the easiest kind to lose.
+    Pairs with `test_every_command_either_runs_or_says_why_not`, which is what notices a
+    stub arriving without it.
     """
-    result = runner.invoke(app, ["train", "grasp/cube-sim"])
+    import typer
+
+    from tendon.cli.main import _not_yet
+
+    stub = typer.Typer()
+
+    @stub.command()
+    def later() -> None:
+        _not_yet("later", "v0.9", "the thing it waits on, and what already exists")
+
+    result = runner.invoke(stub, [])
 
     assert result.exit_code == 1
     assert "not available yet" in result.output
-    assert "v0.3" in result.output
+    assert "v0.9" in result.output
+    assert "the thing it waits on" in result.output
     assert "Traceback" not in result.output
     assert "NotImplementedError" not in result.output
+
+
+def test_no_command_is_a_stub_any_more() -> None:
+    """The state the test above is describing, asserted rather than left in a docstring to
+    go stale — that is how the previous two versions of it ended up naming commands that
+    had started working."""
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[2] / "src" / "tendon" / "cli" / "main.py"
+    body = source.read_text(encoding="utf-8")
+
+    assert body.count("_not_yet(") == 1, (
+        "a command calls _not_yet again; point the test above at it, since a real stub is "
+        "a better guard than a synthetic one"
+    )
 
 
 def test_every_command_either_runs_or_says_why_not() -> None:

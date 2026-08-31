@@ -241,7 +241,7 @@ tendon progress          예전보다 덜 묻고 있는가
 tendon serve             런타임 API, 셸이 빌드돼 있으면 셸까지
 tendon shell             같은 것 + 지금 이 자리에서 여는 방법 안내
 tendon curate <skill>    기록된 에피소드를 학습 가치 순으로 순위 매김
-tendon train <skill>     v0.3 — 아직 안 됨, 그렇다고 말함
+tendon train <skill>     큐레이션된 에피소드로 베이스 정책을 LoRA 파인튜닝
 ```
 
 스킬은 프로젝트의 다른 모든 곳과 같은 이름으로 부릅니다 — `tendon run grasp/cube-sim`.

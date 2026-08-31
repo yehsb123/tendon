@@ -55,10 +55,13 @@ on the command line.
 
 **What is not done.** The learner is instance-based: a correction is recalled when the body
 is near where it was given. That demonstrates the loop and it is not the *nightly LoRA* this
-milestone names — `services/trainer.py` exists and is not wired, and `tendon train` says so.
-Nor is confidence calibrated across skills (ADR 0003). So the graph is real and the
-mechanism behind it is the simplest one that could produce it, which is worth saying plainly
-rather than leaving somebody to discover.
+milestone names. `services/trainer.py` is now wired to `tendon train` and produces an
+adapter, so the missing half is no longer the training: it is that nothing can load the
+result. `tendon run --policy` takes `scripted` and `replay:`, and the `policy.adapter` field
+`skill.yaml` reserves — commented there as the place an adapter appears after `tendon
+train` — is parsed and read by nothing. Nor is confidence calibrated across skills (ADR
+0003). So the graph is real and the mechanism behind it is the simplest one that could
+produce it, which is worth saying plainly rather than leaving somebody to discover.
 
 ## v0.4 — Bodies and packages  *(~6 weeks)*
 
