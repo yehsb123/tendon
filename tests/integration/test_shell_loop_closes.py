@@ -42,6 +42,12 @@ pytest.importorskip("lerobot", reason="needs the recording extra: pip install -e
 
 from tendon.api.app import create_app  # noqa: E402
 
+#: Sessions here run without a recorder: this file's subject is
+#: the fall in the intervention rate, counted from interrupts rather than from writes.
+#: A LeRobotDataset costs about thirteen seconds an episode and nothing below
+#: asserts anything about one (tests/integration/conftest.py).
+pytestmark = pytest.mark.usefixtures("no_recorder")
+
 REPO = Path(__file__).resolve().parents[2]
 
 #: Short enough to keep this affordable, long enough that the sweep reaches the uncertain

@@ -30,6 +30,12 @@ pytest.importorskip("mujoco", reason="needs the sim extra: pip install -e '.[sim
 pytest.importorskip("lerobot", reason="needs the recording extra: pip install -e '.[robot]'")
 
 from tendon.api.app import create_app  # noqa: E402
+
+#: Sessions here run without a recorder: this file's subject is
+#: the progress log, which is its own file and not part of a dataset.
+#: A LeRobotDataset costs about thirteen seconds an episode and nothing below
+#: asserts anything about one (tests/integration/conftest.py).
+pytestmark = pytest.mark.usefixtures("no_recorder")
 from tendon.services.progress import EpisodeRecord, append, history, rate_curve  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]

@@ -31,6 +31,12 @@ from fastapi.testclient import TestClient
 pytest.importorskip("mujoco", reason="needs the sim extra: pip install -e '.[sim]'")
 
 from tendon.api.app import create_app  # noqa: E402
+
+#: Sessions here run without a recorder: this file's subject is
+#: the body being given back, which happens whether or not anything was recorded.
+#: A LeRobotDataset costs about thirteen seconds an episode and nothing below
+#: asserts anything about one (tests/integration/conftest.py).
+pytestmark = pytest.mark.usefixtures("no_recorder")
 from tendon.api.session import EpisodeSession  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]

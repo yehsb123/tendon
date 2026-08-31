@@ -37,6 +37,23 @@ from tendon.api.session import EpisodeSession  # noqa: E402
 REPO = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(autouse=True)
+def _no_recorder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the disconnect, not about recording.
+
+    Opening and closing a LeRobotDataset costs about thirteen seconds per episode here, and
+    it dominated the whole suite: one test in this file took 23.6 seconds against 71 for the
+    other 673. Measured with and without — 13.46s versus 0.27s for the identical flow — so
+    the cost is entirely the dataset, and none of it is the behaviour under test.
+
+    That an episode from the shell *is* recorded is `test_shell_session.py`'s subject, and
+    it pays the cost once there rather than in every file that happens to start a session.
+    """
+    import tendon.api.app as app_module
+
+    monkeypatch.setattr(app_module, "_open_recorder", lambda loaded, root: None)
+
+
 def app_at(tmp_path: Path):
     return create_app(
         skill_root=REPO / "skills",

@@ -2538,6 +2538,30 @@ where confidence is going to come from.
 
   Three consecutive green runs at 20s afterwards.
   674 tests green.
+
+- **B — five test files were paying thirteen seconds an episode for recording none of them
+  asserts anything about.** Chasing last round's timing further with `--durations`: one test
+  took 23.6 seconds against 71 for the other 673, and four more files sat at about twenty
+  seconds each.
+
+  Measured rather than assumed. The identical session flow takes **13.46s with a recorder
+  and 0.27s without** — the cost is entirely LeRobotDataset creation and finalisation, and
+  the disconnect this file tests happens at step 0 either way.
+
+  A shared `no_recorder` fixture in `tests/integration/conftest.py`, applied by naming it.
+  **Opt-in on purpose**: an autouse version would have switched recording off underneath
+  `test_shell_session.py` and `test_cli_run.py`, which would still pass and stop meaning
+  anything — a worse outcome than a slow suite.
+
+  It had to be module-scoped, and finding that out cost a round trip: with a per-test
+  fixture `test_progress.py` stayed at 17 seconds, all of it inside a `scope="module"`
+  fixture's setup, which runs before any function-scoped patch. The same scope mismatch bit
+  `tests/conftest.py` when the home-directory guard first went in, and I did not recognise
+  it the second time.
+
+  Those five files: 20s each to 1–3s. The suite as a whole 71s to 60s, with the remaining
+  20 in `test_cli_curate.py`, which reads recorded episodes back and should pay for one.
+  674 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as
