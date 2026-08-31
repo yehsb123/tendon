@@ -289,10 +289,25 @@ def _choose_policy(console: Console, loaded, capability, policy: str, store: str
     could not use it.
     """
     if policy == "scripted":
+        _warn_about_an_ignored_adapter(console, loaded)
         return _baseline_policy(loaded, capability)
 
     if policy == "replay" or policy.startswith("replay:"):
         return _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
+
+    if policy == "adapter":
+        # Answered separately from a typo because the field is real: `skill.yaml` has a
+        # `policy.adapter` slot, `tendon train` fills it, and asking to run it is the
+        # obvious next thing. "not available yet" alongside a misspelling would suggest the
+        # adapter is as imaginary as the typo.
+        console.print("[red]nothing here can load a trained adapter yet.[/red]")
+        console.print(
+            f"[dim]`tendon train` writes one and {escape(loaded.policy_adapter or 'skill.yaml')} "
+            "is where it goes. Loading it back is the missing half - it needs PEFT applied "
+            "to a LeRobot policy, which lives in services/policy_lerobot.py "
+            "(docs/collaboration.md).[/dim]"
+        )
+        raise typer.Exit(code=1)
 
     console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
     console.print(
@@ -301,6 +316,27 @@ def _choose_policy(console: Console, loaded, capability, policy: str, store: str
         "(docs/collaboration.md).[/dim]"
     )
     raise typer.Exit(code=1)
+
+
+def _warn_about_an_ignored_adapter(console: Console, loaded) -> None:
+    """Say when a skill names an adapter that this run is not using.
+
+    `skill.yaml` carries a `policy.adapter` field, commented in the file itself as "a LoRA
+    adapter appears here after `tendon train`". Nothing reads it. So somebody could train
+    an adapter, write its path in exactly where the format tells them to, run the skill,
+    and get the scripted baseline — with one word of output, `via scripted`, standing
+    between them and the belief that they were watching their own model.
+
+    Not a refusal. Running the baseline on a skill that has weights is legitimate and is
+    how every evaluation gets its control arm. What is not legitimate is doing it silently
+    while the file says otherwise.
+    """
+    if getattr(loaded, "policy_adapter", None):
+        console.print(
+            f"[yellow]not using the adapter this skill names[/yellow] "
+            f"[dim]({escape(str(loaded.policy_adapter))}) - nothing can load one yet. "
+            f"Running the scripted baseline instead.[/dim]"
+        )
 
 
 def _replay_policy(console: Console, loaded, capability, spec: str, store: str):

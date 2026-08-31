@@ -1,0 +1,115 @@
+"""A skill that names an adapter is not quietly run without it.
+
+`skill.yaml` carries `policy.adapter`, commented in the file itself as "a LoRA adapter
+appears here after `tendon train`". `tendon train` now writes one. Nothing reads the field.
+
+So the sequence the format invites — train, put the path where the comment says, run the
+skill — produced the scripted baseline, and the only thing standing between that and the
+belief you were watching your own model was one word: `via scripted`.
+
+Silence is the defect here, not the missing loader. Running a baseline on a skill that has
+weights is legitimate and is how every evaluation gets its control arm; doing it without
+saying so while the file says otherwise is not.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from tendon.cli.main import app
+
+RUNNER = CliRunner()
+
+SKILL = """apiVersion: tendon/v1alpha1
+kind: Skill
+metadata:
+  name: cube-sim
+  namespace: grasp
+  version: 0.1.0
+  summary: Pick up a cube.
+requires:
+  dof: 5
+  gripper: parallel
+  action_spaces: [joint_position]
+  control_hz: 50
+policy:
+  base: lerobot/smolvla_base
+{adapter}safety:
+  max_joint_velocity: 1.5
+eval:
+  episodes: 3
+"""
+
+
+def _skill(tmp_path: Path, *, adapter: str | None) -> Path:
+    directory = tmp_path / "grasp" / "cube-sim"
+    directory.mkdir(parents=True)
+    line = f"  adapter: {adapter}\n" if adapter else ""
+    (directory / "skill.yaml").write_text(SKILL.format(adapter=line), encoding="utf-8")
+    return directory
+
+
+def test_the_scripted_baseline_says_it_is_not_the_adapter(tmp_path: Path, capsys) -> None:
+    """Checked on `_choose_policy` rather than through `run`, which would need a body."""
+    from rich.console import Console
+
+    from tendon.cli.main import _warn_about_an_ignored_adapter
+    from tendon.services.skill import load_skill
+
+    loaded = load_skill(str(_skill(tmp_path, adapter="/somewhere/adapter")))
+    _warn_about_an_ignored_adapter(Console(), loaded)
+
+    output = capsys.readouterr().out
+    assert "not using the adapter" in output
+    assert "/somewhere/adapter" in output
+
+
+def test_a_skill_with_no_adapter_is_not_told_off_every_run(tmp_path: Path, capsys) -> None:
+    from rich.console import Console
+
+    from tendon.cli.main import _warn_about_an_ignored_adapter
+    from tendon.services.skill import load_skill
+
+    loaded = load_skill(str(_skill(tmp_path, adapter=None)))
+    _warn_about_an_ignored_adapter(Console(), loaded)
+
+    assert capsys.readouterr().out == ""
+
+
+def test_asking_for_the_adapter_is_answered_separately_from_a_typo(tmp_path: Path) -> None:
+    """The field is real, `tendon train` fills it, and asking to run it is the obvious next
+    thing. Lumping it in with a misspelling would suggest the adapter is as imaginary."""
+    skill = _skill(tmp_path, adapter="/somewhere/adapter")
+
+    asked = RUNNER.invoke(app, ["run", str(skill), "--policy", "adapter"])
+    typo = RUNNER.invoke(app, ["run", str(skill), "--policy", "scriptd"])
+
+    assert asked.exit_code == 1
+    assert typo.exit_code == 1
+    assert asked.output != typo.output
+    assert "policy_lerobot" in asked.output, "the answer should say where the missing half is"
+
+
+@pytest.mark.parametrize("field", ["policy_adapter"])
+def test_every_skill_field_is_read_by_something(field: str) -> None:
+    """The property, not this instance.
+
+    `policy.adapter` was parsed into `LoadedSkill` and read by nothing for months: a
+    configuration format that accepts a key and ignores it teaches people to write things
+    that do not happen. Whatever the next such field is, it fails here unless something
+    reads it or something says out loud that it is not being used.
+    """
+    root = Path(__file__).resolve().parents[2] / "src" / "tendon"
+    readers = [
+        path
+        for path in root.rglob("*.py")
+        if path.name != "skill.py" and field in path.read_text(encoding="utf-8")
+    ]
+
+    assert readers, (
+        f"{field} is parsed by services/skill.py and read nowhere else. Either use it or "
+        f"say, where a person can see it, that it is being ignored."
+    )

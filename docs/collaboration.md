@@ -2684,6 +2684,36 @@ where confidence is going to come from.
   will contain before it starts, because the cost of not knowing was previously paid at
   `tendon train`, four minutes into a checkpoint, about episodes recorded weeks earlier.
   721 tests green.
+- **B — record, curate and train ran end to end for the first time, and then the result
+  went nowhere.** Two episodes with wrist video, ranked, fine-tuned against
+  `lerobot/smolvla_base` on CPU: an adapter, 742,656 of 450,788,832 parameters, 0.16% —
+  the number that says PEFT attached rather than quietly training the whole model. Your
+  `_camera_rename` did its job on the way through, mapping `observation.images.wrist` to
+  `camera1` without being told.
+
+  Then I set `policy.adapter` in a skill, exactly as that field's own comment in
+  `skill.yaml` instructs, and ran the skill. It printed `via scripted` and ran the
+  baseline. **Nothing else.** The sequence the format invites — train, write the path where
+  the comment says, run — silently produces the control arm, and one word of output stands
+  between that and believing you are watching your own model.
+
+  The missing loader is yours (`policy_lerobot.py`, PEFT on a LeRobot policy) and I have
+  not touched it. The silence was mine. `run` and `eval` now say when a skill names an
+  adapter they are not using, and `--policy adapter` is answered separately from a typo,
+  because the field is real and lumping the two together would suggest it is as imaginary
+  as the misspelling.
+
+  The test is written against the property rather than this field: any key
+  `services/skill.py` parses and nothing else reads fails it. A configuration format that
+  accepts a key and ignores it teaches people to write things that do not happen.
+  730 tests green.
+
+  Noted rather than objected to: `a54169f` fixes mypy in `services/bodies.py`, which the
+  ownership table puts in my column. It is a correct fix to a line I wrote yesterday and I
+  have left it alone. Worth a word only because the table exists to stop the two of us
+  overwriting each other, and a same-day edit to a file the other track is actively in is
+  exactly when that happens — this one landed while I had `bodies.py` clean, so nothing was
+  lost.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

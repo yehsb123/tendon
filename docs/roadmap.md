@@ -55,11 +55,16 @@ on the command line.
 
 **What is not done.** The learner is instance-based: a correction is recalled when the body
 is near where it was given. That demonstrates the loop and it is not the *nightly LoRA* this
-milestone names. `services/trainer.py` is now wired to `tendon train` and produces an
-adapter, so the missing half is no longer the training: it is that nothing can load the
-result. `tendon run --policy` takes `scripted` and `replay:`, and the `policy.adapter` field
-`skill.yaml` reserves — commented there as the place an adapter appears after `tendon
-train` — is parsed and read by nothing. Nor is confidence calibrated across skills (ADR
+milestone names. Record, curate and train do now run end to end: two episodes with wrist
+video, ranked, fine-tuned against `lerobot/smolvla_base` on CPU, producing a LoRA adapter
+that is 0.16% of the model — which is the number that says the adapter attached rather than
+quietly training everything.
+
+The missing half is no longer the training. It is that nothing can load the result:
+`tendon run --policy` takes `scripted` and `replay:`, and `skill.yaml`'s `policy.adapter`
+field — commented in the file as the place an adapter appears after `tendon train` — is
+read by nothing. A run that has one declared now says out loud that it is not using it,
+which is disclosure rather than a fix. Nor is confidence calibrated across skills (ADR
 0003). So the graph is real and the mechanism behind it is the simplest one that could
 produce it, which is worth saying plainly rather than leaving somebody to discover.
 
