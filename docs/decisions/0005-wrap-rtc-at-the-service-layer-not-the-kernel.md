@@ -69,3 +69,42 @@ available through the adapter, at the point where a real robot makes them necess
 The confidence estimator needs *n* samples from one observation, which RTC's engine is not
 shaped to provide — it produces one chunk per prediction. The adapter has to expose a
 sampling path alongside the streaming one, and that is noted for whoever writes it.
+
+## Postscript, from trying to act on this
+
+**The decision holds. The prescription in it does not, and the difference matters to
+whoever picks this up next.**
+
+"RTC is wrapped at the service layer as a `Policy` implementation" reads as though
+`RTCInferenceEngine` is a chunk producer that an adapter can call. It is not.
+`__init__` takes a `robot_wrapper: ThreadSafeRobot` alongside the policy, and the engine
+drives that robot itself: a background thread predicts while the caller polls `get_action`,
+with `notify_observation` feeding it back. It owns the control loop.
+
+tendon's scheduler owns the control loop. It applies every action through `Driver`, checks
+safety on each one, and decides interrupt transitions. Those two facts cannot both be true
+at once, so the engine cannot sit behind `Policy` without the kernel giving up the thing
+`docs/architecture.md` says it is for.
+
+What is usable is one layer down, and it is not a small remainder:
+
+- `policies/rtc/action_queue.py` (246 lines). `merge` folds a newly arrived chunk into a
+  partially consumed one, `get_left_over` and `get_action_index` say where execution had
+  reached. This is chunk merging without loop ownership, and it is the piece a physical arm
+  will need.
+- `utils/action_interpolator.py` (116 lines). Reconciles a policy's rate with the body's.
+- `policies/rtc/latency_tracker.py` (72 lines). p95 inference latency.
+
+`services/policy_lerobot.py` now does the rate reconciliation directly, because the case it
+covers turned out to be a live defect rather than future work: the adapter assumed one chunk
+action per control tick, so a 30 Hz policy on a 100 Hz body ran its trajectory more than
+three times too fast, silently, in proportion to how fast the body happened to be.
+
+A finding that came out of the same reading and belongs beside ADR 0003: **no checkpoint
+declares the rate its actions were meant to be played at.** `smolvla_base`,
+`act_aloha_sim_transfer_cube_human` and `diffusion_pusht` all publish `chunk_size` and
+`n_action_steps` and none publishes an fps. Confidence is not the only thing tendon needs
+that the artifact does not carry.
+
+Adopting `action_queue.py` is still open, and is the right next step when a body arrives
+that produces chunks faster than it consumes them.
