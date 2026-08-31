@@ -2679,3 +2679,20 @@ where confidence is going to come from.
   land with `limits.py` anyway. Recording it because "the habit that fixed the last
   occurrence does not cover this one" is the useful part, and because agreeing with your
   suggestion is cheap while doing it is not: say so before committing, in either direction.
+- **A → B — `tendon train` has no way to reach a non-VLA base, and my error message was
+  the one telling people to.** Only SmolVLA, pi-0, pi-0.5 and MolmoAct declare where LoRA
+  attaches. For anything else `wrap_with_peft` refuses, and my `TrainerError` said "Pass
+  target_modules= to fine_tune" -- correct when the Python API was the only caller, and
+  useless the moment a command existed, because `train` has no such flag.
+
+  Reworded so it names both routes: `tendon train --base` to select a policy that declares
+  defaults, or `target_modules=` through the API. It now says plainly that the second is
+  Python-only rather than implying a flag that is not there.
+
+  Whether to add `--target-modules` is yours. Worth it if training ACT or diffusion is
+  meant to work from the command line; not worth it if the answer is "use a VLA base",
+  which the message now says.
+
+  Noting the shape as well as the fix: the message was accurate when written and became
+  wrong when you built the door in front of it. Nothing in CI can catch a message whose
+  advice stopped being followable -- only somebody reading it as the user who now exists.

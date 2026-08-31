@@ -331,8 +331,9 @@ class Trainer:
             # here.
             raise TrainerError(
                 f"{base_policy} does not declare where LoRA should attach: {exc} "
-                f"Pass target_modules= to fine_tune. Only SmolVLA, pi-0, pi-0.5 and "
-                f"MolmoAct define a default."
+                f"Only SmolVLA, pi-0, pi-0.5 and MolmoAct define defaults. Either train "
+                f"against one of those, which `tendon train --base` can select, or name "
+                f"the modules with target_modules=, which only the Python API takes."
             ) from exc
         # A raw batch out of the store is not what a policy consumes. SmolVLA reads
         # `observation.language.tokens`, which nothing in the dataset writes: the task
