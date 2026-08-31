@@ -81,16 +81,54 @@ def test_a_skill_with_no_adapter_is_not_told_off_every_run(tmp_path: Path, capsy
 
 def test_asking_for_the_adapter_is_answered_separately_from_a_typo(tmp_path: Path) -> None:
     """The field is real, `tendon train` fills it, and asking to run it is the obvious next
-    thing. Lumping it in with a misspelling would suggest the adapter is as imaginary."""
+    thing. Lumping it in with a misspelling would suggest the adapter is as imaginary.
+
+    Written against `run` and passing only because this machine has mujoco: without the sim
+    extra both invocations died opening a body, and the assertion compared two identical
+    "MuJoCo is not installed" strings. A skipif would have made it a test that runs where an
+    extra happens to be installed, which is the shape that let the viz suite sit green and
+    ungated for weeks. The name check moved ahead of `open_body` instead, so the test holds
+    everywhere — and a typo no longer costs a body on the way to being told about it.
+    """
     skill = _skill(tmp_path, adapter="/somewhere/adapter")
 
-    asked = RUNNER.invoke(app, ["run", str(skill), "--policy", "adapter"])
-    typo = RUNNER.invoke(app, ["run", str(skill), "--policy", "scriptd"])
+    asked = RUNNER.invoke(app, ["run", str(skill), "--policy", "adapter", "--driver", "absent"])
+    typo = RUNNER.invoke(app, ["run", str(skill), "--policy", "scriptd", "--driver", "absent"])
 
     assert asked.exit_code == 1
     assert typo.exit_code == 1
     assert asked.output != typo.output
     assert "policy_lerobot" in asked.output, "the answer should say where the missing half is"
+    for output in (asked.output, typo.output):
+        assert "absent" not in output, "the body was consulted before the name was checked"
+
+
+def test_a_policy_name_is_refused_before_a_body_is_opened(tmp_path: Path) -> None:
+    """`bodies.py` argues this rule for its own refusal: "Checked before construction, not
+    after... touching the hardware in order to decide whether to touch it."
+
+    The same rule one layer up. `--driver absent` does not exist, so if the name check ran
+    second the output would be about the driver; it is about the policy.
+    """
+    skill = _skill(tmp_path, adapter=None)
+
+    result = RUNNER.invoke(app, ["run", str(skill), "--policy", "scriptd", "--driver", "absent"])
+
+    assert result.exit_code == 1
+    assert "scriptd" in result.output
+    assert "unknown driver" not in result.output
+
+
+def test_eval_refuses_a_policy_name_before_a_body_too(tmp_path: Path) -> None:
+    """It opens one body and runs thirty episodes through it, so the ordering matters more
+    there, not less."""
+    skill = _skill(tmp_path, adapter=None)
+
+    result = RUNNER.invoke(app, ["eval", str(skill), "--policy", "scriptd", "--driver", "absent"])
+
+    assert result.exit_code == 1
+    assert "scriptd" in result.output
+    assert "unknown driver" not in result.output
 
 
 def _skill_fields() -> list[str]:

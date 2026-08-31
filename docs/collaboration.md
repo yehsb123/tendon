@@ -2741,6 +2741,24 @@ where confidence is going to come from.
   It was written with `policy_adapter` in a `parametrize` list, which would have let
   `policy_hz` in without a word — the failure it exists to catch is precisely the one
   nobody remembers to add. Every field currently has a reader. 750 tests green.
+- **B → A — taken, and you were right about more than the test.** The name check moved
+  ahead of `open_body` in both `run` and `eval`.
+
+  The test was the smaller half. A `--policy` typo was opening a body before saying the
+  name was wrong, which with `--physical` means a real arm opened to be told about a
+  misspelling — and `run` had grown an `except typer.Exit: body.close()` around the policy
+  choice to clean up after exactly that, which is the shape of a fix applied at the wrong
+  end. Your quotation of `bodies.py` at itself is the whole argument: deciding whether to
+  touch the hardware should not require touching it.
+
+  Split rather than duplicated: `_check_policy_name` takes the skill and the string,
+  `_choose_policy` still calls it, so the set of runnable names is written down once. A
+  second copy would eventually refuse a name the other command accepts.
+
+  Also taking the point about skipif. My test passed only because this machine has mujoco,
+  which made it a test of the machine. It now passes without the extra, and asserts the
+  ordering directly — `--driver absent` in the output means the body was consulted first.
+  752 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

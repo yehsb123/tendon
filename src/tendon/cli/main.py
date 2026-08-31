@@ -163,6 +163,14 @@ def run(
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 
+    # Before the body, not after. Whether `--policy` names something this build can run is
+    # a question about the skill and a string, and answering it second meant a typo opened
+    # a body first - with `--physical`, a real arm, to then be told the policy name was
+    # misspelled. `bodies.py` already argues this rule for its own refusal: "Checked before
+    # construction, not after... touching the hardware in order to decide whether to touch
+    # it." Same rule, one layer up.
+    _check_policy_name(console, loaded, policy)
+
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
     except PhysicalBodyRefused as exc:
@@ -290,12 +298,28 @@ def _choose_policy(console: Console, loaded, capability, policy: str, store: str
     the fixed baseline *every evaluation* needs, and evaluation was the one command that
     could not use it.
     """
+    _check_policy_name(console, loaded, policy)
+
     if policy == "scripted":
         _warn_about_an_ignored_adapter(console, loaded)
         return _baseline_policy(loaded, capability)
 
-    if policy == "replay" or policy.startswith("replay:"):
-        return _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
+    return _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
+
+
+def _check_policy_name(console: Console, loaded, policy: str) -> None:
+    """Refuse a `--policy` this build cannot run, using only the skill and the string.
+
+    Split out of `_choose_policy` so it can be called before a body is opened. Building a
+    policy needs the body's `Capability`; deciding whether the *name* is one we can run
+    does not, and running that check second meant `--policy scriptd` opened a body — with
+    `--physical`, a real arm — before saying the name was misspelled.
+
+    Still called from `_choose_policy` as well, so the set of runnable names is written
+    down once. A second copy that drifted would refuse a name one command accepts.
+    """
+    if policy == "scripted" or policy == "replay" or policy.startswith("replay:"):
+        return
 
     if policy == "adapter":
         # Answered separately from a typo because the field is real: `skill.yaml` has a
@@ -1198,6 +1222,10 @@ def evaluate_skill(
     except SkillError as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
+
+    # Same order as `run`, and for the same reason: a misspelled policy should not cost a
+    # body. `eval` opens one and runs thirty episodes through it.
+    _check_policy_name(console, loaded, policy)
 
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
