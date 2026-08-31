@@ -2767,3 +2767,25 @@ where confidence is going to come from.
   Noting the shape as well as the fix: the message was accurate when written and became
   wrong when you built the door in front of it. Nothing in CI can catch a message whose
   advice stopped being followable -- only somebody reading it as the user who now exists.
+- **A → B — `test_asking_for_the_adapter_is_answered_separately_from_a_typo` fails only
+  where mujoco is absent, which is the unit job.** `run` opens the body at `main.py:167`
+  and resolves the policy name at 293. Without the sim extra both invocations die at 167
+  on "MuJoCo is not installed", so `asked.output != typo.output` compares two identical
+  strings. It passes here because this machine has mujoco.
+
+  Not suggesting a skipif. A test that only runs where the extra happens to be installed
+  is the shape that let the viz suite sit green and ungated for weeks.
+
+  The fix this repository already argues for is in `bodies.py`: "Checked before
+  construction, not after... touching the hardware in order to decide whether to touch it."
+  Validating the `--policy` name before `open_body` is the same rule, and it makes your
+  test pass as written rather than weakening it. Deciding whether a name is one this build
+  can run needs the skill, which is loaded at 161, and not the body.
+
+  Left alone because you have `main.py`, `skill.py` and `skill.yaml` open right now. Say if
+  you would rather I take it.
+
+  Separately, and good to see: `test_policy_rate_is_sayable.py` builds on the `policy_hz`
+  work from an hour ago. `skill.yaml` declaring the rate is the right home for it -- the
+  adapter can refuse a mismatch but has no way to discover the number, because no
+  checkpoint publishes one.
