@@ -21,7 +21,11 @@ from tendon.cli.doctor import Status, run_checks, summarise
 _DRIVER_ARG_OPTION = typer.Option(
     [],
     "--driver-arg",
-    help="Pass key=value to the driver, e.g. --driver-arg port=COM3. Repeatable.",
+    help=(
+        "Pass key=value to the driver, e.g. --driver-arg port=COM3. Repeatable. "
+        "Values are converted to whatever the driver's signature declares, so a "
+        "sequence takes a comma-separated list: --driver-arg render_cameras=wrist,scene"
+    ),
 )
 
 app = typer.Typer(
@@ -217,9 +221,11 @@ def run(
         f"({capability.dof} axes, {capability.control_hz:g} Hz) via {escape(policy)}[/dim]"
     )
 
-    recorder, root = _attach_recorder(console, bus, loaded, store)
+    recorder, root = _attach_recorder(console, bus, loaded, store, body)
     if recorder is not None:
-        recorder.start(loaded.ref, capability)
+        cameras, frame_size = _video_schema(body)
+        _report_video(console, cameras, capability, driver)
+        recorder.start(loaded.ref, capability, cameras=cameras, frame_size=frame_size)
 
     try:
         result = scheduler.run_episode(running, max_steps=steps, seed=seed)
@@ -442,7 +448,70 @@ def _attach_viewer(console: Console, bus, loaded, *, view: bool, save: str):
     return viewer
 
 
-def _attach_recorder(console: Console, bus, loaded, store: str):
+#: LeRobot's default when nothing is rendered. Never used to size a real frame — that comes
+#: from the body — only to fill an argument the schema requires when there is no video.
+_NO_VIDEO_SIZE = (480, 640)
+
+
+def _video_schema(body) -> tuple[tuple[str, ...], tuple[int, int]]:
+    """Which cameras this body is rendering, and at what size, asked once.
+
+    Read from a real frame rather than from the body's declared `Capability.cameras`,
+    because those are different questions: a body exposes cameras it is not rendering, and
+    `features_for` is explicit that declaring one that will not be supplied turns every
+    `add_frame` into an error. The frame is the only thing that knows.
+
+    Nothing here is driver-specific. `RendersFrames` is the contract, `render()` names its
+    own cameras, and the array says how big they are, so a driver written after this works
+    without being added to a list.
+    """
+    from tendon.kernel.protocols import RendersFrames
+
+    if not isinstance(body, RendersFrames):
+        return (), _NO_VIDEO_SIZE
+
+    frames = body.render()
+    if not frames:
+        return (), _NO_VIDEO_SIZE
+
+    sample = next(iter(frames.values()))
+    height, width = int(sample.shape[0]), int(sample.shape[1])
+    return tuple(frames), (height, width)
+
+
+def _report_video(console: Console, cameras: tuple[str, ...], capability, driver_name: str) -> None:
+    """Say what video this episode will contain, while it can still be changed.
+
+    Recording without it is a legitimate run, so this is not a warning about a mistake. It
+    is here because the cost of not knowing is paid much later: a vision-language-action
+    policy cannot be trained on state alone, and `tendon train` is where that surfaced —
+    four minutes into loading a checkpoint, about episodes recorded weeks earlier.
+
+    Only when the body has cameras it is not rendering. A body with none is not withholding
+    anything and does not need a line every run saying so.
+    """
+    if cameras:
+        console.print(f"[dim]recording video from {', '.join(cameras)}[/dim]")
+        return
+    if not capability.cameras:
+        return
+
+    from tendon.services.bodies import camera_parameter
+
+    line = (
+        f"[dim]no video: {escape(capability.body_id)} has "
+        f"{', '.join(capability.cameras)} and is rendering none."
+    )
+    # Named only when this driver really takes it. A suggestion that is right for MuJoCo
+    # and wrong for the next body is worse than no suggestion, and which one it is can be
+    # asked rather than assumed.
+    parameter = camera_parameter(driver_name)
+    if parameter:
+        line += f" --driver-arg {parameter}={capability.cameras[0]} to record one."
+    console.print(line + "[/dim]")
+
+
+def _attach_recorder(console: Console, bus, loaded, store: str, body=None):
     """Subscribe a recorder to the step bus, or say why nothing is being recorded.
 
     Returns the recorder (None when unavailable) and the store path it is writing to.
@@ -475,8 +544,15 @@ def _attach_recorder(console: Console, bus, loaded, store: str):
     # `tendon/local`. Episodes are grouped by what was being done, which is what the
     # store's "skill" column claims to show, what `store.py` decodes a directory name
     # back into, and the only grouping a training run can use.
+    from tendon.kernel.protocols import RendersFrames
+
     recorder = Recorder(root=root, repo_id=loaded.ref)
-    recorder.attach_to(bus)
+    # Pixels come from the body, not from the step: a `StepRecord` carries an
+    # `Observation`, and an observation carries frame references rather than frames.
+    # `services/` cannot import `drivers/` to go and fetch them, which is why the contract
+    # this checks lives in the kernel.
+    renders = body is not None and isinstance(body, RendersFrames)
+    recorder.attach_to(bus, frames=body.render if renders else None)
     return recorder, root
 
 
@@ -576,8 +652,15 @@ def serve(
 def _driver_kwargs(pairs: list[str]) -> dict[str, str]:
     """Turn `key=value` strings into driver arguments.
 
-    Values stay strings. Guessing types here would mean deciding that `port=8` is an int
-    on a body where it is a name, and a driver knows its own argument types.
+    Values stay strings here. They used to stay strings everywhere, on the reasoning that
+    guessing types would mean deciding `port=8` is an int on a body where it is a name -
+    and a driver knows its own argument types.
+
+    Right about the guessing, wrong about the conclusion: a driver knows, and its
+    signature can be read. `services/bodies.coerce_driver_arguments` does that at the
+    point of construction, so it applies to every caller rather than to this one command,
+    and the question stays "what did this driver declare" rather than "what does this
+    string look like".
     """
     kwargs: dict[str, str] = {}
     for pair in pairs:
@@ -1070,7 +1153,12 @@ def evaluate_skill(
     )
 
     bus: Bus[StepRecord] = Bus()
-    recorder, root = _attach_recorder(console, bus, loaded, store)
+    recorder, root = _attach_recorder(console, bus, loaded, store, body)
+    # Asked once for the sweep, not once per episode: the body renders the same cameras at
+    # the same size throughout, and `render()` costs a frame each time it is called.
+    cameras, frame_size = _video_schema(body)
+    if recorder is not None:
+        _report_video(console, cameras, capability, driver)
 
     outcomes: list[EpisodeOutcome] = []
     unknown = 0
@@ -1092,7 +1180,7 @@ def evaluate_skill(
             # evaluation is thirty episodes, not one thirty times as long, and a store
             # that could not tell them apart would be useless for training.
             if recorder is not None:
-                recorder.start(loaded.ref, capability)
+                recorder.start(loaded.ref, capability, cameras=cameras, frame_size=frame_size)
             try:
                 result = scheduler.run_episode(running, max_steps=steps, seed=seed + index)
             finally:

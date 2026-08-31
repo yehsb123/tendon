@@ -77,6 +77,16 @@ class MissingDriverArgument(RuntimeError):
     """
 
 
+class BadDriverArgument(RuntimeError):
+    """A driver argument was given a value the driver cannot use.
+
+    Distinct from `MissingDriverArgument` for the reason that one is distinct from
+    `BodyUnavailable`: the three are different situations and each has a different way
+    out. Nothing is missing here — an argument was named and its value is the wrong shape,
+    which is a typo to correct, not an install to perform or a parameter to discover.
+    """
+
+
 class BodyUnavailable(RuntimeError):
     """A body could not be opened.
 
@@ -130,6 +140,137 @@ def available() -> tuple[str, ...]:
     return driver_base.available()
 
 
+#: Values a driver parameter annotated `bool` accepts, since `bool("false")` is True and a
+#: flag that is on however you spell it is worse than one that refuses the spelling.
+_TRUE = frozenset({"true", "yes", "on", "1"})
+_FALSE = frozenset({"false", "no", "off", "0"})
+
+
+def _coerce_argument(value: str, annotation: object, parameter: str) -> object:
+    """Turn one command-line string into what the driver declared it wants.
+
+    Reads the driver's own annotation rather than inspecting the string, which is the
+    difference between asking and guessing. `--driver-arg port=8` stays `"8"` on a driver
+    that annotates `port: str`, and becomes `8` on one that annotates `port: int`; nothing
+    here decides that on its own.
+
+    An unannotated or unrecognised parameter keeps its string. Leaving it alone is the
+    honest default: this cannot know what the driver meant, and a string is what the
+    caller actually typed.
+    """
+    import typing
+
+    origin = typing.get_origin(annotation)
+    if origin is typing.Union or str(origin) == "<class 'types.UnionType'>":
+        # `str | None`, and Optional[...] alike. The value came from a command line, so it
+        # is not None; coerce to whichever member is not NoneType.
+        members = [a for a in typing.get_args(annotation) if a is not type(None)]
+        if len(members) == 1:
+            return _coerce_argument(value, members[0], parameter)
+        return value
+
+    if origin in (tuple, list, set, frozenset):
+        # Comma-separated, because a shell splits on spaces and `--driver-arg` is one
+        # token. Repeating the flag would collide with the several drivers that take more
+        # than one sequence.
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        inner = typing.get_args(annotation)
+        element = inner[0] if inner and inner[0] is not Ellipsis else str
+        coerced = [_coerce_argument(item, element, parameter) for item in items]
+        return origin(coerced)
+
+    if annotation is bool:
+        lowered = value.strip().lower()
+        if lowered in _TRUE:
+            return True
+        if lowered in _FALSE:
+            return False
+        raise BadDriverArgument(
+            f"{parameter}={value!r} is not a yes or a no. "
+            f"Use one of: {', '.join(sorted(_TRUE | _FALSE))}"
+        )
+
+    if annotation in (int, float):
+        try:
+            return annotation(value)  # type: ignore[operator]
+        except ValueError as exc:
+            raise BadDriverArgument(
+                f"{parameter} wants {annotation.__name__}, got {value!r}"  # type: ignore[union-attr]
+            ) from exc
+
+    return value
+
+
+def coerce_driver_arguments(name: str, kwargs: dict[str, object]) -> dict[str, object]:
+    """Convert string arguments to the types the named driver's signature declares.
+
+    `--driver-arg` can only carry strings, so every driver parameter that is not one was
+    unreachable from the command line. `MujocoDriver` takes `render_cameras: tuple[str,
+    ...]`; passing `render_cameras=wrist` handed it a string, which it iterated character
+    by character and refused as five unknown cameras. So a body that can record video had
+    no way to be asked for it — the recording half of the project, unreachable through a
+    parameter that was right there.
+
+    The fix is at this layer rather than in a driver, for the same reason the missing-
+    argument message is: whatever a driver declares should be reachable, including the
+    drivers nobody has written yet. Nothing here is a per-driver table.
+
+    Only strings are touched, so a Python caller passing real types is left alone.
+    """
+    import inspect
+    import typing
+
+    # Registration happens on import, and this function is public. Called before anything
+    # had imported the driver modules it read every annotation as absent and handed back
+    # the strings it was given — no error, no conversion, exactly the silent no-op it
+    # exists to remove. `open_body` happens to do this first; a caller should not have to.
+    available()
+
+    try:
+        driver = driver_base._REGISTRY[name]
+        hints = typing.get_type_hints(driver.__init__)
+        parameters = inspect.signature(driver).parameters
+    except Exception:
+        # A driver whose annotations do not resolve is not a reason to refuse to open it.
+        # Strings are what the caller typed and what this function was handed.
+        return kwargs
+
+    resolved: dict[str, object] = {}
+    for key, value in kwargs.items():
+        if isinstance(value, str) and key in parameters and key in hints:
+            resolved[key] = _coerce_argument(value, hints[key], key)
+        else:
+            resolved[key] = value
+    return resolved
+
+
+def camera_parameter(name: str) -> str | None:
+    """The constructor parameter that says which cameras a driver should render, or None.
+
+    Found on the driver rather than kept in a table here, so that telling somebody how to
+    ask for video is either correct for their body or absent. Naming `render_cameras` at
+    every driver would be right for MuJoCo and a lie for the next one.
+
+    The convention is that the parameter's name ends in `cameras`, which `drivers/base.py`
+    states as part of the contract. A weak convention that degrades to silence is worth
+    more than a strong one nobody can discover: a driver that does not follow it loses a
+    suggestion, not a capability.
+    """
+    import inspect
+
+    available()
+    try:
+        driver = driver_base._REGISTRY[name]
+        parameters = inspect.signature(driver).parameters
+    except Exception:
+        return None
+
+    for parameter in parameters.values():
+        if parameter.name.endswith("cameras"):
+            return parameter.name
+    return None
+
+
 def open_body(name: str, *, allow_physical: bool = False, **kwargs) -> Driver:
     """Open a body by name.
 
@@ -163,6 +304,11 @@ def open_body(name: str, *, allow_physical: bool = False, **kwargs) -> Driver:
             "SECURITY.md. Pass allow_physical=True (CLI: --physical) if that is what you "
             "mean."
         )
+
+    # After the physical check, before construction. A value the driver cannot use is
+    # still a refusal to open a body, and refusing it here means it is refused identically
+    # for every caller rather than once per command.
+    kwargs = coerce_driver_arguments(name, kwargs)
 
     try:
         return driver_base.load(name, **kwargs)

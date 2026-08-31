@@ -6,6 +6,22 @@ being moved. Policies address intent; drivers translate.
 The `Driver` protocol itself is defined in `tendon.kernel.protocols`, not here: the
 kernel owns the contract, drivers implement it. See that module for why. It is
 re-exported below so driver authors have a single import.
+
+## Two conventions a driver author should know
+
+**Constructor arguments are reachable from the command line.** `--driver-arg key=value`
+carries strings, and `services/bodies.coerce_driver_arguments` converts each one to
+whatever the parameter's annotation says before construction — numbers, flags, and
+comma-separated sequences. So annotate the parameters. An unannotated one is still
+reachable and still arrives as a string.
+
+**A driver that renders should call its camera parameter something ending in `cameras`.**
+That is how `services/bodies.camera_parameter` finds it, which is how the CLI can tell
+somebody the exact flag that turns video on for *their* body. A weak convention that
+degrades to silence is deliberate: a driver ignoring it loses a suggestion, not a
+capability, and the alternative was a table here naming `render_cameras` for everything —
+right for MuJoCo and a lie for the next body. Rendering itself is the `RendersFrames`
+protocol in the kernel, and it is optional: a body with no cameras should not implement it.
 """
 
 from __future__ import annotations

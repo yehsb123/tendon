@@ -8,11 +8,14 @@ is what lets `kernel/` import nothing from `drivers/` or `services/` — the rul
 
 Two protocols: `Driver` is a body, `Policy` is whatever decides what the body should do.
 The scheduler holds one of each and knows nothing else about either.
+
+`RendersFrames` is a third and is optional — capabilities a body may or may not have go in
+their own protocol rather than as methods on `Driver` that most bodies would stub out.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from tendon.kernel.types import Action, ActionSpace, Capability, Intent, Observation
 
@@ -80,6 +83,33 @@ class Driver(Protocol):
 
     def close(self) -> None:
         """Release hardware, sockets and file handles. Must be safe to call twice."""
+        ...
+
+
+@runtime_checkable
+class RendersFrames(Protocol):
+    """A body that can hand over pixels for cameras it declares in its `Capability`.
+
+    Separate from `Driver` rather than part of it, because a body with no cameras cannot
+    honestly implement it and requiring it of everything would fill the driver layer with
+    stubs returning `{}` — a method that exists everywhere and works somewhere is exactly
+    the shape this project keeps removing.
+
+    `Capability.cameras` says which cameras a body *has*. Nothing said how to obtain a
+    frame from one, so `services/recorder.py` documented its `frames` argument as "a
+    callable, typically `MujocoDriver.render`" — naming a concrete driver, in a layer that
+    is not allowed to import drivers, because there was no contract to name instead. That
+    is what this is. Whether a given body renders is `isinstance(body, RendersFrames)`,
+    which holds for a driver nobody here has written.
+    """
+
+    def render(self) -> dict[str, Any]:
+        """Pixels for each camera being rendered, keyed by camera name.
+
+        Returns `{}` when there is nothing to give — a body that could render and was not
+        asked to. Callers treat empty as "no video this run", never as an error, because
+        rendering costs time per frame and a run that does not need it should not pay.
+        """
         ...
 
 

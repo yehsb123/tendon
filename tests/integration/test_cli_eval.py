@@ -139,13 +139,29 @@ def test_eval_and_run_build_the_same_baseline_policy() -> None:
 
 def test_both_commands_record_through_the_same_helper() -> None:
     """`_attach_recorder` decides where episodes go and what to say when LeRobot is
-    missing. Two copies of that would eventually disagree about one of them."""
+    missing. Two copies of that would eventually disagree about one of them.
+
+    Counted by parsing rather than by matching the call text, which is what this did and
+    what broke it: adding the `body` argument the frames source needs changed the string
+    and the test read two callers as none. The property is how many places call the
+    helper, and an argument list is not part of that.
+    """
+    import ast
+
     source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
         encoding="utf-8"
     )
 
     assert source.count("Recorder(root=root") == 1
-    assert source.count("_attach_recorder(console, bus, loaded, store)") == 2
+
+    calls = [
+        node
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_attach_recorder"
+    ]
+    assert len(calls) == 2, f"{len(calls)} commands attach a recorder; run and eval are the two"
 
 
 # ------------------------------------------------------- and it fails honestly

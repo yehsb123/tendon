@@ -322,7 +322,9 @@ read — the person deciding what to keep is sitting in front of the interface, 
 terminal.
 
 A body that moves real hardware is refused unless you pass `--physical`, and `doctor` says
-which bodies those are. Driver arguments go through `--driver-arg key=value`.
+which bodies those are. Driver arguments go through `--driver-arg key=value`; each value is
+converted to whatever the driver's signature declares, so a sequence takes a comma-separated
+list — `--driver-arg render_cameras=wrist,scene` is how a run records video.
 
 A skill declares the limits it runs under, and skills are meant to be installed from
 elsewhere. `~/.tendon/limits.yaml` puts a ceiling over them: the effective bound is the

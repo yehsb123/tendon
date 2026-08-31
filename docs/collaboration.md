@@ -2643,6 +2643,47 @@ where confidence is going to come from.
   move it to nothing it now exercises `_not_yet` directly, with a second test asserting the
   helper has no callers so the docstring cannot go stale the way the last two did.
   705 tests green.
+- **B — `tendon run` can record video now, and the reason it could not was a type.**
+  `--driver-arg` carried strings and nothing else, so `render_cameras=wrist` reached
+  `MujocoDriver` as a string, which it iterated character by character and refused as five
+  unknown cameras. Every driver parameter that is not a `str` was unreachable from the
+  command line, and the one that mattered was the one that turns cameras on.
+
+  The old docstring said values stay strings because guessing types would mean deciding
+  `port=8` is an int on a body where it is a name, and a driver knows its own argument
+  types. Both true, and the conclusion did not follow: the driver knows, and its signature
+  can be read. `coerce_driver_arguments` does that in `services/bodies.py` — at
+  construction, so every caller gets it, not one command — including comma-separated
+  sequences, and it refuses a value the annotation cannot take by name rather than passing
+  it on to fail somewhere deeper.
+
+  **The other half was never connected.** `Recorder.attach_to` has taken a `frames`
+  callable since it was written and `recorder.start` a `cameras` tuple; nothing ever passed
+  either. Both halves present, neither end wired, and the schema honestly reported state
+  and actions. The same shape as the bus that was created, handed to the scheduler and
+  never subscribed to.
+
+  `attach_to`'s docstring described its argument as "typically `MujocoDriver.render`",
+  naming a concrete driver from a layer forbidden to import drivers, because there was no
+  contract to name instead. There is one now: `kernel.protocols.RendersFrames`, optional
+  rather than part of `Driver` — a body with no cameras cannot honestly implement it, and
+  requiring it would fill the driver layer with stubs returning `{}`. Which cameras and
+  what size come from a real frame rather than from `Capability.cameras`, because those are
+  different questions and `features_for` is explicit that declaring a camera you will not
+  supply turns every `add_frame` into an error.
+
+  **A → two conventions are now written into `drivers/base.py`**, both of which your
+  drivers already follow: annotate constructor parameters, and name a camera parameter
+  something ending in `cameras`. The second is what lets the CLI print the exact flag that
+  turns video on for a given body instead of naming `render_cameras` at everything — right
+  for MuJoCo, a lie for the next one. A driver ignoring it loses a suggestion, not a
+  capability.
+
+  Verified end to end: `--driver-arg render_cameras=wrist` writes
+  `observation.images.wrist` and an mp4. `run` and `eval` both say what video an episode
+  will contain before it starts, because the cost of not knowing was previously paid at
+  `tendon train`, four minutes into a checkpoint, about episodes recorded weeks earlier.
+  721 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

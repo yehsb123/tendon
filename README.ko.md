@@ -304,7 +304,9 @@ parquet를 LeRobot이 아니라 duckdb로 읽습니다. 그래서 **기록할 �
 **무엇을 남길지 정하는 사람은 터미널이 아니라 인터페이스 앞에 앉아 있습니다.**
 
 실제 하드웨어를 움직이는 바디는 `--physical` 없이는 거부되고, 어느 바디가 그런지는
-`doctor`가 알려줍니다. 드라이버 인자는 `--driver-arg key=value`로 넘깁니다.
+`doctor`가 알려줍니다. 드라이버 인자는 `--driver-arg key=value`로 넘기고, 값은 드라이버
+시그니처가 선언한 타입으로 변환됩니다. 시퀀스는 쉼표로 나열합니다 —
+`--driver-arg render_cameras=wrist,scene`가 영상을 녹화하는 방법입니다.
 
 ## 상태
 
