@@ -7,6 +7,17 @@ The `Driver` protocol itself is defined in `tendon.kernel.protocols`, not here: 
 kernel owns the contract, drivers implement it. See that module for why. It is
 re-exported below so driver authors have a single import.
 
+## Units: SI, radians, seconds. A driver converts; the kernel never does.
+
+Joint position is [rad] for a revolute axis and [m] for a prismatic one, velocity [rad/s]
+or [m/s], workspace bounds [m], force [N], and the gripper is [normalised] 0 to 1 rather
+than a jaw width. The full list is in `kernel/types.py`, on the fields themselves.
+
+Report in these units even when the hardware does not. An SO-101's servos count in encoder
+steps and its SDK speaks degrees; the driver is where that ends. A body that reports
+degrees makes every safety limit wrong by 57, in the permissive direction, and nothing
+above can notice — `kernel/safety` compares floats, and floats arrive.
+
 ## Two conventions a driver author should know
 
 **Constructor arguments are reachable from the command line.** `--driver-arg key=value`

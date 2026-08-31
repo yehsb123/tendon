@@ -6,6 +6,29 @@ than one layer belongs somewhere else.
 
 Design decision 3 lives in this file. A policy emits `Intent` without naming a body;
 a driver turns `Intent` into whatever its body requires.
+
+## Units
+
+**SI, radians, seconds. A driver converts; the kernel never does.**
+
+- joint position: [rad] for a revolute axis, [m] for a prismatic one
+- joint velocity: [rad/s] or [m/s], matching the axis
+- translation, workspace bounds: [m]
+- rotation: [rad]
+- force: [N]; torque: [N.m]
+- gripper: [normalised], 0 closed to 1 open — never jaw width
+- rates: [Hz]
+
+Stated here because it was stated nowhere. `kernel/safety` compares a skill's declared
+limit against what a driver reports, and both are bare floats: if the two disagree about
+units the comparison still succeeds and means nothing. An arm reporting degrees makes
+every limit wrong by 57, in the permissive direction, and nothing in this repository could
+have noticed — the numbers arrive and they are numbers.
+
+Every field carrying a physical quantity says its unit in its own `description`, so the
+unit travels into the JSON schema the API and the shell are generated from, rather than
+living in a comment beside one example skill. `test_units_are_declared.py` fails on a
+numeric field that does not.
 """
 
 from __future__ import annotations
@@ -55,7 +78,7 @@ class Capability(BaseModel):
         ),
     )
     gripper: GripperKind = GripperKind.NONE
-    control_hz: float = Field(gt=0, description="Rate the driver accepts setpoints at")
+    control_hz: float = Field(gt=0, description="[Hz] Rate the driver accepts setpoints at")
     cameras: tuple[str, ...] = ()
     has_force_sensing: bool = False
     simulated: bool = Field(
@@ -80,12 +103,24 @@ class Capability(BaseModel):
 
 
 class Proprioception(BaseModel):
-    """What the body knows about itself."""
+    """What the body knows about itself.
 
-    joint_positions: Vector
-    joint_velocities: Vector | None = None
-    gripper_open: float | None = Field(default=None, ge=0.0, le=1.0)
-    force: Vector | None = None
+    Units are part of the contract, not a convention — see the module docstring. A driver
+    reporting degrees here makes every safety limit wrong by a factor of 57, silently, and
+    `kernel/safety` has no way to notice: it compares numbers, and the numbers arrive.
+    """
+
+    joint_positions: Vector = Field(
+        description="Per joint: [rad] for revolute axes, [m] for prismatic ones."
+    )
+    joint_velocities: Vector | None = Field(default=None, description="[rad/s] or [m/s]")
+    gripper_open: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="[normalised] 0 closed, 1 open. Jaw width in metres belongs to the driver.",
+    )
+    force: Vector | None = Field(default=None, description="[N], or [N.m] for a torque axis")
 
 
 class Observation(BaseModel):
@@ -109,7 +144,12 @@ class Observation(BaseModel):
 
 
 class ActionSpace(str, Enum):
-    """How to read the numbers in an Action. Drivers declare what they accept."""
+    """How to read the numbers in an Action. Drivers declare what they accept.
+
+    Which quantity, not which unit. The unit for each is fixed by the module docstring:
+    `JOINT_POSITION` is [rad] or [m] per joint, `JOINT_VELOCITY` is [rad/s] or [m/s], and
+    both pose spaces are [m] for translation and [rad] for rotation.
+    """
 
     JOINT_POSITION = "joint_position"
     JOINT_VELOCITY = "joint_velocity"
@@ -123,8 +163,15 @@ class Action(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     space: ActionSpace
-    values: Vector
-    gripper: float | None = Field(default=None, ge=0.0, le=1.0)
+    values: Vector = Field(
+        description=(
+            "Read according to `space`: [rad] or [m] per joint for the joint spaces, "
+            "[m] and [rad] for the pose spaces."
+        )
+    )
+    gripper: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="[normalised] 0 closed, 1 open"
+    )
 
 
 class ConfidenceSource(str, Enum):
@@ -190,7 +237,7 @@ class Intent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     issued_at: datetime = Field(default_factory=_now)
-    horizon_s: float = Field(gt=0, description="Wall-clock span this chunk covers")
+    horizon_s: float = Field(gt=0, description="[s] Wall-clock span this chunk covers")
     actions: tuple[Action, ...] = Field(min_length=1)
     confidence: Confidence
     goal: str | None = Field(default=None, description="Natural language, for the operator")
@@ -205,14 +252,19 @@ class SafetyLimits(BaseModel):
 
     Checked after an operator correction as well: a human may correct a policy, but may
     not exceed a limit through the shell.
+
+    These are the numbers a person writes in `skill.yaml`, and they are compared directly
+    against what a driver reports. If the two disagree about units the comparison still
+    succeeds and means nothing — which is why the unit is stated on the field rather than
+    in a comment beside one example skill.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    max_joint_velocity: float | None = Field(default=None, gt=0)
-    max_force: float | None = Field(default=None, gt=0)
-    workspace_min: Vector | None = None
-    workspace_max: Vector | None = None
+    max_joint_velocity: float | None = Field(default=None, gt=0, description="[rad/s] or [m/s]")
+    max_force: float | None = Field(default=None, gt=0, description="[N]")
+    workspace_min: Vector | None = Field(default=None, description="[m], in the body's frame")
+    workspace_max: Vector | None = Field(default=None, description="[m], in the body's frame")
 
 
 class SafetyVerdict(BaseModel):

@@ -22,6 +22,17 @@ body.** Every safety limit in this repository has only ever held in simulation, 
 that has only held in simulation has not been shown to hold. MuJoCo does not have backlash,
 a servo that browns out under load, or a person standing where the arm is about to be.
 
+What *has* been verified, and is worth separating from what has not: the driver's
+translation. `tests/unit/test_so101_driver.py` holds down the units it reports, the shape
+it declares, which calls reach the serial bus, and that `reset` reads without commanding —
+all without an arm attached. The kernel now states its units as a contract rather than a
+convention (`kernel/types.py`), because a body reporting degrees would make every limit
+here wrong by 57 in the permissive direction and nothing could have noticed.
+
+That rules out a class of error that would have been discovered by a real arm moving
+wrongly. It does not tell you the limits hold. Those are different claims and the second
+one still has no evidence.
+
 So the instruction is the same and the reason is stronger: do not connect this to hardware
 you are not prepared to have moved unexpectedly, and do not stand where it can reach.
 

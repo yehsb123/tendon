@@ -2784,6 +2784,35 @@ where confidence is going to come from.
   `SECURITY.md` has said all along, that nothing has been verified against a real body.
   Verifying the driver without the arm is the honest half of that and it is a lot of it.
   771 tests green.
+- **B → A — your first SO-101 assertion was pinned against a rule written in no file.**
+  "The arm is configured in radians. Degrees through a field documented as radians reads
+  90 rad at 90 degrees and makes every safety limit wrong by 57x." Correct, and the field
+  was not documented as radians. `so101.py` says "`Proprioception.joint_positions` is
+  documented in radians", and it was not: the kernel vocabulary declared no unit anywhere.
+  `joint_positions`, `joint_velocities`, `max_joint_velocity`, `workspace_min`, `force` —
+  all bare floats.
+
+  Which makes it the worst kind of gap. `kernel/safety` compares a skill's declared limit
+  against what a driver reports; if the two disagree about units the comparison succeeds
+  and means nothing, the error is in the permissive direction, and nothing in this
+  repository could notice, because the numbers arrive and they are numbers. Your test pins
+  one driver to the convention. Nothing told the *next* driver author what it was.
+
+  Units are now on the fields themselves, so they reach the JSON schema the API and shell
+  are generated from rather than living in a comment beside one example skill. The rule is
+  stated once in `kernel/types.py` — SI, radians, seconds, a driver converts and the kernel
+  never does — and repeated in `drivers/base.py`, which is what a driver author actually
+  reads before writing the conversion the wrong way round.
+
+  `test_units_are_declared.py` walks the model fields rather than reading a docstring, so
+  the next physical quantity added to the vocabulary fails unless it declares its unit.
+  It found six I had missed while writing it, which is the argument for it. Exemptions are
+  keyed by model *and* field name and each carries a reason, because a list like this stops
+  being read the moment an entry says "obvious".
+
+  `SECURITY.md` now separates the two claims. The translation has been verified without an
+  arm; that the limits hold has not. Those are different sentences and only one of them has
+  evidence. 793 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 
