@@ -49,8 +49,8 @@ implementations, and, as it turns out, a good deal more.
 | `Robot` ABC and hardware drivers (SO-100/101 and others) | the v0.4 `so101` driver wraps it |
 | ~20 policy implementations | skills reference them; no weights in this repo |
 | `PreTrainedPolicy.wrap_with_peft()` | LoRA, for `services/trainer.py` |
-| `utils/rerun_visualization.py` | the shell's live view |
-| `policies/rtc/` — Real-Time Chunking | see below |
+| `utils/rerun_visualization.py` | **read, not used.** `services/viz.py` calls rerun directly; see below |
+| `policies/rtc/` — Real-Time Chunking | **read, not wired.** ADR 0005 decided where it goes; nothing imports it yet |
 | `rollout/strategies/` — sentry, dagger, episodic, highlight | see below |
 
 Install note that costs an hour if missed. `pip install lerobot` alone cannot open a
@@ -58,6 +58,13 @@ dataset. `LeRobotDataset` needs lerobot's own `dataset` extra, which pins `av>=1
 bare `pip install av` resolves to 18.x and fails with
 `module 'av' has no attribute 'option'`. On Windows there is no `torchcodec` wheel, so
 LeRobot falls back to pyav with a warning, it works, and reads are slower.
+
+This table said "where tendon uses it" and two rows named things tendon does not use. The
+column now says which is which, because a survey that overstates what was taken is worse
+than no survey: it stops anyone going back for the part that is still on the shelf.
+
+Checked by grepping for real imports rather than by rereading this file. The eight that
+exist are in `recorder.py`, `human.py`, `so101.py`, `policy_lerobot.py` and `trainer.py`.
 
 Findings that changed a decision:
 
