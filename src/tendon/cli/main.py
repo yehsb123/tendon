@@ -593,16 +593,36 @@ def shell(
     port: int = typer.Option(8000, help="Port the runtime listens on"),
     skills_dir: str = typer.Option("skills", help="Where to look for skill packages"),
 ) -> None:
-    """Serve the runtime and print how to open the interface.
+    """Serve the runtime and say how to open the interface from here.
 
-    The shell is a separate dev server that proxies to this one. Keeping them apart means
-    the runtime does not have to serve static files, and the interface can be reloaded
-    without restarting an episode.
+    The same server as `tendon serve`; what this adds is advice that fits the machine it is
+    run on. Which of the two workflows applies depends on whether a build exists, and the
+    command can see that.
+
+    It used to print "run npm run dev in another terminal" unconditionally, and explain
+    that keeping them apart meant the runtime did not have to serve static files. Neither
+    survived: the runtime mounts `shell/dist` when it is there, so somebody in a checkout
+    with a built shell was told to start a second server for a page already being served
+    two lines below.
     """
+    from tendon.api.app import shell_root
+
     console = Console()
     console.print(f"[dim]runtime on http://127.0.0.1:{port}[/dim]")
-    console.print("[dim]then, in another terminal:[/dim]")
-    console.print("  cd shell && npm install && npm run dev")
+
+    if shell_root() is None:
+        console.print("[dim]no built interface here. Either build it:[/dim]")
+        console.print("  cd shell && npm install && npm run build")
+        console.print("[dim]or run the dev server, which proxies to this one:[/dim]")
+        console.print("  cd shell && npm install && npm run dev")
+    else:
+        console.print(f"[dim]open http://127.0.0.1:{port} - the interface is served here[/dim]")
+        console.print(
+            "[dim]to work on the shell itself, run its dev server instead; it reloads on "
+            "edit and proxies here:[/dim]"
+        )
+        console.print("  cd shell && npm run dev")
+
     console.print()
     serve(port=port, host="127.0.0.1", skills_dir=skills_dir)
 

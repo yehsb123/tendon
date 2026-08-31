@@ -2595,6 +2595,21 @@ where confidence is going to come from.
   is wrong: every caller catching it goes on to suggest installing a driver extra, and a
   body that is present and under-specified is not a missing install. 400 from the API rather
   than 404, for the same reason — the body exists; the request did not say enough.
+- **B — `tendon shell` gave two contradictory workflows at once.** It printed "then, in
+  another terminal: `npm run dev`" and then, two lines down, `serve` reported "serving the
+  shell from …/shell/dist". Start a second server for a page already being served.
+
+  The docstring explained why they were kept apart: so the runtime would not have to serve
+  static files. That stopped being true when the runtime started mounting `shell/dist`, and
+  the printed advice was never revisited — a stale rationale kept a wrong instruction alive
+  after the thing it justified had gone.
+
+  The command can see which situation it is in, so it now says the one that applies: with a
+  build, that the interface is already at the URL, and that the dev server is for working on
+  the shell itself; without one, both routes — build it, or run the dev server — because
+  naming only one leaves whoever wanted the other guessing it exists. That is also what
+  `shell` is now for: the same server as `serve`, plus advice that fits the machine.
+  687 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

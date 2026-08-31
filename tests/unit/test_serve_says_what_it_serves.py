@@ -81,6 +81,47 @@ def test_serve_names_the_shell_it_found(checkout: Path, monkeypatch) -> None:
     assert "serving the shell" in result.output
 
 
+def test_shell_does_not_send_you_to_a_second_server_for_a_page_already_served(
+    checkout: Path, monkeypatch
+) -> None:
+    """`tendon shell` used to print "run npm run dev in another terminal" unconditionally.
+
+    With a built interface that is advice to start a second server for a page the next line
+    says is already being served. The command can see which situation it is in, so it
+    should say the thing that applies.
+    """
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+    result = RUNNER.invoke(app, ["shell"])
+
+    assert result.exit_code == 0, result.output
+    assert "the interface is served here" in result.output
+    assert "npm install" not in result.output, "told to install a shell that is already built"
+
+
+def test_shell_offers_both_routes_when_there_is_no_build(elsewhere: Path, monkeypatch) -> None:
+    """Build it, or run the dev server. Naming only one would leave somebody who wants the
+    other to guess that it exists."""
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+    result = RUNNER.invoke(app, ["shell"])
+
+    assert result.exit_code == 0, result.output
+    assert "npm run build" in result.output
+    assert "npm run dev" in result.output
+
+
+def test_the_shell_help_no_longer_claims_the_runtime_serves_nothing_static() -> None:
+    """Its docstring explained that keeping them apart meant the runtime did not have to
+    serve static files. The runtime mounts `shell/dist`, and has since one command was
+    supposed to be enough."""
+    result = RUNNER.invoke(app, ["shell", "--help"])
+
+    assert "does not have to serve static files" not in result.output
+
+
 def test_the_help_matches_what_the_command_does() -> None:
     """It used to describe only the dev-server workflow, which made
     `tendon serve --help` and the README disagree about whether one command is enough."""

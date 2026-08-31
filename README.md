@@ -251,7 +251,7 @@ tendon eval <skill>      run it repeatedly, record it, and report what happened
 tendon episodes          list what has been recorded
 tendon progress          is it asking less often than it used to
 tendon serve             the runtime API, and the shell when it is built
-tendon shell             the same, with instructions for the dev server
+tendon shell             the same, and how to open it from where you are
 tendon curate <skill>    rank recorded episodes by what is worth training on
 tendon train <skill>     v0.3 — not available yet, and says so
 ```

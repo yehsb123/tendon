@@ -239,7 +239,7 @@ tendon eval <skill>      반복 실행하고 기록하고 결과를 보고
 tendon episodes          기록된 것 목록
 tendon progress          예전보다 덜 묻고 있는가
 tendon serve             런타임 API, 셸이 빌드돼 있으면 셸까지
-tendon shell             같은 것 + dev 서버 실행 방법 안내
+tendon shell             같은 것 + 지금 이 자리에서 여는 방법 안내
 tendon curate <skill>    기록된 에피소드를 학습 가치 순으로 순위 매김
 tendon train <skill>     v0.3 — 아직 안 됨, 그렇다고 말함
 ```
