@@ -55,8 +55,13 @@ Every piece in that loop is the real one — the same scheduler, safety check, i
 state machine and evaluator a trained policy would run under.
 
 **What this does not show.** The learner here remembers rather than generalises, and the
-operator is scripted. Swapping in LoRA fine-tuning ([`services/trainer.py`](src/tendon/services/trainer.py))
-and a human is the v0.3 experiment.
+operator is scripted. Swapping in LoRA fine-tuning and a human is the v0.3 experiment.
+
+`tendon train` does now run: recorded episodes with video, ranked by the curator,
+fine-tuned against the skill's base policy into a LoRA adapter
+([`services/trainer.py`](src/tendon/services/trainer.py)). What is still missing is the way
+back — nothing loads an adapter yet, so a run that has one declared says so and uses the
+baseline rather than pretending.
 
 **And the uncertainty is a stand-in.** It is placed at a point in joint space so the loop
 has something to hand over about — a placeholder for whatever makes a real model unsure, an

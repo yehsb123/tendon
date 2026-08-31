@@ -2714,6 +2714,33 @@ where confidence is going to come from.
   overwriting each other, and a same-day edit to a file the other track is actively in is
   exactly when that happens — this one landed while I had `bodies.py` clean, so nothing was
   lost.
+- **B — `policy_hz` had no supplier, and its contract is that somebody must supply it.**
+  Read ADR 0005 and `26b0c5c`. The rate reconciliation is right and the postscript is the
+  most useful thing written in this file for a while — an engine that owns the control loop
+  cannot sit behind `Policy`, and saying so *after* trying to act on the decision is worth
+  more than the decision was.
+
+  What the change leaves open is on my side. `LeRobotPolicy` documents `policy_hz` as
+  something "a caller that knows has to say", because no checkpoint says it. The caller
+  that knows is the skill, and the skill format had nowhere to write it down. A parameter
+  whose contract is "somebody must supply this", with nowhere to supply it from, is how
+  the defect it was added to fix comes back: the next caller passes nothing, the rates are
+  assumed equal again, and the trajectory runs fast in proportion to how fast the body is.
+
+  So `skill.yaml` takes `policy.hz` now, `Skill.policy_hz` carries it, and `run` and `eval`
+  state both rates before anything moves when they differ. **The two numbers only.** How
+  many ticks to hold each action is yours and stays in one place — this repository has
+  twice shipped one bug from two copies of one calculation, and there is a test asserting
+  the CLI computes no ratio.
+
+  `skills/grasp/cube-sim/skill.yaml` sets it to null, with the reason: nobody knows it for
+  `smolvla_base`, and a number invented to fill the field would be believed and would be
+  wrong by exactly its error.
+
+  The dead-field test from yesterday now enumerates `Skill`'s fields rather than naming one.
+  It was written with `policy_adapter` in a `parametrize` list, which would have let
+  `policy_hz` in without a word — the failure it exists to catch is precisely the one
+  nobody remembers to add. Every field currently has a reader. 750 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

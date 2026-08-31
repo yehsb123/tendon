@@ -30,6 +30,13 @@ policy:
   # No weights in this repo. Skills reference open weights on the Hub.
   base: lerobot/smolvla_base
   adapter: null          # a LoRA adapter appears here after `tendon train`
+  # The rate the policy's actions were meant to be played at [Hz]. Not `control_hz` above:
+  # that is how fast the body accepts setpoints, this is how fast the chunk was meant to
+  # run. Null here because nobody knows it for `smolvla_base` — no checkpoint publishes an
+  # fps, only `chunk_size` and `n_action_steps` — and a number invented to fill the field
+  # would be worse than the gap. Assuming the two rates are equal is what made a 30 Hz
+  # policy run more than three times too fast on a 100 Hz body.
+  hz: null
   # What runs when there are no weights. Without this, evaluation falls back to a joint
   # sweep and then judges it against the success conditions below — which measures a
   # motion that never reaches for the cube.

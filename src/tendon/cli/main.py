@@ -221,6 +221,8 @@ def run(
         f"({capability.dof} axes, {capability.control_hz:g} Hz) via {escape(policy)}[/dim]"
     )
 
+    _report_policy_rate(console, loaded, capability)
+
     recorder, root = _attach_recorder(console, bus, loaded, store, body)
     if recorder is not None:
         cameras, frame_size = _video_schema(body)
@@ -513,6 +515,31 @@ def _video_schema(body) -> tuple[tuple[str, ...], tuple[int, int]]:
     sample = next(iter(frames.values()))
     height, width = int(sample.shape[0]), int(sample.shape[1])
     return tuple(frames), (height, width)
+
+
+def _report_policy_rate(console: Console, loaded, capability) -> None:
+    """State both rates when a skill declares one for its policy, before anything moves.
+
+    `requires.control_hz` is how fast the body accepts setpoints. `policy.hz` is how fast
+    the policy's chunk was meant to be played. Assuming they are equal was a live defect:
+    a 30 Hz policy on a 100 Hz body ran its trajectory more than three times too fast,
+    silently, and in proportion to how fast the body happened to be — so the faster the
+    machine, the more wrong the motion, which is the opposite of what anybody debugging it
+    would assume.
+
+    The two numbers only, no arithmetic. Deciding how many ticks to hold each action is
+    `LeRobotPolicy`'s, and this project has twice shipped one bug from two copies of the
+    same calculation. Stating the inputs cannot go out of step with the thing that uses
+    them.
+    """
+    policy_hz = getattr(loaded, "policy_hz", None)
+    if not policy_hz or policy_hz == capability.control_hz:
+        return
+
+    console.print(
+        f"[dim]policy actions are for {policy_hz:g} Hz; this body runs at "
+        f"{capability.control_hz:g} Hz[/dim]"
+    )
 
 
 def _report_video(console: Console, cameras: tuple[str, ...], capability, driver_name: str) -> None:
@@ -1187,6 +1214,8 @@ def evaluate_skill(
         f"[dim]{escape(loaded.ref)} on {escape(capability.body_id)}, "
         f"{count} episodes of up to {steps} steps[/dim]"
     )
+
+    _report_policy_rate(console, loaded, capability)
 
     bus: Bus[StepRecord] = Bus()
     recorder, root = _attach_recorder(console, bus, loaded, store, body)

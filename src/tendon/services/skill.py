@@ -92,6 +92,22 @@ class Skill:
     #: Hub reference for the base policy. Not resolved here.
     policy_base: str | None = None
     policy_adapter: str | None = None
+    #: The rate the policy's actions were meant to be executed at [Hz], or None for
+    #: unknown — which is the honest default and, today, the usual one.
+    #:
+    #: This is not `requires.control_hz`. That is how fast the body accepts setpoints; this
+    #: is how fast the policy's chunk was meant to be played. They are different numbers and
+    #: assuming they are equal was a live defect: a 30 Hz policy on a 100 Hz body ran its
+    #: trajectory more than three times too fast, silently, in proportion to how fast the
+    #: body happened to be.
+    #:
+    #: The field exists because **no checkpoint declares it.** `smolvla_base`,
+    #: `act_aloha_sim_transfer_cube_human` and `diffusion_pusht` all publish `chunk_size`
+    #: and `n_action_steps` and none publishes an fps, so `LeRobotPolicy` documents its
+    #: `policy_hz` as something "a caller that knows has to say" — and until now the skill
+    #: format, which is where what somebody knows about a policy is written down, had
+    #: nowhere to say it.
+    policy_hz: float | None = None
     #: What to run when no model is available. A skill that declares one can be evaluated
     #: without weights, which is the only way to have a fixed baseline at all.
     #:
@@ -201,6 +217,7 @@ def load_skill(path: str | Path, *, root: Path | None = None) -> Skill:
         confidence_threshold=_threshold(_mapping(raw, "interrupt", path, optional=True), path),
         policy_base=_optional_str(_mapping(raw, "policy", path, optional=True).get("base")),
         policy_adapter=_optional_str(_mapping(raw, "policy", path, optional=True).get("adapter")),
+        policy_hz=_policy_hz(_mapping(raw, "policy", path, optional=True), path),
         policy_baseline=_optional_str(_mapping(raw, "policy", path, optional=True).get("baseline")),
         eval_episodes=int(_mapping(raw, "eval", path, optional=True).get("episodes", 50)),
         success_criteria=_success(_mapping(raw, "eval", path, optional=True), path),
@@ -330,6 +347,27 @@ def _threshold(block: dict[str, Any], path: Path) -> float:
     if not 0.0 <= threshold <= 1.0:
         raise SkillError(f"{path}: confidence_threshold must be between 0 and 1, got {threshold}")
     return threshold
+
+
+def _policy_hz(block: dict[str, Any], path: Path) -> float | None:
+    """Parse `policy.hz`, which is absent far more often than it is present.
+
+    Absent and zero both mean unknown. Refusing a negative one rather than accepting it:
+    the number is divided into the body's rate to decide how long to hold each action, and
+    a negative divisor produces a hold count that is quietly nonsense rather than an error.
+    """
+    value = block.get("hz")
+    if value is None:
+        return None
+
+    try:
+        hz = float(value)
+    except (TypeError, ValueError) as exc:
+        raise SkillError(f"{path}: policy.hz must be a number, got {value!r}") from exc
+
+    if hz <= 0:
+        raise SkillError(f"{path}: policy.hz must be positive, got {hz:g}")
+    return hz
 
 
 def _success(block: dict[str, Any], path: Path) -> tuple[tuple[str, float], ...]:

@@ -93,14 +93,31 @@ def test_asking_for_the_adapter_is_answered_separately_from_a_typo(tmp_path: Pat
     assert "policy_lerobot" in asked.output, "the answer should say where the missing half is"
 
 
-@pytest.mark.parametrize("field", ["policy_adapter"])
-def test_every_skill_field_is_read_by_something(field: str) -> None:
-    """The property, not this instance.
+def _skill_fields() -> list[str]:
+    """Every field on `Skill`, asked of the class rather than listed here.
 
-    `policy.adapter` was parsed into `LoadedSkill` and read by nothing for months: a
-    configuration format that accepts a key and ignores it teaches people to write things
-    that do not happen. Whatever the next such field is, it fails here unless something
-    reads it or something says out loud that it is not being used.
+    The first version of this test named `policy_adapter` in a `parametrize` list, which
+    would have let the next dead field in without a word — the failure it exists to catch
+    is precisely one nobody remembered to add.
+    """
+    import dataclasses
+
+    from tendon.services.skill import Skill
+
+    return [field.name for field in dataclasses.fields(Skill)]
+
+
+@pytest.mark.parametrize("field", _skill_fields())
+def test_every_skill_field_is_read_by_something(field: str) -> None:
+    """The property, not one instance of it.
+
+    `policy.adapter` was parsed into `Skill` and read by nothing for months, and
+    `policy.hz` would have been the next one. A configuration format that accepts a key
+    and ignores it teaches people to write things that do not happen.
+
+    "Read" is satisfied by disclosure as well as by use: a field the runtime cannot act on
+    yet still passes if something says out loud that it is not being acted on. What does
+    not pass is silence.
     """
     root = Path(__file__).resolve().parents[2] / "src" / "tendon"
     readers = [
