@@ -22,6 +22,7 @@ from tendon.services.trainer import (
     Trainer,
     TrainerError,
     TrainingRun,
+    _camera_rename,
 )
 
 
@@ -126,3 +127,97 @@ def test_the_selection_is_carried_into_the_result() -> None:
         final_loss=0.4,
     )
     assert run.episodes == (3, 1, 7)
+
+
+# ------------------------------------------------------------------ camera names
+
+
+class FakeFeature:
+    """Stands in for LeRobot's `PolicyFeature`.
+
+    `_camera_rename` decides whether a feature is an image by looking for VISUAL in the
+    string form of its type, because importing the real `FeatureType` pulls in torch and
+    this file has to run in the CI job that does not install it. The real one renders as
+    `<FeatureType.VISUAL: 'VISUAL'>`, which is where that reading comes from.
+    """
+
+    def __init__(self, kind: str) -> None:
+        self.type = f"<FeatureType.{kind}: '{kind}'>"
+
+
+class FakeConfig:
+    def __init__(self, features: dict[str, str]) -> None:
+        self.input_features = {k: FakeFeature(v) for k, v in features.items()}
+
+
+class FakePolicy:
+    def __init__(self, features: dict[str, str]) -> None:
+        self.config = FakeConfig(features)
+
+
+SMOLVLA = {
+    "observation.state": "STATE",
+    "observation.images.camera1": "VISUAL",
+    "observation.images.camera2": "VISUAL",
+    "observation.images.camera3": "VISUAL",
+}
+
+
+def test_a_driver_camera_is_mapped_onto_the_checkpoints_name() -> None:
+    """The bug that stopped the training loop before it ran a single step.
+
+    A driver calls its camera `wrist`; smolvla_base declares `camera1`. Handed the store's
+    own key the policy sees no image at all and refuses the forward pass.
+    """
+    rename = _camera_rename(FakePolicy(SMOLVLA), ["observation.state", "observation.images.wrist"])
+    assert rename == {"observation.images.wrist": "observation.images.camera1"}
+
+
+def test_a_store_already_using_the_checkpoints_names_is_left_alone() -> None:
+    """Renaming a key to itself is the kind of no-op that hides a mistake later."""
+    rename = _camera_rename(FakePolicy(SMOLVLA), ["observation.images.camera1"])
+    assert rename == {}
+
+
+def test_names_win_over_position() -> None:
+    """`camera2` should stay `camera2` even when it is listed first."""
+    rename = _camera_rename(
+        FakePolicy(SMOLVLA), ["observation.images.camera2", "observation.images.wrist"]
+    )
+
+    assert "observation.images.camera2" not in rename, "a name that already matches is left"
+    assert rename == {"observation.images.wrist": "observation.images.camera1"}
+    assert "observation.images.camera2" not in rename.values(), "camera2 was already taken"
+
+
+def test_two_cameras_take_two_declared_slots() -> None:
+    rename = _camera_rename(
+        FakePolicy(SMOLVLA), ["observation.images.wrist", "observation.images.top"]
+    )
+    assert set(rename.values()) == {
+        "observation.images.camera1",
+        "observation.images.camera2",
+    }, "both should map, and not onto the same slot"
+
+
+def test_a_camera_the_checkpoint_has_no_slot_for_is_left_unmapped() -> None:
+    """Four cameras against three slots. The fourth is dropped rather than colliding."""
+    ours = [f"observation.images.c{i}" for i in range(4)]
+    rename = _camera_rename(FakePolicy(SMOLVLA), ours)
+    assert len(rename) == 3
+    assert len(set(rename.values())) == 3
+
+
+def test_a_policy_declaring_no_images_asks_for_nothing() -> None:
+    """A state-only policy. Renaming into it would invent an input it never reads."""
+    policy = FakePolicy({"observation.state": "STATE"})
+    assert _camera_rename(policy, ["observation.images.wrist"]) == {}
+
+
+def test_a_store_with_no_cameras_needs_no_rename() -> None:
+    assert _camera_rename(FakePolicy(SMOLVLA), ["observation.state", "action"]) == {}
+
+
+def test_a_policy_without_a_config_is_not_an_error() -> None:
+    """Every hand-rolled test double in this repository is one of these."""
+    assert _camera_rename(object(), ["observation.images.wrist"]) == {}
