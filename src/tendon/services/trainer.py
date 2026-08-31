@@ -36,6 +36,7 @@ Requires the robot and train extras:  pip install "tendon-os[robot,train]"
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,56 @@ DEFAULT_BATCH_SIZE = 8
 
 class TrainerError(RuntimeError):
     """Raised when a run cannot be set up or has nothing to learn from."""
+
+
+#: Prefix the recorder writes camera frames under. Mirrors `services/policy_lerobot`.
+_OBS_IMAGES = "observation.images"
+
+
+def _camera_rename(policy: Any, batch_keys: Iterable[str]) -> dict[str, str]:
+    """Map this store's camera keys onto the ones the checkpoint declares.
+
+    A driver names its camera `wrist` and the recorder writes
+    `observation.images.wrist`. `lerobot/smolvla_base` declares
+    `observation.images.camera1`, `camera2` and `camera3`, so a batch built straight from
+    the store contains no image the policy recognises, and it refuses the forward pass
+    with "All image features are missing from the batch".
+
+    The inference half of this loop already solved this: `LeRobotPolicy._image_key` sends a
+    frame to whatever key the checkpoint asks for. Training did not, so a recording that
+    ran fine through a policy could not be trained on -- same dataset, same checkpoint, two
+    different answers about what a camera is called.
+
+    Matched by name first, so a store already using the checkpoint's names is left alone,
+    then by position. Position is the honest fallback: the names mean nothing to each other
+    and refusing on a mismatch would only be right if they did.
+
+    Cameras the checkpoint declares and this store does not have are left out. SmolVLA
+    wants at least one, not all three.
+    """
+    features = getattr(getattr(policy, "config", None), "input_features", {}) or {}
+    declared = [
+        key for key, feature in features.items() if "VISUAL" in str(getattr(feature, "type", ""))
+    ]
+    ours = [key for key in batch_keys if key.startswith(_OBS_IMAGES)]
+    if not declared or not ours:
+        return {}
+
+    rename: dict[str, str] = {}
+    taken: set[str] = set()
+    for key in ours:
+        suffix = key[len(_OBS_IMAGES) :]
+        exact = next((d for d in declared if d.endswith(suffix) and d not in taken), None)
+        if exact is not None:
+            taken.add(exact)
+            if exact != key:
+                rename[key] = exact
+            continue
+        spare = next((d for d in declared if d not in taken), None)
+        if spare is not None:
+            taken.add(spare)
+            rename[key] = spare
+    return rename
 
 
 @dataclass(frozen=True)
@@ -111,6 +162,7 @@ class Trainer:
         batch_size: int = DEFAULT_BATCH_SIZE,
         num_workers: int = 0,
         shuffle: bool = True,
+        action_horizon: int | None = None,
     ) -> tuple[Any, Any]:
         """Open the curated subset and wrap it in a loader.
 
@@ -135,7 +187,7 @@ class Trainer:
 
         try:
             import torch
-            from lerobot.datasets.lerobot_dataset import LeRobotDataset
+            from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
         except ImportError as exc:  # pragma: no cover - depends on the extras
             raise TrainerError(
                 "LeRobot and torch are required. Install the extras: "
@@ -146,8 +198,31 @@ class Trainer:
         if not dataset_root.exists():
             raise TrainerError(f"no episode store at {dataset_root}")
 
+        # A chunked policy is trained on a window of future actions, not one. SmolVLA
+        # predicts 50 at a time; given a batch holding a single action its loss compares
+        # tensors of different lengths and fails inside the model with a size mismatch that
+        # names neither the dataset nor the horizon.
+        #
+        # `delta_timestamps` is how LeRobotDataset returns that window, and it is in
+        # seconds, so the frame rate has to be read before the dataset is opened. Metadata
+        # alone is enough for that and does not load any frames.
+        delta_timestamps = None
+        if action_horizon and action_horizon > 1:
+            try:
+                fps = LeRobotDatasetMetadata(self._repo_id, root=dataset_root).fps
+            except Exception as exc:
+                raise TrainerError(
+                    f"could not read the frame rate at {dataset_root}: {exc}"
+                ) from exc
+            delta_timestamps = {"action": [i / fps for i in range(action_horizon)]}
+
         try:
-            dataset = LeRobotDataset(self._repo_id, root=dataset_root, episodes=list(episodes))
+            dataset = LeRobotDataset(
+                self._repo_id,
+                root=dataset_root,
+                episodes=list(episodes),
+                delta_timestamps=delta_timestamps,
+            )
         except Exception as exc:
             raise TrainerError(f"could not open episodes {episodes}: {exc}") from exc
 
@@ -208,7 +283,7 @@ class Trainer:
         try:
             import torch
             from lerobot.configs.policies import PreTrainedConfig
-            from lerobot.policies.factory import get_policy_class
+            from lerobot.policies.factory import get_policy_class, make_pre_post_processors
         except ImportError as exc:  # pragma: no cover - depends on the extras
             raise TrainerError(
                 "LeRobot and torch are required. Install the extras: "
@@ -216,10 +291,20 @@ class Trainer:
             ) from exc
 
         device = self._resolve_device()
-        dataset, loader = self.build_dataloader(episodes, batch_size=batch_size)
 
+        # The config is read before the loader is built, because the loader needs the
+        # policy's action horizon and the policy is the only thing that knows it.
         try:
             config = PreTrainedConfig.from_pretrained(base_policy)
+        except Exception as exc:
+            raise TrainerError(f"could not load base policy {base_policy!r}: {exc}") from exc
+
+        horizon = getattr(config, "chunk_size", None) or getattr(config, "horizon", None)
+        dataset, loader = self.build_dataloader(
+            episodes, batch_size=batch_size, action_horizon=horizon
+        )
+
+        try:
             policy = get_policy_class(config.type).from_pretrained(base_policy)
         except Exception as exc:
             raise TrainerError(f"could not load base policy {base_policy!r}: {exc}") from exc
@@ -249,6 +334,42 @@ class Trainer:
                 f"Pass target_modules= to fine_tune. Only SmolVLA, pi-0, pi-0.5 and "
                 f"MolmoAct define a default."
             ) from exc
+        # A raw batch out of the store is not what a policy consumes. SmolVLA reads
+        # `observation.language.tokens`, which nothing in the dataset writes: the task
+        # string is tokenised by the policy's own preprocessor, along with normalisation
+        # from the checkpoint's statistics. Calling `forward` on the store's batch fails
+        # with a bare KeyError for a key no recording was ever supposed to contain.
+        #
+        # Built from `pretrained_path` so the normalisation is the checkpoint's own. New
+        # statistics computed from two episodes of one site's data would quietly move the
+        # inputs away from what the base model was trained on.
+        # The rename goes through the pipeline's own step rather than rewriting batches by
+        # hand. LeRobot has `rename_observations_processor` for this and uses it in
+        # `rollout/context.py`; matching which camera is which is the part it cannot do.
+        #
+        # `device_processor` is overridden because the checkpoint saved one. smolvla_base
+        # ships `{"device": "cuda"}`, so building this pipeline on a machine without CUDA
+        # fails before a single batch is read -- which is every CPU fine-tune, not an
+        # unusual case.
+        rename = _camera_rename(policy, getattr(dataset, "features", {}) or {})
+        processor_overrides: dict[str, dict[str, Any]] = {
+            "device_processor": {"device": str(device)}
+        }
+        if rename:
+            processor_overrides["rename_observations_processor"] = {"rename_map": rename}
+            print(f"  cameras renamed for {base_policy}: {rename}")
+
+        try:
+            preprocessor, _ = make_pre_post_processors(
+                config,
+                pretrained_path=base_policy,
+                preprocessor_overrides=processor_overrides,
+            )
+        except Exception as exc:
+            raise TrainerError(
+                f"could not build the input pipeline for {base_policy!r}: {exc}"
+            ) from exc
+
         policy.to(device)
         policy.train()
 
@@ -272,7 +393,7 @@ class Trainer:
                 if step >= steps:
                     break
                 batch = {k: (v.to(device) if hasattr(v, "to") else v) for k, v in batch.items()}
-                loss, _ = policy.forward(batch)
+                loss, _ = policy.forward(preprocessor(batch))
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(
                     [p for p in policy.parameters() if p.requires_grad], grad_clip_norm
