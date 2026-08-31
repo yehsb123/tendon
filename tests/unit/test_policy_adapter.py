@@ -273,3 +273,59 @@ def test_the_adapter_satisfies_the_kernel_protocol() -> None:
     from tendon.kernel.protocols import Policy
 
     assert isinstance(make(FakePolicy()), Policy)
+
+
+# ------------------------------------------------------------------------- rate
+
+
+def test_the_rate_is_unknown_by_default_and_nothing_changes() -> None:
+    """No checkpoint says how fast its actions should be played.
+
+    `smolvla_base`, `act_aloha_sim_transfer_cube_human` and `diffusion_pusht` all declare
+    `chunk_size` and `n_action_steps` and none of them declares an fps. So the default is
+    to assume one action per control tick, which is what this adapter has always done, and
+    to make a caller that knows better say so.
+    """
+    adapter = make(FakePolicy())
+    assert adapter._hold == 1
+
+
+def test_a_slower_policy_holds_each_action() -> None:
+    """A 30 Hz policy on a 100 Hz body is not a 100 Hz policy.
+
+    Playing its chunk one action per tick runs the trajectory more than three times too
+    fast. Nothing errors, the arm simply moves wrong, and it moves wrong in proportion to
+    how fast the body happens to be.
+    """
+    adapter = make(FakePolicy(), control_hz=90.0, policy_hz=30.0)
+    assert adapter._hold == 3
+
+
+@requires_torch
+def test_holding_makes_the_chunk_longer_and_the_horizon_right(observation: Observation) -> None:
+    """The horizon has to stay wall-clock time, not tick count."""
+    intent = make(FakePolicy(scatter=0.01, steps=10), control_hz=90.0, policy_hz=30.0).predict(
+        observation
+    )
+
+    assert len(intent.actions) == 30, "ten actions held for three ticks each"
+    assert intent.horizon_s == pytest.approx(30 / 90.0)
+    assert intent.actions[0].values == intent.actions[2].values, "held, not interpolated"
+
+
+def test_a_body_slower_than_the_policy_is_refused() -> None:
+    """Dropping actions is a choice about which ones, and not this adapter's to make."""
+    with pytest.raises(PolicyError) as caught:
+        make(FakePolicy(), control_hz=30.0, policy_hz=90.0)
+    assert "drop" in str(caught.value)
+
+
+def test_a_ratio_that_is_not_a_whole_number_is_refused() -> None:
+    """25 Hz into 60 Hz is 2.4 ticks per action.
+
+    Rounding it silently accumulates drift across a fifty-step chunk; interpolating it
+    invents a pose the policy never produced. Refused, with both facts in the message.
+    """
+    with pytest.raises(PolicyError) as caught:
+        make(FakePolicy(), control_hz=60.0, policy_hz=25.0)
+    assert "whole multiple" in str(caught.value)

@@ -108,6 +108,7 @@ class LeRobotPolicy:
         task: str,
         dof: int,
         control_hz: float,
+        policy_hz: float | None = None,
         reference_spread: float,
         samples: int = DEFAULT_SAMPLES,
         has_gripper: bool = True,
@@ -124,6 +125,13 @@ class LeRobotPolicy:
             dof: Arm degrees of freedom on the body this will drive. The policy pads its
                 action dimension to `max_action_dim` — 32 for SmolVLA — so the adapter has
                 to know where the real values stop.
+            policy_hz: The rate the checkpoint's actions were meant to be executed at [Hz].
+                None means unknown, which is the honest default: none of
+                `smolvla_base`, `act_aloha_sim_transfer_cube_human` or `diffusion_pusht`
+                declares one. They give `chunk_size` and `n_action_steps` and say nothing
+                about how fast those actions should be played, so a caller that knows has
+                to say. When it differs from `control_hz` each action is held for the
+                number of ticks that keeps the trajectory at the speed it was trained at.
             control_hz: The body's control rate [Hz], used to turn a chunk length into a
                 horizon in seconds.
             reference_spread: Disagreement considered typical for this skill on this body,
@@ -146,6 +154,28 @@ class LeRobotPolicy:
         self._task = task
         self._dof = int(dof)
         self._control_hz = float(control_hz)
+        self._policy_hz = float(policy_hz) if policy_hz else None
+
+        # Held ticks per chunk action. 1 when the rates agree or the policy's is unknown,
+        # which is the same arithmetic as today and the same behaviour.
+        self._hold = 1
+        if self._policy_hz and self._policy_hz > 0:
+            ratio = self._control_hz / self._policy_hz
+            if ratio < 1:
+                raise PolicyError(
+                    f"{name} produces actions for {self._policy_hz:g} Hz and this body runs "
+                    f"at {self._control_hz:g} Hz. Executing a chunk on a body slower than "
+                    f"the policy would drop actions, and choosing which to drop is not "
+                    f"something this adapter should decide."
+                )
+            self._hold = int(round(ratio))
+            if abs(ratio - self._hold) > 1e-6:
+                raise PolicyError(
+                    f"{name} produces actions for {self._policy_hz:g} Hz and this body runs "
+                    f"at {self._control_hz:g} Hz, which is not a whole multiple. Holding "
+                    f"each action for {ratio:.3f} ticks would need interpolation, and a "
+                    f"trajectory this adapter invented is not one the policy produced."
+                )
         self._reference_spread = float(reference_spread)
         self._samples = max(1, int(samples))
         self._has_gripper = has_gripper
@@ -313,6 +343,13 @@ class LeRobotPolicy:
             confidence = Confidence(score=0.0, source=ConfidenceSource.NONE, reasons=(reason,))
 
         executed = chunks[0]
+        if self._hold > 1:
+            # Repeat rather than interpolate. A held position is what the body does between
+            # commands anyway; a synthesised intermediate pose is a trajectory the policy
+            # never produced, and on a real arm that is the difference between slow and
+            # wrong.
+            executed = [action for action in executed for _ in range(self._hold)]
+
         return Intent(
             horizon_s=len(executed) / self._control_hz,
             actions=tuple(executed),
