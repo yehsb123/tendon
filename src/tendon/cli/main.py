@@ -145,7 +145,12 @@ def run(
 
     from tendon.kernel.bus import Bus
     from tendon.kernel.scheduler import Scheduler, StepRecord
-    from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
+    from tendon.services.bodies import (
+        BodyUnavailable,
+        MissingDriverArgument,
+        PhysicalBodyRefused,
+        open_body,
+    )
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
     try:
@@ -157,6 +162,12 @@ def run(
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
     except PhysicalBodyRefused as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+    except MissingDriverArgument as exc:
+        # A body that is present and under-specified is not a missing install, and the
+        # message already names what to pass. Suggesting an extra here would send somebody
+        # to reinstall a driver they have.
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
     except BodyUnavailable as exc:
@@ -863,7 +874,12 @@ def evaluate_skill(
 
     from tendon.kernel.bus import Bus
     from tendon.kernel.scheduler import Scheduler, StepRecord
-    from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
+    from tendon.services.bodies import (
+        BodyUnavailable,
+        MissingDriverArgument,
+        PhysicalBodyRefused,
+        open_body,
+    )
     from tendon.services.evaluator import EpisodeOutcome, SuccessCriterion, evaluate, judge
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
@@ -876,7 +892,7 @@ def evaluate_skill(
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
         require_compatible(loaded, body)
-    except (BodyUnavailable, PhysicalBodyRefused, IncompatibleBody) as exc:
+    except (BodyUnavailable, MissingDriverArgument, PhysicalBodyRefused, IncompatibleBody) as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 

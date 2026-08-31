@@ -68,6 +68,15 @@ class PhysicalBodyRefused(RuntimeError):
     """
 
 
+class MissingDriverArgument(RuntimeError):
+    """A driver exists and needs an argument nobody passed.
+
+    A subclass of nothing in particular on purpose — `BodyUnavailable` is caught by callers
+    that then suggest installing an extra, and this is the one case where that advice is
+    wrong. A body that is present and under-specified is not a missing install.
+    """
+
+
 class BodyUnavailable(RuntimeError):
     """A body could not be opened.
 
@@ -159,3 +168,47 @@ def open_body(name: str, *, allow_physical: bool = False, **kwargs) -> Driver:
         return driver_base.load(name, **kwargs)
     except driver_base.DriverError as exc:
         raise BodyUnavailable(str(exc)) from exc
+    except TypeError as exc:
+        # A driver that needs an argument nobody passed. `HumanDriver` needs `repo_id`
+        # and `SO101Driver` needs a port, and `tendon run --driver human` used to answer
+        # with a raw traceback ending in "missing 1 required positional argument".
+        #
+        # Handled here rather than per driver, because the point of the HAL is that a body
+        # nobody has written yet behaves the same as the ones that exist: whatever it
+        # requires, it says so, and `--driver-arg` is how it gets it.
+        raise MissingDriverArgument(_missing_argument_message(name, exc)) from exc
+
+
+def _missing_argument_message(name: str, exc: TypeError) -> str:
+    """Say what the driver needs, in the form the caller would type.
+
+    Reads the signature rather than parsing the exception text: the message CPython
+    produces names one argument at a time and changes between versions, and a caller who
+    has to run the command twice to discover two arguments has been told half the answer.
+    """
+    import inspect
+
+    # Read from the registry `load` uses. `drivers/base.py` is Track A's and exposes no
+    # lookup, and adding one for a message is not worth a change to their file — this
+    # module already depends on that registry's shape through `load` and `is_simulated`.
+    try:
+        driver = driver_base._REGISTRY[name]
+        parameters = inspect.signature(driver).parameters
+    except Exception:  # noqa: BLE001 - a driver we cannot introspect still needs an answer
+        return f"{name!r} could not be opened: {exc}"
+
+    required = [
+        parameter.name
+        for parameter in parameters.values()
+        if parameter.default is inspect.Parameter.empty
+        and parameter.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    ]
+    if not required:
+        return f"{name!r} could not be opened: {exc}"
+
+    args = " ".join(f"--driver-arg {parameter}=..." for parameter in required)
+    return (
+        f"{name!r} needs {', '.join(required)}. Pass {'it' if len(required) == 1 else 'them'} "
+        f"with: {args}"
+    )

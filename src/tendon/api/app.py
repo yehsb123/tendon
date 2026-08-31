@@ -537,7 +537,12 @@ def create_app(
         from tendon.kernel.bus import Bus
         from tendon.kernel.scheduler import Scheduler, StepRecord
         from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
-        from tendon.services.bodies import BodyUnavailable, PhysicalBodyRefused, open_body
+        from tendon.services.bodies import (
+            BodyUnavailable,
+            MissingDriverArgument,
+            PhysicalBodyRefused,
+            open_body,
+        )
         from tendon.services.limits import LocalLimitsError
         from tendon.services.memory_store import load_memory
         from tendon.services.policies import sine_sweep
@@ -559,6 +564,10 @@ def create_app(
 
         try:
             body = open_body(request.body, allow_physical=request.allow_physical)
+        except MissingDriverArgument as exc:
+            # 400, not 404. The body exists; the request did not say enough to open it,
+            # and a 404 would send somebody looking for a driver they already have.
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except BodyUnavailable as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PhysicalBodyRefused as exc:
