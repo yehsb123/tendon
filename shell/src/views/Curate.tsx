@@ -114,8 +114,22 @@ function Ranking({ curation }: { curation: Curation }) {
     );
   }
 
+  const intervened = curation.episodes.filter((episode) => episode.had_interrupt).length;
+
   return (
     <>
+      {intervened > 0 ? (
+        // Said before the table, because the order is the first thing read and it is not
+        // the order the scores would give. An unexplained ranking reads as a scoring
+        // result, and this one deliberately overrides the scores.
+        <p className="skill-note">
+          {intervened} episode{intervened === 1 ? "" : "s"} an operator was handed control
+          in {intervened === 1 ? "is" : "are"} first, whatever they scored — a score built
+          from smoothness measures the wrong thing about a recording of recovery from
+          failure.
+        </p>
+      ) : null}
+
       <table className="episodes-table">
         <thead>
           <tr>
@@ -128,7 +142,18 @@ function Ranking({ curation }: { curation: Curation }) {
         <tbody>
           {curation.episodes.map((episode) => (
             <tr key={episode.episode_id} data-interrupted={episode.had_interrupt || undefined}>
-              <td>{episode.episode_id}</td>
+              <td>
+                {episode.episode_id}
+                {/* The one thing the curator values above every score, and it was only in
+                    a DOM attribute — these episodes are promoted to the top and nothing
+                    said why they were there. A reader would have taken the order for a
+                    scoring result. */}
+                {episode.had_interrupt ? (
+                  <span className="episode-tag" title="An operator was handed control">
+                    intervened
+                  </span>
+                ) : null}
+              </td>
               <td className="numeric">{episode.score.toFixed(2)}</td>
               <td className="numeric">{episode.steps}</td>
               {/* The reasons, not the score, are what a reviewer argues with. An episode

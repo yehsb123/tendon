@@ -104,6 +104,64 @@ def test_it_reports_whether_interrupts_could_be_attributed(client: TestClient) -
     assert "interrupts_known" in get(client).json()
 
 
+def test_the_view_shows_which_episodes_were_intervened_in(client: TestClient) -> None:
+    """The field the ranking is built on, and it was invisible.
+
+    `had_interrupt` reached the shell and was written into a `data-interrupted` attribute
+    that no stylesheet read. Those episodes are promoted above every score, so a reader saw
+    an order that the numbers do not explain and would reasonably take it for a scoring
+    result — or for a bug in one.
+    """
+    body = detail_of(client)
+
+    assert all("had_interrupt" in episode for episode in body["episodes"])
+
+    view = (REPO / "shell/src/views/Curate.tsx").read_text(encoding="utf-8")
+    assert "intervened" in view, "the marker is not rendered anywhere"
+    assert "whatever they scored" in view, "nothing explains why the order is not the scores"
+
+
+def detail_of(client: TestClient) -> dict:
+    return get(client).json()
+
+
+def test_an_intervened_episode_is_ranked_first(tmp_path: Path) -> None:
+    """The promotion itself, on a store that actually has one.
+
+    The fixture above records with `tendon eval`, which never hands over — so every test
+    against it sees `had_interrupt` false and would pass whether or not promotion worked.
+    A sidecar with an attributed interrupt is the only way to exercise the ordering.
+    """
+    duckdb = pytest.importorskip("duckdb")
+
+    store = tmp_path / "store"
+    result = RUNNER.invoke(
+        cli,
+        ["eval", "grasp/cube-sim", "--episodes", "3", "--steps", "40", "--store", str(store)],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Mark the *last* episode, so a ranking that simply kept recording order would still
+    # put it last and this would fail.
+    sidecar = store / "grasp__cube-sim" / "tendon_sidecar.duckdb"
+    con = duckdb.connect(str(sidecar))
+    try:
+        con.execute(
+            "INSERT INTO interrupts "
+            "(episode_id, episode_index, frame_index, reason, resolution, note, corrected) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ["late", 2, 5, "low_confidence", "corrected", None, True],
+        )
+    finally:
+        con.close()
+
+    client = TestClient(create_app(skill_root=REPO / "skills", episode_root=store))
+    episodes = get(client).json()["episodes"]
+
+    assert episodes[0]["episode_id"] == "2"
+    assert episodes[0]["had_interrupt"] is True
+
+
 def test_a_skill_with_nothing_recorded_is_not_an_error(tmp_path: Path) -> None:
     """The normal state before anybody has run it. A 404 would make the view shout about
     something ordinary, and the shell would show an error where it should show an

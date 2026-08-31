@@ -308,9 +308,10 @@ gripper churn, length against the population — with the reasons beside each sc
 a bare number gives a reviewer nothing to disagree with. It never deletes and never filters
 by a threshold: a curator that is wrong about an episode is wrong about it permanently.
 
-Episodes an operator was handed control in go to the top, whatever they score. Those are
-the only recordings of recovery from failure, and a score computed from smoothness measures
-the wrong thing about them.
+Episodes an operator was handed control in go to the top, whatever they score, and the view
+marks them and says why. Those are the only recordings of recovery from failure, and a score
+computed from smoothness measures the wrong thing about them — so a ranking that put them
+first without explaining would read as a bug in the ranking.
 
 It reads the parquet with duckdb rather than through LeRobot, so **curation runs on a
 machine that cannot record** — no simulator, no torch. That is the machine somebody

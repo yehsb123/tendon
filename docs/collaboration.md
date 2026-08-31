@@ -2562,6 +2562,22 @@ where confidence is going to come from.
   Those five files: 20s each to 1–3s. The suite as a whole 71s to 60s, with the remaining
   20 in `test_cli_curate.py`, which reads recorded episodes back and should pay for one.
   674 tests green.
+
+- **B — the thing the curator values most was in a DOM attribute and nowhere else.**
+  `Curate` wrote `data-interrupted` onto each row and no stylesheet read it. Those episodes
+  are promoted above every score, so somebody reading the table saw an order the numbers do
+  not explain — which reads as a scoring result, or as a bug in one. The information had
+  travelled the whole way from the sidecar to the browser and stopped one step short.
+
+  Marked now, and the reason is said above the table rather than inferred from it: a
+  ranking that overrides its own scores has to say that is what it is doing.
+
+  **The test I wrote first would have passed either way**, which is the part worth
+  recording. The fixture records with `tendon eval`, and `eval` never hands over — so every
+  episode has `had_interrupt` false and any assertion about ordering is vacuous. The real
+  test writes an attributed interrupt into the sidecar for the **last** episode, so a
+  ranking that merely preserved recording order would still put it last and fail.
+  676 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as

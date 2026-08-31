@@ -324,6 +324,24 @@
   font-size: 9px;
 }
 
+/* Marks an episode an operator was handed control in. Quiet but present: it is the reason
+   a row is where it is, and a row that jumped the ranking with no visible cause reads as a
+   bug in the ranking. */
+.episode-tag {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 3px);
+  font-size: var(--text-xs, 11px);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+tr[data-interrupted] .skills-ref,
+tr[data-interrupted] td:first-child {
+  font-weight: 600;
+}
+
 .progress-path {
   fill: none;
   stroke: var(--accent, currentColor);
