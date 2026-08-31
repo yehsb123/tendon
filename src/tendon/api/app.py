@@ -25,6 +25,7 @@ should not have to discover the absence by looking for the code.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import queue as queue_module
 from pathlib import Path
@@ -50,7 +51,21 @@ _DEFAULT_SKILL_ROOT = Path("skills")
 _POLL_INTERVAL_S = 0.02
 
 #: Built shell assets, served when they exist so one command is enough.
+#:
+#: Relative, and therefore resolved against the working directory. That is deliberate for a
+#: repository checkout and it means `tendon serve` from anywhere else finds nothing —
+#: `shell_root()` is what callers use to say so rather than leave a blank page.
 _SHELL_DIST = Path("shell") / "dist"
+
+
+def shell_root() -> Path | None:
+    """The built shell this process would serve, or None if there is none to serve.
+
+    Exported so `tendon serve` can report it. The mount used to happen silently: somebody
+    running the command outside a checkout got a working API, a blank page, and nothing
+    connecting the two.
+    """
+    return _SHELL_DIST.resolve() if _SHELL_DIST.is_dir() else None
 
 
 class StartRequest(BaseModel):
@@ -772,7 +787,24 @@ def create_app(
                     if session.state.finished and session.events.empty():
                         await websocket.send_json({"type": "finished", "state": session.snapshot()})
                         break
-                    await asyncio.sleep(_POLL_INTERVAL_S)
+
+                    # Wait on the socket rather than on the clock. A disconnect used to be
+                    # noticed only when the next `send_json` failed, so an idle stream did
+                    # not notice at all — and the stream is idle exactly during a handover,
+                    # when the policy has stopped producing steps and is waiting for the
+                    # operator who has just gone. That is the case
+                    # `EpisodeSession.abandoned` exists for, and it could not fire because
+                    # the viewer was still counted.
+                    #
+                    # A closed socket surfaces two ways here: `WebSocketDisconnect` on the
+                    # frame that carries the close, and `RuntimeError` on any receive after
+                    # it. Both mean the same thing and only the first is an exception type
+                    # anybody would think to catch.
+                    with contextlib.suppress(TimeoutError):
+                        try:
+                            await asyncio.wait_for(websocket.receive(), _POLL_INTERVAL_S)
+                        except RuntimeError:
+                            break
                     continue
                 await websocket.send_json(event)
         except WebSocketDisconnect:

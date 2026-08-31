@@ -172,7 +172,12 @@ the correction, the memory — and none of it is kept, which makes the next para
 for you. The runtime says so on the page rather than leaving you to find out from an empty
 `Episodes`.
 
-One command serves both the runtime and the interface. Start an episode from the page; the
+One command serves both the runtime and the interface — from `shell/dist` **relative to
+where you run it**, so this is one command inside the checkout and an API on its own
+anywhere else. `serve` prints which of the two happened, because a blank page and a working
+API look the same from a browser.
+
+Start an episode from the page; the
 trajectory updates as the body moves, and when the policy is unsure it hands over and waits
 for you.
 

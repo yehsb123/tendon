@@ -2503,6 +2503,41 @@ where confidence is going to come from.
   claim under test was about installation, which an instrument can only approximate — so I
   built the environment instead of simulating it.
   669 tests green.
+
+- **B — `tendon serve` promised one thing and did it only from one directory.**
+  The README says one command serves both the runtime and the interface. True inside a
+  checkout and only there: `_SHELL_DIST` is `shell/dist` **relative to the working
+  directory**, so the same command run anywhere else brings up a working API and a blank
+  page. The mount was silent either way, and the natural conclusion from a blank page is
+  that the project is broken rather than that you are in the wrong directory.
+
+  `serve` now says which of the two happened, and names the path it looked in — "no shell"
+  is only actionable with a location to compare against where you thought you were.
+
+  Its own help was inconsistent with the README as well: it described the `npm run dev`
+  workflow and never mentioned that a built shell is served, so `tendon serve --help` and
+  the README disagreed about what the command does. Both now say the same thing, including
+  the relative-path caveat, which is the part that decides which of the two you get.
+
+- **B — and the suite told me something I had not asked it.** Two runs of the full suite
+  came back at 456s and 145s against a usual 45s, with `test_abandoned_episode.py` failing
+  in one and half-failing in the other. I wrote those tests ten rounds ago and they had been
+  passing; a flaky test is worse than none, so I went after the flake rather than around it.
+
+  It was not the tests. **The socket handler only noticed a disconnect when the next
+  `send_json` failed**, so an idle stream never noticed at all — and the stream is idle
+  exactly during a handover, when the policy has stopped producing steps and is waiting for
+  the operator who has just closed the tab. That is the case `abandoned` exists for, and it
+  could not fire because the viewer was still counted. The episode ran on to its step limit,
+  which is what the timing looked like.
+
+  The idle branch now waits on the socket instead of the clock. Two exception types, and
+  only one is the obvious one: `WebSocketDisconnect` arrives with the close frame, and every
+  receive after it raises `RuntimeError` — which is what the first attempt hit, so it failed
+  consistently instead of intermittently. Better, but still failing.
+
+  Three consecutive green runs at 20s afterwards.
+  674 tests green.
 - **A — you were right to correct the note, and the part worth keeping is that `--only` did
   not help.** `27ccb40` does contain your `DEFAULT_LIMITS_PATH` line. I have been committing
   with `git commit --only <path>` since sweeping six of your files, and it worked exactly as

@@ -525,17 +525,32 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="Interface to bind"),
     skills_dir: str = typer.Option("skills", help="Where to look for skill packages"),
 ) -> None:
-    """Serve the runtime API the shell talks to.
+    """Serve the runtime, and the shell when it has been built.
 
     Binds to loopback by default. `SECURITY.md` records that there is no authentication
     between shell and runtime yet, so binding to anything wider is a deliberate act rather
     than a default someone inherits.
 
-    Run the shell separately with `npm run dev` in `shell/`; it proxies /api and /ws here.
+    The built shell is served from `shell/dist` **relative to where this is run**, so this
+    is one command inside a checkout and an API on its own anywhere else. Which of the two
+    happened is printed rather than left to be discovered from a blank page. While working
+    on the shell itself, `npm run dev` in `shell/` proxies /api and /ws here instead.
     """
     import uvicorn
 
-    from tendon.api.app import create_app
+    from tendon.api.app import create_app, shell_root
+
+    console = Console()
+    built = shell_root()
+    if built is None:
+        console.print(
+            "[yellow]serving the API only[/yellow] [dim]- no built shell at "
+            f"{escape(str(Path('shell') / 'dist'))} relative to "
+            f"{escape(str(Path.cwd()))}[/dim]"
+        )
+        console.print("[dim]build it with: cd shell && npm install && npm run build[/dim]")
+    else:
+        console.print(f"[dim]serving the shell from {escape(str(built))}[/dim]")
 
     if host not in ("127.0.0.1", "localhost", "::1"):
         Console().print(
