@@ -481,10 +481,25 @@ def create_app(
         the difference: a count of corrections held, and where in joint space they were
         given.
 
-        Reported from the live memory rather than from the store, because the store does
-        not have it — `note_interrupt` records that a correction happened, not what it
-        was. That gap is why this does not survive a restart yet (docs/collaboration.md).
+        Read from the store *and* from live sessions, live winning.
+
+        This said it was reported from live memory only, "because the store does not have
+        it". The store has had it since `memory_store.py` was written: `_learn_and_keep`
+        saves after every correction and a starting session loads what is there. The
+        sentence outlived the gap it described, and what it left behind was worse than a
+        stale comment — the endpoint really did only list skills a session had been started
+        for, so after a restart an operator opened the view and saw nothing while their
+        corrections sat on disk. A view titled "what the operator has taught" that shows
+        none of what they taught.
+
+        Live wins on a conflict because it is the same memory further along: a session
+        holds corrections given seconds ago, and the file is only as new as the last save.
         """
+        from tendon.services.memory_store import stored
+
+        merged = {(skill, body): entry for skill, body, entry in stored(memory_root)}
+        merged.update(memories)
+
         return [
             {
                 "skill": skill,
@@ -495,7 +510,7 @@ def create_app(
                 "taught_at": [list(positions) for positions, _ in entry.entries],
                 "radius": entry.radius,
             }
-            for (skill, body_id), entry in sorted(memories.items())
+            for (skill, body_id), entry in sorted(merged.items())
         ]
 
     @app.get("/api/episodes")

@@ -107,6 +107,43 @@ def load_memory(root: Path, skill: str, body: str) -> CorrectionMemory:
     return memory
 
 
+def stored(root: Path) -> tuple[tuple[str, str, CorrectionMemory], ...]:
+    """Every memory on disk, as `(skill, body, memory)`.
+
+    Exists because `load_memory` answers "what was taught for this skill on this body",
+    which needs the answer to be known before it is asked. `/api/memory` is a list: it has
+    nothing to name until it reads what is there.
+
+    Skill and body come from inside each file, not from its name. `_safe` turns
+    `grasp/cube-sim` into `grasp_cube-sim`, and recovering the original from that means
+    guessing which underscore used to be a slash — wrong the first time a skill has an
+    underscore in its name. The same reasoning `progress.EpisodeRecord` gives for carrying
+    both.
+
+    Unreadable files are skipped rather than raised on, matching `load_memory`: one corrupt
+    memory must not make the others unlistable.
+    """
+    if not root.is_dir():
+        return ()
+
+    found: list[tuple[str, str, CorrectionMemory]] = []
+    for path in sorted(root.glob("*.json")):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict) or raw.get("format") != _FORMAT:
+            continue
+
+        skill, body = raw.get("skill"), raw.get("body")
+        if not isinstance(skill, str) or not isinstance(body, str):
+            continue
+
+        found.append((skill, body, load_memory(root, skill, body)))
+
+    return tuple(found)
+
+
 def save_memory(root: Path, skill: str, body: str, memory: CorrectionMemory) -> None:
     """Write a memory, atomically.
 

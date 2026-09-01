@@ -2813,6 +2813,36 @@ where confidence is going to come from.
   `SECURITY.md` now separates the two claims. The translation has been verified without an
   arm; that the limits hold has not. Those are different sentences and only one of them has
   evidence. 793 tests green.
+- **B — the memory view showed nothing after a restart, and the comment explaining why was
+  four weeks out of date.** `/api/memory` listed `memories`, the in-process dict filled
+  when a session starts. Its docstring said it read live state "because the store does not
+  have it". The store has had it since `memory_store.py`: `_learn_and_keep` saves after
+  every correction, a starting session loads what is there, and the README says plainly
+  that what you taught is still there after a restart.
+
+  All true, and the view of it was empty. An operator restarts, opens the page titled
+  "what the operator has taught", and is shown none of what they taught. The third time
+  this shape has turned up in a week — `tendon shell` printing dev-server instructions
+  because the runtime "does not serve static files" after it had started serving them, and
+  the unit contract before that. **A rationale nobody rechecks keeps its conclusion alive
+  after the fact it rested on is gone**, and the conclusion is what users meet.
+
+  `memory_store.stored()` enumerates the store, mirroring `progress.logs()`, and reads
+  skill and body from inside each file rather than from its sanitised name — the same
+  reason `EpisodeRecord` carries both. Live wins on a conflict, because live is the same
+  memory further along: a session holds corrections given seconds ago and the file is only
+  as new as the last save. A corrupt file is skipped rather than raised on, matching
+  `load_memory`.
+
+  Also new, and the reason this was found: `test_shell_and_runtime_agree.py`. `api/app.py`
+  returns bare `dict[str, Any]` assembled from string literals; `shell/src/api/client.ts`
+  declares an interface per response by hand. Two contracts with nothing between them, and
+  the API's own docstring names the failure — "a shell built against a different contract
+  is the failure that looks like a bug everywhere else". The test parses the TypeScript and
+  checks it against live responses. Only the dangerous direction is asserted: everything
+  the shell declares must arrive. `/api/skills` sends five fields the list view does not
+  read (`namespace`, `name`, `policy_base`, `requires`, `safety`) — worth a look for the
+  skill list, not a defect. 803 tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 
