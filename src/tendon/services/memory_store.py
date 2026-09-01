@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from tendon.services.adaptive import CorrectionMemory
 
-__all__ = ["DEFAULT_MEMORY_ROOT", "load_memory", "save_memory", "memory_path"]
+__all__ = ["DEFAULT_MEMORY_ROOT", "load_memory", "memory_path", "save_memory", "stored"]
 
 #: Beside the episode store rather than inside it. What is in here is derived from what is
 #: in there, and mixing the two would invite somebody to back up one and not the other.

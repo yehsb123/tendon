@@ -255,6 +255,7 @@ def run(
             finally:
                 body.close()
 
+    _record_progress(console, loaded, capability, result, store)
     _report(console, result, bus, root)
 
     if result.subscriber_failures:
@@ -540,6 +541,59 @@ def _video_schema(body) -> tuple[tuple[str, ...], tuple[int, int]]:
     sample = next(iter(frames.values()))
     height, width = int(sample.shape[0]), int(sample.shape[1])
     return tuple(frames), (height, width)
+
+
+def _record_progress(console: Console, loaded, capability, result, store: str) -> None:
+    """Append one finished episode to the progress log.
+
+    The log is what `tendon progress` draws, and that graph is the whole of v0.3: *after N
+    human corrections, the intervention rate drops*. Until now only `api/app.py` wrote to
+    it, so an episode counted towards the proof only if it was started from the shell.
+    `tendon eval --episodes 50` produced fifty episodes and an empty log, and `tendon
+    progress` answered "nothing has run yet — start an episode from the shell", which was
+    true and reads as a limitation of the store rather than of who writes to it.
+
+    That left the control arm unrecordable. A run with no operator is not an absent data
+    point: it is the intervention rate at zero corrections, which is the left end of the
+    line everything else is measured against.
+
+    `corrections_known` is read from the store rather than counted from this run, because
+    it means "corrections held for this skill and body", not "corrections given just now".
+    An evaluation after an afternoon of teaching belongs at the x position that teaching
+    reached, not at zero.
+
+    Isolated the same way the API's copy is: a log that cannot be appended to must not turn
+    a finished run into a failed one, and a line that silently never appeared is a hole in
+    the graph that nobody can see.
+    """
+    from tendon.services import progress
+    from tendon.services.memory_store import DEFAULT_MEMORY_ROOT, load_memory
+
+    root = Path(store).parent / "progress" if store else progress.DEFAULT_PROGRESS_ROOT
+
+    try:
+        known = len(load_memory(DEFAULT_MEMORY_ROOT, loaded.ref, capability.body_id))
+    except Exception:  # noqa: BLE001 - an unreadable memory is not a reason to lose the point
+        known = 0
+
+    try:
+        progress.append(
+            root,
+            loaded.ref,
+            capability.body_id,
+            progress.EpisodeRecord(
+                skill=loaded.ref,
+                body=capability.body_id,
+                episode_id=result.episode_id,
+                ended_at=progress.now(),
+                steps=result.steps,
+                interventions=result.interventions,
+                corrections=result.corrections,
+                corrections_known=known,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - isolation, not silence
+        console.print(f"[yellow]could not record progress: {escape(str(exc))}[/yellow]")
 
 
 def _report_policy_rate(console: Console, loaded, capability) -> None:
@@ -868,7 +922,11 @@ def progress(
 
     if not found:
         console.print(f"[dim]nothing has run yet under {escape(str(root))}[/dim]")
-        console.print("[dim]start an episode from the shell: tendon serve[/dim]")
+        # Both, now that both write. This named the shell alone, which was accurate and
+        # read as a fact about the store rather than about who filled it — so somebody who
+        # had just run fifty episodes concluded the log was broken.
+        console.print("[dim]run some: tendon run <skill>, or tendon eval <skill>[/dim]")
+        console.print("[dim]corrections come from an operator: tendon serve[/dim]")
         raise typer.Exit(code=1)
 
     for skill, body, records in found:
@@ -1325,6 +1383,11 @@ def evaluate_skill(
                 # closing a dataset for each. Twenty-nine empty episodes are worse than
                 # none: they look like a run that happened.
                 recorder = None
+
+            # Every episode, not the sweep. Thirty evaluation episodes are thirty points on
+            # the graph, and a sweep recorded as one would hide the thing the graph is for:
+            # whether the rate moves across them.
+            _record_progress(console, loaded, capability, result, store)
 
             final = result.records[-1].observation.extra if result.records else {}
             verdict, reason = judge(final, criteria)

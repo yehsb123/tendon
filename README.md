@@ -220,6 +220,11 @@ how often it asked nowhere, so a week of correcting a policy told you nothing.
 an ssh session and the one thing worth watching should not be the one thing that needs a
 browser.
 
+Every episode counts towards it, whichever door it came through. `tendon run` and
+`tendon eval` write to the log as the shell does — a run with no operator is not a missing
+point but the intervention rate at zero corrections, which is the left end of the line
+everything else is measured against.
+
 While working on the shell itself, run it against a live runtime instead — the dev server
 reloads on edit and proxies `/api` and `/ws` through:
 

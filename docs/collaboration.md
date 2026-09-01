@@ -2874,6 +2874,40 @@ where confidence is going to come from.
   check stops claiming to enforce something the project no longer asks for.
 
   Shell: `tsc -b` and `vite build` clean, 22 vitest tests green. 804 Python tests green.
+- **B — the v0.3 graph could only be fed through the shell.** Ran the acceptance loop end
+  to end to see where it actually stops. `examples/04_improve --episodes 40` passes:
+  100% interrupted over the first ten episodes, 10% over the last ten, 50 corrections
+  stored. The machinery closes.
+
+  Then the same question of the product rather than the example, and `tendon progress`
+  answered **"nothing has run yet — start an episode from the shell"** after a run that had
+  just finished. Only `api/app.py` wrote to the progress log. `tendon run` and `tendon
+  eval` wrote nothing, so `tendon eval --episodes 50` produced fifty episodes and an empty
+  graph, and the message was true in a way that reads as a fact about the store instead of
+  about who fills it.
+
+  **The part that could not be recorded at all was the control arm.** A run with no
+  operator is not a missing point. It is the intervention rate at zero corrections, which
+  is the left end of the line every other point is measured against — and the graph that
+  decides this project is a comparison, so the arm without corrections is half of it.
+
+  Both commands record now, one point per episode rather than one per sweep.
+  `corrections_known` is read from the memory store rather than counted from the run,
+  because it means "corrections held for this skill and body": an evaluation after an
+  afternoon of teaching belongs at the x position that teaching reached, not back at zero,
+  or the two arms sit on top of each other and the graph shows no movement. Isolated like
+  the API's copy — a log that cannot be appended to must not turn a finished run into a
+  failed one, and it says so rather than dropping the point silently.
+
+  The structural test asserts the property on the AST: every function that calls
+  `run_episode` also calls `_record_progress`. `api/app.py` had this right and the CLI did
+  not, for no reason anybody decided, which is how a proof ends up depending on which door
+  an episode came through. 809 tests green, mypy clean.
+
+  Still open and still yours: nothing loads a trained adapter. That is the one step between
+  "an adapter exists" and "the graph is produced by LoRA rather than by remembered
+  corrections", and `policy_lerobot.py` is your file — third time asking, and I have not
+  touched it.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 
