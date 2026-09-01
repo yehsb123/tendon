@@ -42,8 +42,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --quiet ruff
-      - run: ruff check src tests scripts
-      - run: ruff format --check src tests scripts
+      # No paths here. They are in pyproject.toml, because this step said `src tests
+      # scripts` while everyone typing it locally said `src tests examples`, so
+      # `examples/` was gated by nobody and `scripts/` was linted by nobody until CI ran.
+      - run: ruff check .
+      - run: ruff format --check .
 
   types:
     name: type check
@@ -53,8 +56,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install --quiet mypy pydantic
-      - run: mypy src/tendon --ignore-missing-imports
+      # types-PyYAML so the yaml calls in `services/limits.py` are checked rather than
+      # skipped. That module reads the local safety ceiling.
+      - run: python -m pip install --quiet mypy pydantic types-PyYAML
+      # No flags and no paths: both are in pyproject.toml, so `mypy` here and `mypy` on a
+      # developer's machine are the same check. `--ignore-missing-imports` lived only in
+      # this file, which made the local run report errors CI could not see.
+      - run: mypy
 
   unit:
     name: unit tests

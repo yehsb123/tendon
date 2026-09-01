@@ -2843,6 +2843,37 @@ where confidence is going to come from.
   the shell declares must arrive. `/api/skills` sends five fields the list view does not
   read (`namespace`, `name`, `policy_base`, `requires`, `safety`) — worth a look for the
   skill list, not a defect. 803 tests green.
+- **B — every check now means the same thing wherever it is run, and one correction to
+  yesterday.** Asked to clear every error, so I ran the ones the loop does not: mypy, the
+  shell build, the shell tests, and ruff over what CI actually covers.
+
+  **`mypy src/tendon` locally and the CI step were different checks with the same name.**
+  CI passed `--ignore-missing-imports`; nothing else did, so a local run reported errors CI
+  could not see, and the global flag was also hiding every untyped third-party import
+  rather than any particular one. The configuration is in `pyproject.toml` now, with the
+  unstubbed libraries named one by one — `lerobot`, `mujoco`, `torch`, `rerun`, `duckdb`,
+  `gymnasium`, `huggingface_hub`. The point of a list is that it ends: a new untyped import
+  fails until somebody decides it belongs, which is the decision the flag made silently.
+  `types-PyYAML` is a real dependency now rather than an ignored import, so the yaml calls
+  in `limits.py` — the module that reads the safety ceiling — are actually checked. Clean.
+
+  **Ruff was checking different directories on each side.** CI ran `src tests scripts`,
+  the habit here was `src tests examples`. So `examples/` was gated by nobody in CI and
+  `scripts/` by nobody locally. Paths are in `pyproject.toml` and both commands are now
+  bare. Markdown is excluded from formatting: ruff formats Python inside fenced blocks, and
+  it wanted to reflow the sample in `CONTRIBUTING.md` that is aligned in columns to be read.
+
+  **The correction.** Yesterday's entry says the unit rule was "stated nowhere". That is
+  wrong, and the truth is worse. `CONTRIBUTING.md` has a section headed *"Units are
+  mandatory on every physical quantity"* whose first example is `joint_positions: Vector
+  # [rad]` — the exact field that had no unit. The rule was written, in the file that
+  tells contributors how to work here, and the kernel it governs ignored it for the life of
+  the project. **A rule in a document that nothing checks reads as satisfied**, because the
+  document is still there and still says it. `test_units_are_declared.py` now asserts
+  against `CONTRIBUTING.md` as the source, so if that requirement is ever softened the
+  check stops claiming to enforce something the project no longer asks for.
+
+  Shell: `tsc -b` and `vite build` clean, 22 vitest tests green. 804 Python tests green.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

@@ -6,9 +6,13 @@ declared limit against what a driver reports. If the two disagree about units th
 comparison still succeeds and means nothing.
 
 An arm reporting degrees makes every limit wrong by 57 — in the permissive direction — and
-nothing here could have noticed, because the numbers arrive and they are numbers. Track A's
-SO-101 tests assert that driver uses radians, which was the right thing to pin down and was
-pinned against a rule written in no file.
+nothing here could have noticed, because the numbers arrive and they are numbers.
+
+The rule was not missing. `CONTRIBUTING.md` has a section headed **"Units are mandatory on
+every physical quantity"**, with `joint_positions: Vector  # [rad]` as its first example,
+and the kernel it governs declared none. That is worse than an unwritten convention and
+easier to miss: a rule in a document that nothing checks reads as satisfied, because the
+document is still there and still says it.
 
 Checked on the model fields rather than by reading the docstring, so the next physical
 quantity added to the vocabulary fails unless it declares its unit too. A convention only
@@ -92,6 +96,19 @@ def test_the_vocabulary_states_the_convention_once() -> None:
 
     assert "SI, radians, seconds" in docstring
     assert "A driver converts" in docstring, "the rule has to say who does the converting"
+
+
+def test_the_rule_this_enforces_is_the_one_the_project_states() -> None:
+    """`CONTRIBUTING.md` is where the requirement is written for people. This file is
+    where it is checked. If somebody softens the document, the check should stop claiming
+    to enforce it rather than quietly enforcing a rule the project no longer asks for."""
+    from pathlib import Path
+
+    contributing = (Path(__file__).resolve().parents[2] / "CONTRIBUTING.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Units are mandatory on every physical quantity" in contributing
 
 
 def test_the_driver_contract_repeats_it_where_a_driver_author_looks() -> None:

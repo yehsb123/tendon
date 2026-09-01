@@ -59,6 +59,10 @@ train = ["torch>=2.3", "transformers>=4.44", "peft>=0.12", "accelerate>=0.33"]
 view  = ["rerun-sdk>=0.17"]
 dev   = [
   "pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10",
+  # Real stubs rather than `--ignore-missing-imports`. `services/limits.py` and
+  # `services/skill.py` both parse YAML, and ignoring the import tells mypy to skip the
+  # calls rather than check them — on the module that reads the safety ceiling.
+  "types-PyYAML",
   # fastapi.testclient goes through starlette.testclient, which needs an HTTP
   # client it does not itself depend on. starlette <1.0 asks for `httpx` and
   # >=1.0 asks for `httpx2`; CI resolves to the newer one, so a machine with an
@@ -82,8 +86,52 @@ packages = ["src/tendon"]
 line-length = 100
 target-version = "py310"
 
+# What "the lint" covers, in one place. CI ran `ruff check src tests scripts` and the
+# habit here was `src tests examples`, so `examples/` was linted by nobody in CI and
+# `scripts/` by nobody locally — two commands with the same name checking different
+# things, which is how a directory ends up ungated without anyone deciding it should be.
+src = ["src"]
+extend-include = ["examples/**/*.py", "scripts/**/*.py"]
+# Prose is not source. Ruff formats Python inside fenced blocks, and the sample under
+# "Units are mandatory" in CONTRIBUTING.md is aligned in columns to be read, not compiled.
+# A formatter that rewrites documentation to its own taste makes the document worse at the
+# one job it has.
+extend-exclude = ["*.md"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+# Also in one place, and for the same reason. CI ran mypy with
+# `--ignore-missing-imports` and nothing else did, so `mypy src/tendon` locally reported
+# an error CI could not see. Flags that live only in a workflow file make the local run a
+# different check wearing the same name.
+files = ["src/tendon"]
+python_version = "3.10"
+# Stubs are installed (`types-PyYAML` in [dev]) rather than the import ignored, so mypy
+# actually reads the yaml calls instead of being told not to look.
+ignore_missing_imports = false
+
+# The libraries that ship no type information, named one by one rather than waved away
+# with a global `--ignore-missing-imports`. Naming them is what makes the check the same
+# in both places it runs: CI installs only mypy and pydantic, so every one of these is
+# unresolvable there, while a developer machine has them installed but unstubbed. The
+# global flag hid both, which is why `mypy src/tendon` locally and the CI step disagreed
+# about whether this project type-checks.
+#
+# The point of a list is that it ends. An import of something new fails until somebody
+# decides it belongs here, which is the decision the global flag was making silently.
+[[tool.mypy.overrides]]
+module = [
+    "duckdb.*",
+    "gymnasium.*",
+    "huggingface_hub.*",
+    "lerobot.*",
+    "mujoco.*",
+    "rerun.*",
+    "torch.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
