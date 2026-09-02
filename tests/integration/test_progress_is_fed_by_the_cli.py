@@ -158,6 +158,17 @@ def test_every_command_that_runs_episodes_records_them() -> None:
             for inner in ast.walk(node)
         )
 
+    #: Commands that drive the body without producing a data point, named with why. An
+    #: exemption list is only honest while every entry has a reason somebody can disagree
+    #: with; a blanket allowance is how the property this test exists for goes quiet.
+    not_a_data_point = {
+        "calibrate": (
+            "measures the policy's own disagreement, so its steps are an instrument "
+            "reading rather than an attempt at the task. Recording them would put a run "
+            "nobody asked for on the graph, at a rate that means nothing."
+        )
+    }
+
     runners = [
         node
         for node in ast.walk(tree)
@@ -165,5 +176,9 @@ def test_every_command_that_runs_episodes_records_them() -> None:
     ]
 
     assert runners, "no command runs an episode; the walk is broken"
-    missing = [node.name for node in runners if not calls(node, "_record_progress")]
+    missing = [
+        node.name
+        for node in runners
+        if not calls(node, "_record_progress") and node.name not in not_a_data_point
+    ]
     assert not missing, f"{missing} run episodes without recording them on the v0.3 graph"

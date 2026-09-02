@@ -98,3 +98,27 @@ two on the same axis would be a false result — the kind that looks like progre
 
 The threshold in `skill.yaml` stays a starting point rather than a recommendation, and
 becomes meaningful only once calibration exists.
+
+## Postscript — "calibration" was two things
+
+Acting on this held up more than it had to. "v0.3 calibrates against intervention
+outcomes" was read as one blocked task, and it is two, only one of which needs the
+outcomes:
+
+- **A scale.** How much disagreement is *typical* for this policy on this body. A property
+  of the policy and the body, measured by running them and looking at the distribution. No
+  labels, no operator, no episodes. `services/calibration.py` and `tendon calibrate`.
+- **A threshold.** How much disagreement means *ask for help*. A property of what goes
+  wrong when you do not, which is only visible in episodes where somebody took over and
+  what happened after. Still v0.3, still this decision as written.
+
+The cost of conflating them was concrete: `estimate_from_samples` takes a
+`reference_spread` that every caller had to supply and none could measure, so `api/app.py`
+passed a constant fitted to its synthetic policy and the CLI passed zero. A loaded
+checkpoint ran and reported `NONE`. Design decision 2 says *the policy raises its own
+hand*, and for a real policy nothing could, for want of a number that was measurable the
+whole time.
+
+The scale does not make the threshold meaningful and must not be presented as though it
+does. What it changes is that a score exists at all, and that two runs of the same policy
+on the same body are now comparable to each other — which is the smaller claim, and true.

@@ -72,9 +72,14 @@ tendon run grasp/cube-sim --policy adapter \
 
 The base is read from the adapter, not from `skill.yaml`: a LoRA applied to different
 weights loads, runs, and is wrong with no error anywhere, so a disagreement between the two
-is refused rather than resolved. What is still missing is *confidence* — nothing has
-measured a reference spread for a real checkpoint, so a loaded policy reports no score and
-cannot raise its own interrupt. The run says so before it starts.
+is refused rather than resolved.
+
+`tendon calibrate` measures what disagreement is typical for that policy on that body, so
+the confidence score has a scale to be read against — without it a loaded checkpoint
+reports nothing and cannot raise its own interrupt, and the run says so. **That is the
+scale, not the threshold.** How much disagreement should trigger a handover is a property
+of what goes wrong when it does not, which needs episodes where somebody took over; ADR
+0003 keeps it in v0.3 and the number in `skill.yaml` stays a starting point.
 
 **And the uncertainty is a stand-in.** It is placed at a point in joint space so the loop
 has something to hand over about — a placeholder for whatever makes a real model unsure, an
@@ -276,6 +281,7 @@ tendon progress          is it asking less often than it used to
 tendon serve             the runtime API, and the shell when it is built
 tendon shell             the same, and how to open it from where you are
 tendon curate <skill>    rank recorded episodes by what is worth training on
+tendon calibrate <skill> measure what counts as typical disagreement, so confidence has a scale
 tendon train <skill>     LoRA fine-tune the base policy on the curated episodes
 ```
 

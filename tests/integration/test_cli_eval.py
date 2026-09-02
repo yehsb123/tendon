@@ -108,7 +108,9 @@ def test_eval_and_run_build_the_same_baseline_policy() -> None:
     # baseline and a replay and then calls the builder. That is a stronger version of the
     # same property: neither command names a policy constructor at all, so neither can
     # grow its own idea of what "the baseline" is.
-    assert source.count("= _choose_policy(") == 2
+    # Three commands now: `calibrate` measures a policy and so has to build the same one
+    # the run under test would use, or it would measure something else.
+    assert source.count("= _choose_policy(") == 3
     assert source.count("= _baseline_policy(") == 0
 
     # Where policies are actually built. This once asserted `ScriptedPolicy(` appeared

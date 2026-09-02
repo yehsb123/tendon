@@ -206,7 +206,11 @@ def test_both_commands_take_the_choice_through_one_function() -> None:
     ]
 
     assert len(definitions) == 1
-    assert len(calls) == 2, f"{len(calls)} places choose a policy; run and eval are the two"
+    assert len(calls) == 3, (
+        f"{len(calls)} places choose a policy; run, eval and calibrate are the three. "
+        f"A fourth is fine — go and look at it, then update this number. What is not fine "
+        f"is a command that builds its own, which is what shipped the same bug twice."
+    )
 
 
 def test_the_help_no_longer_names_a_format_nothing_writes() -> None:

@@ -59,7 +59,7 @@ from tendon.kernel.types import (
     Intent,
     Observation,
 )
-from tendon.services.confidence import estimate_from_samples
+from tendon.services.confidence import estimate_from_samples, spread_of
 
 # LeRobot batch keys, from `lerobot.utils.constants`. Mirrored rather than imported so this
 # module can be read, type-checked and unit-tested without LeRobot installed.
@@ -406,6 +406,7 @@ class LeRobotPolicy:
         self._frames = frames
         self._deterministic = deterministic
         self._preprocessor = preprocessor
+        self._last_chunks: list[list[Action]] = []
         # What the checkpoint says it wants. Asking is better than guessing a convention:
         # `config.input_features` is how a policy declares its own inputs.
         self._image_keys = self._declared_image_keys(policy)
@@ -521,6 +522,22 @@ class LeRobotPolicy:
         """
         return (ActionSpace.JOINT_POSITION,)
 
+    @property
+    def last_spread(self) -> float | None:
+        """Disagreement across the samples of the most recent prediction, in action units.
+
+        None before the first prediction, and None for a policy whose samples came back
+        identical — a deterministic policy has no disagreement to measure, and reporting
+        its zero as a measurement is what makes ACT look certain. `services/calibration.py`
+        reads this to work out what typical disagreement looks like here; nothing in the
+        control path uses it.
+        """
+        if len(self._last_chunks) < 2:
+            return None
+        if all(chunk == self._last_chunks[0] for chunk in self._last_chunks[1:]):
+            return None
+        return spread_of(self._last_chunks).weighted
+
     def reset(self) -> None:
         """Clear the policy's internal action queue between episodes."""
         if hasattr(self._policy, "reset"):
@@ -530,6 +547,11 @@ class LeRobotPolicy:
         """Sample n chunks, score their disagreement, and return the first as intent."""
         batch = self._build_batch(observation)
         chunks = [self._sample_chunk(batch) for _ in range(self._samples)]
+        # Kept, not measured. `services/calibration.py` reads the spread of these to work
+        # out what typical disagreement looks like for this policy on this body, and doing
+        # that here would compute `spread_of` twice on every prediction to serve a command
+        # that runs once.
+        self._last_chunks = chunks
 
         # Detected, not trusted to the caller. A deterministic policy returns the same
         # chunk every time, so its spread is zero and `estimate_from_samples` would score

@@ -39,6 +39,7 @@ GUARDED_ROOTS = (
     ("tendon.services.recorder", "DEFAULT_ROOT", "episodes"),
     ("tendon.services.memory_store", "DEFAULT_MEMORY_ROOT", "memory"),
     ("tendon.services.progress", "DEFAULT_PROGRESS_ROOT", "progress"),
+    ("tendon.services.calibration", "DEFAULT_CALIBRATION_ROOT", "calibration"),
     # A file rather than a directory, and redirected for the opposite reason to the
     # others: nothing writes it, but a test that read the developer's real ceiling would
     # pass or fail depending on whose machine it ran on.

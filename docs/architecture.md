@@ -10,8 +10,8 @@
 +-------------------------------------------------------------+
 |  SERVICES   recorder - store - episodes - curator - evaluator |
 |             adaptive - memory_store - progress - limits       |
-|             skill - confidence - policy_scripted              |
-|             policy_lerobot                                    |
+|             skill - confidence - calibration                  |
+|             policy_scripted - policy_lerobot                  |
 |             bodies - policies - viz - trainer - registry      |
 |                                         [src/tendon/services]|
 +-------------------------------------------------------------+

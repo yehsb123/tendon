@@ -2957,6 +2957,48 @@ where confidence is going to come from.
   policy; borrowing that here would be a constant fitted to something else presented as a
   measurement of this. That is ADR 0003 and it is the last conceptual gap, not a wiring one.
   819 tests green, mypy clean.
+- **B — "calibration" was two things, and only one of them was blocked.** Following the
+  entry above, the missing piece was confidence: a loaded checkpoint reported `NONE`
+  because `reference_spread` was zero, so design decision 2 — *the policy raises its own
+  hand* — did not work for a real policy.
+
+  ADR 0003 says calibration waits for v0.3 and intervention outcomes. Reading it again
+  while trying to act on it, that is true of the **threshold** and had been taken as true
+  of both halves:
+
+  - *How much disagreement is typical for this policy on this body?* A property of the
+    policy and the body. Measured by running them and looking at the distribution. No
+    labels, no operator, no episodes. Available the whole time.
+  - *How much disagreement means ask for help?* A property of what goes wrong when you do
+    not, visible only in episodes where somebody took over. Still v0.3, still as written.
+
+  The cost of conflating them was concrete: every caller of `estimate_from_samples` had to
+  supply a `reference_spread` and none could measure one, so `api/app.py` passed a constant
+  fitted to its synthetic policy and the CLI passed zero.
+
+  `services/calibration.py` and `tendon calibrate` measure the first. The median, so a
+  typical step scores 0.5 — not the mean, which one wild sample drags. p10 and p90 stored
+  beside it, because a policy whose disagreement spans an order of magnitude has no typical
+  behaviour to speak of and the command says so rather than presenting the middle as
+  though it meant the same thing. Below twenty samples it refuses outright: a number that
+  looks like a measurement and is not is the failure the module exists to remove.
+
+  The measurement records which policy produced it, and `--policy adapter` refuses a scale
+  measured from a different one rather than using it — a stale scale gives
+  confident-looking scores in the wrong units, and the interrupt threshold is read against
+  them.
+
+  **This does not make the threshold meaningful and is not presented as though it does.**
+  What changed is that a score exists at all, and that two runs of the same policy on the
+  same body are comparable to each other. Recorded as a postscript on ADR 0003 rather than
+  as a new decision, because the decision was right and only the reading of it was wide.
+
+  Six existing tests failed on this and every one was correct: the home guard caught the
+  new store, the docs tests caught `services/README.md` and the architecture diagram, and
+  three counting tests caught a third command. `calibrate` is exempt from the progress test
+  with a reason recorded in it — its steps are an instrument reading, not an attempt at the
+  task, and putting them on the graph would be a rate that means nothing. 835 tests green,
+  mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

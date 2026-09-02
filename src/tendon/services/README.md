@@ -32,6 +32,7 @@ Running something on a body:
 | `policy_lerobot` | Adapts a LeRobot checkpoint to the `Policy` protocol. |
 | `adaptive` | The correction memory and the policy that recalls from it. Where the intervention rate falls. |
 | `confidence` | Estimates confidence from sample spread — the only estimator there is, since a policy rarely reports its own (ADR 0003). |
+| `calibration` | Measures what sample spread is *typical* for one policy on one body, so `confidence` has a scale to score against. The scale, not the threshold: how much disagreement means ask for help needs intervention outcomes and stays v0.3. |
 | `viz` | Streams a run into Rerun. Attached when somebody is watching, not to every run: it costs about ten times what the recorder does. |
 
 ## Why curation is the hard part

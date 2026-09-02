@@ -522,15 +522,39 @@ def _adapter_policy(
             console.print("[dim]this body declares no cameras at all[/dim]")
         raise typer.Exit(code=1)
 
-    console.print(f"[dim]loading {escape(base)} + adapter from {escape(str(directory))}[/dim]")
     # Said before the run, not buried in the report afterwards. The interrupt path keys off
-    # confidence, so an operator watching this needs to know the policy will not raise its
-    # own hand — anything that happens here is a safety trip or their own decision.
-    console.print(
-        "[yellow]confidence is uncalibrated for this policy[/yellow] [dim]- no reference "
-        "spread has been measured, so no score is reported and the policy cannot raise an "
-        "interrupt. ADR 0003.[/dim]"
-    )
+    # confidence, so an operator watching this needs to know whether the policy can raise
+    # its own hand at all — and when it cannot, that anything happening here is a safety
+    # trip or their own decision.
+    from tendon.services.calibration import DEFAULT_CALIBRATION_ROOT
+    from tendon.services.calibration import load as load_calibration
+
+    measured = load_calibration(DEFAULT_CALIBRATION_ROOT, loaded.ref, capability.body_id)
+    spread = _UNCALIBRATED_SPREAD
+
+    if measured is None:
+        console.print(
+            "[yellow]no measured scale for this policy on this body[/yellow] [dim]- no "
+            "score will be reported and the policy cannot raise an interrupt. "
+            f"Measure one: tendon calibrate {escape(loaded.ref)}[/dim]"
+        )
+    elif measured.policy != f"{base}+{directory.name}":
+        # A reference measured from one policy says nothing about another. Refusing to use
+        # it beats using it: a stale scale produces confident-looking scores on the wrong
+        # units, and the interrupt threshold is read against them.
+        console.print(
+            f"[yellow]the measured scale is for {escape(measured.policy)}[/yellow] "
+            f"[dim]and this is a different policy, so it is not being used. "
+            f"Re-measure: tendon calibrate {escape(loaded.ref)}[/dim]"
+        )
+    else:
+        spread = measured.reference_spread
+        console.print(
+            f"[dim]reference spread {spread:.6f}, measured over {measured.samples} "
+            f"predictions on {escape(measured.measured_at)}[/dim]"
+        )
+
+    console.print(f"[dim]loading {escape(base)} + adapter from {escape(str(directory))}[/dim]")
 
     try:
         return load_adapter(
@@ -539,7 +563,7 @@ def _adapter_policy(
             dof=capability.dof,
             control_hz=capability.control_hz,
             policy_hz=loaded.policy_hz,
-            reference_spread=_UNCALIBRATED_SPREAD,
+            reference_spread=spread,
             has_gripper=capability.gripper is not GripperKind.NONE,
             # The pixels. `services` may not import `drivers` and an `Observation` carries
             # frame references rather than arrays, so a caller that wants image-conditioned
@@ -1184,6 +1208,161 @@ def episodes(
                 f"[yellow]{escape(dataset.directory)}:[/yellow] "
                 f"{escape(dataset.unreadable_because or '')}"
             )
+
+
+@app.command()
+def calibrate(
+    skill: str,
+    driver: str = typer.Option("mujoco", help="Which body to measure on"),
+    policy: str = typer.Option("adapter", help="Which policy to measure. adapter[:<path>]"),
+    adapter: str = typer.Option("", help="Adapter directory. Defaults to skill.yaml"),
+    steps: int = typer.Option(400, help="Control steps to sample over"),
+    seed: int | None = typer.Option(None, help="Seed the body for a repeatable measurement"),
+    physical: bool = typer.Option(
+        False, "--physical", help="Allow a body that moves real hardware. Read SECURITY.md."
+    ),
+    driver_arg: list[str] = _DRIVER_ARG_OPTION,
+    out: str = typer.Option("", help="Where to write it. Defaults to ~/.tendon/calibration"),
+) -> None:
+    """Measure what counts as typical disagreement for this policy on this body.
+
+    Without it a loaded checkpoint reports no confidence at all: `services/confidence.py`
+    scores a chunk against a reference spread, every caller had to supply that number, and
+    none could. So the policy could run and could not raise its own hand, which is design
+    decision 2 not working.
+
+    This measures the scale. It does not set the threshold, and the difference is the whole
+    reason it can be done today: how much disagreement is *typical* is a property of the
+    policy and the body, measurable by running them; how much disagreement means *ask for
+    help* is a property of what goes wrong when you do not, and needs episodes where a
+    human took over. That second one is still v0.3 and still needs the loop's own data
+    (ADR 0003).
+
+    Nothing is recorded and no episode is written. This drives the body to produce
+    observations, not to collect data.
+    """
+    console = Console()
+
+    from tendon.kernel.bus import Bus
+    from tendon.kernel.scheduler import Scheduler, StepRecord
+    from tendon.services import calibration as calibration_module
+    from tendon.services.bodies import (
+        BodyUnavailable,
+        MissingDriverArgument,
+        PhysicalBodyRefused,
+        open_body,
+    )
+    from tendon.services.progress import now
+    from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
+
+    try:
+        loaded = load_skill(skill)
+    except SkillError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    _check_policy_name(console, loaded, policy, adapter)
+
+    try:
+        body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
+    except (PhysicalBodyRefused, MissingDriverArgument, BodyUnavailable) as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        require_compatible(loaded, body)
+    except IncompatibleBody as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        body.close()
+        raise typer.Exit(code=1) from exc
+
+    capability = body.capability
+
+    try:
+        running = _choose_policy(console, loaded, capability, policy, "", adapter, body, driver)
+    except typer.Exit:
+        body.close()
+        raise
+
+    if not hasattr(running, "last_spread"):
+        console.print(f"[red]{escape(policy)} does not report a sample spread.[/red]")
+        console.print(
+            "[dim]Only a policy that samples has disagreement to measure. A scripted "
+            "baseline produces one chunk and the same chunk every time.[/dim]"
+        )
+        body.close()
+        raise typer.Exit(code=1)
+
+    spreads: list[float] = []
+
+    # No recorder and no bus subscriber. The point is to observe the policy, not to collect
+    # an episode; writing 400 steps into the store would put a run nobody asked for in
+    # front of the curator.
+    bus: Bus[StepRecord] = Bus()
+    scheduler = Scheduler(
+        driver=body,
+        limits=_effective_limits(console, loaded),
+        confidence_threshold=loaded.confidence_threshold,
+        bus=bus,
+    )
+    bus.subscribe("calibration", lambda _record: _collect(running, spreads))
+
+    console.print(f"[dim]measuring {escape(running.name)} over {steps} steps[/dim]")
+    try:
+        scheduler.run_episode(running, max_steps=steps, seed=seed)
+    finally:
+        body.close()
+
+    try:
+        measured = calibration_module.from_spreads(
+            spreads,
+            skill=loaded.ref,
+            body=capability.body_id,
+            policy=running.name,
+            measured_at=now(),
+        )
+    except ValueError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print(f"[dim]try more steps: --steps {steps * 4}[/dim]")
+        raise typer.Exit(code=1) from exc
+
+    root = Path(out) if out else calibration_module.DEFAULT_CALIBRATION_ROOT
+    calibration_module.save(root, measured)
+
+    console.print()
+    console.print(f"[green]reference spread {measured.reference_spread:.6f}[/green]")
+    console.print(
+        f"[dim]p10 {measured.p10:.6f}  p90 {measured.p90:.6f}  "
+        f"from {measured.samples} predictions[/dim]"
+    )
+    if not measured.is_tight:
+        console.print(
+            "[yellow]this distribution is wide[/yellow] [dim]- p90 is more than ten times "
+            "p10, so 'typical' describes this policy loosely and a score built on it is a "
+            "weaker signal than the number suggests.[/dim]"
+        )
+    written = calibration_module.calibration_path(root, loaded.ref, capability.body_id)
+    console.print(f"[dim]written to {escape(str(written))}[/dim]")
+    console.print()
+    console.print(
+        "[dim]This is the scale, not the threshold. `interrupt.confidence_threshold` in "
+        "skill.yaml stays a starting point until it is calibrated against what happened "
+        "when an operator took over - ADR 0003.[/dim]"
+    )
+
+
+def _collect(policy, spreads: list[float]) -> None:
+    """Take the spread of the last prediction, if there was one.
+
+    Subscribed to the step bus rather than wrapping `predict`, because the scheduler
+    predicts at the deliberation rate and steps at the control rate: a chunk covers many
+    steps, so the same spread is read repeatedly and duplicates have to go. Comparing
+    against the last value is enough — two consecutive predictions with byte-identical
+    spread would be a policy that is not sampling.
+    """
+    value = policy.last_spread
+    if value is not None and (not spreads or spreads[-1] != value):
+        spreads.append(value)
 
 
 @app.command()
