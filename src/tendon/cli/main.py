@@ -927,6 +927,15 @@ def _report(console: Console, result, bus, root: Path | None = None) -> None:
         table.add_row("recorded to", str(root))
     console.print(table)
 
+    if result.stopped_because:
+        # First, and yellow, because it is the difference between an episode that ended and
+        # one that was stopped. A policy raising its own hand with nobody to answer prints
+        # `steps 0`, `ended running`, `interventions 0` otherwise — three true statements
+        # adding up to "nothing happened", for the one event design decision 2 exists to
+        # produce.
+        console.print()
+        console.print(f"[yellow]stopped:[/yellow] {escape(result.stopped_because)}")
+
     if result.unchecked:
         console.print()
         console.print("[yellow]limits that could not be evaluated:[/yellow]")

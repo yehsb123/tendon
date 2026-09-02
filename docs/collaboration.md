@@ -2999,6 +2999,39 @@ where confidence is going to come from.
   with a reason recorded in it — its steps are an instrument reading, not an attempt at the
   task, and putting them on the graph would be a rate that means nothing. 835 tests green,
   mypy clean.
+- **B — the policy raised its own hand, and the tool said nothing.** The measurement landed:
+  `lerobot/smolvla_base+grasp__cube-sim` on `mujoco:so_arm100_cube`, reference spread
+  **0.0778**, p10 0.0429, p90 0.1624, from 26 predictions over 1300 steps. A tight
+  distribution, so "typical" means something for this policy.
+
+  **That is nineteen times `api/app.py`'s 0.004.** Borrowing that constant would not have
+  been approximately right; it would have scored every ordinary step as a crisis. Evidence
+  for refusing to reuse it rather than an argument about it.
+
+  Then the run with the scale in place, and this is the finding. `tendon run --policy
+  adapter` printed:
+
+      steps          0
+      ended          running
+      interventions  0 (0 corrections)
+
+  Three true statements adding up to "nothing happened". What actually happened is that
+  design decision 2 worked for the first time on a real policy: confidence had a scale, the
+  score came out below the threshold, and the scheduler raised an interrupt **before the
+  body moved**. `_hand_over` returns None when no handler is attached — the only safe
+  answer, and it recorded nothing, so the caller could not tell it apart from an episode
+  that did nothing.
+
+  `EpisodeResult.stopped_because` now carries it and `_report` prints it, which it did not
+  for any reason: the field existed and the report showed it nowhere. `interventions` stays
+  0 and that is right — nobody intervened. What was missing is that somebody was *asked*.
+
+      stopped: low_confidence interrupt at step 0 and no operator is attached,
+               so the episode stopped rather than run unsupervised
+
+  Worth naming as a shape: **the first time a mechanism fires is the moment its reporting
+  is weakest**, because until then nothing has ever exercised it. Every field on that
+  result was accurate and the sentence they formed was false. 841 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

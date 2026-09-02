@@ -328,6 +328,16 @@ class Scheduler:
         if self.handler is None:
             # Nobody to ask. Stopping is the only safe answer — continuing would execute
             # an action the system already judged not worth executing unsupervised.
+            #
+            # Recorded, because the caller cannot otherwise tell this apart from an episode
+            # that simply did nothing. The first time a real policy raised its own hand,
+            # `tendon run` reported `steps 0`, `ended running`, `interventions 0` — three
+            # true statements adding up to "nothing happened", for the one event design
+            # decision 2 exists to produce.
+            result.stopped_because = (
+                f"{reason.value} interrupt at step {result.steps} and no operator is "
+                f"attached, so the episode stopped rather than run unsupervised"
+            )
             return None
 
         context = InterruptContext(
