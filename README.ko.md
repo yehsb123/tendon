@@ -73,9 +73,24 @@ docstring에서 늘 찾을 수 있었지만, **정책이 스스로 손을 드는
 
 `tendon train`은 이제 실제로 돕니다. 영상이 있는 녹화본을 큐레이터가 매긴 순위대로
 스킬의 베이스 정책에 파인튜닝해 LoRA 어댑터를
-만듭니다([`services/trainer.py`](src/tendon/services/trainer.py)). 아직 없는 건 돌아오는
-길입니다 — 어댑터를 읽을 수 있는 게 없어서, 어댑터를 지정한 실행은 **그 사실을 말하고**
-베이스라인을 씁니다. 쓰는 척하지 않습니다.
+만듭니다([`services/trainer.py`](src/tendon/services/trainer.py)). 그리고 돌아오는 길도
+있습니다 — `tendon run --policy adapter`가 학습된 어댑터를 그것이 훈련된 체크포인트에
+얹어 몸을 움직입니다.
+
+```bash
+tendon run grasp/cube-sim --driver-arg render_cameras=wrist   # 영상과 함께 수집
+tendon train grasp/cube-sim                                   # 큐레이션 + 파인튜닝
+tendon run grasp/cube-sim --policy adapter \
+  --driver-arg render_cameras=wrist                           # 학습한 것을 실행
+```
+
+베이스는 `skill.yaml`이 아니라 **어댑터 자신에게서** 읽습니다. LoRA를 다른 가중치에
+얹으면 로드되고, 돌아가고, 틀립니다. 어디에도 오류가 없습니다. 그래서 둘이 어긋나면
+해결하지 않고 **거부합니다.**
+
+아직 없는 건 **신뢰도**입니다. 실제 체크포인트의 기준 분산을 아무도 측정하지 않아서,
+로드된 정책은 점수를 보고하지 않고 스스로 인터럽트를 걸 수 없습니다. 실행 전에 그렇게
+말합니다.
 
 ## 비어 있는 층
 

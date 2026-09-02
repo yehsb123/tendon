@@ -59,9 +59,22 @@ operator is scripted. Swapping in LoRA fine-tuning and a human is the v0.3 exper
 
 `tendon train` does now run: recorded episodes with video, ranked by the curator,
 fine-tuned against the skill's base policy into a LoRA adapter
-([`services/trainer.py`](src/tendon/services/trainer.py)). What is still missing is the way
-back — nothing loads an adapter yet, so a run that has one declared says so and uses the
-baseline rather than pretending.
+([`services/trainer.py`](src/tendon/services/trainer.py)). And the way back is there —
+`tendon run --policy adapter` loads it onto the checkpoint it was trained against and
+drives the body with it:
+
+```bash
+tendon run grasp/cube-sim --driver-arg render_cameras=wrist   # collect, with video
+tendon train grasp/cube-sim                                   # curate and fine-tune
+tendon run grasp/cube-sim --policy adapter \
+  --driver-arg render_cameras=wrist                           # run what you trained
+```
+
+The base is read from the adapter, not from `skill.yaml`: a LoRA applied to different
+weights loads, runs, and is wrong with no error anywhere, so a disagreement between the two
+is refused rather than resolved. What is still missing is *confidence* — nothing has
+measured a reference spread for a real checkpoint, so a loaded policy reports no score and
+cannot raise its own interrupt. The run says so before it starts.
 
 **And the uncertainty is a stand-in.** It is placed at a point in joint space so the loop
 has something to hand over about — a placeholder for whatever makes a real model unsure, an

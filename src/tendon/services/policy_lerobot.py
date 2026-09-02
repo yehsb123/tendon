@@ -48,6 +48,7 @@ Requires the robot and train extras:  pip install "tendon-os[robot,train]"
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 from tendon.kernel.types import (
@@ -92,6 +93,224 @@ def _import_torch() -> Any:
     return torch
 
 
+def _load_base(repo_id: str, device: str | None) -> Any:
+    """Load a LeRobot checkpoint and put it in eval mode.
+
+    Two steps rather than one, and the reason matters. `PreTrainedPolicy` is abstract, so
+    calling `from_pretrained` on it has no class to instantiate. The concrete class is
+    named by the checkpoint's own config, and reading that first is also what makes this
+    work for any LeRobot policy — act, diffusion, pi0, smolvla — without keeping a table of
+    names here that would go stale.
+
+    One function because `from_pretrained` and `load_adapter` both need it, and this
+    project has twice shipped one bug from two copies of the same construction.
+    """
+    torch = _import_torch()
+    try:
+        from lerobot.configs.policies import PreTrainedConfig
+        from lerobot.policies.factory import get_policy_class
+    except ImportError as exc:  # pragma: no cover - depends on the robot extra
+        raise PolicyError(
+            'LeRobot is not installed. Install the robot extra: pip install "tendon-os[robot]"'
+        ) from exc
+
+    try:
+        config = PreTrainedConfig.from_pretrained(repo_id)
+        policy = get_policy_class(config.type).from_pretrained(repo_id)
+    except Exception as exc:
+        raise PolicyError(f"could not load policy {repo_id!r}: {exc}") from exc
+
+    resolved = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    policy.to(resolved)
+    policy.eval()
+    return policy
+
+
+def build_preprocessor(repo_id: str, device: str) -> Any | None:
+    """The checkpoint's own input pipeline, or None when it has none.
+
+    A raw batch is not what a policy consumes. SmolVLA reads
+    `observation.language.tokens`, which nothing builds by hand: the task string is
+    tokenised by the checkpoint's preprocessor, along with normalisation from the
+    statistics the checkpoint was trained under. Calling `predict_action_chunk` on a batch
+    assembled here fails with a bare `KeyError` for a key no caller was ever supposed to
+    write — and for a policy that does not tokenise, it succeeds on unnormalised inputs,
+    which is worse: the numbers are on the wrong scale and the actions are wrong with no
+    error anywhere.
+
+    `pretrained_path` is passed so the normalisation is the checkpoint's own. Statistics
+    recomputed from one site's data would quietly move the inputs away from what the model
+    was trained on.
+
+    `device_processor` is overridden because the checkpoint saved one: `smolvla_base` ships
+    `{"device": "cuda"}`, so building this on a machine without CUDA fails before a single
+    batch is read — which is every CPU run, not an unusual case. The same override the
+    trainer needed, for the same reason, found the same way.
+    """
+    try:
+        from lerobot.configs.policies import PreTrainedConfig
+        from lerobot.policies import factory
+        from lerobot.policies.factory import make_pre_post_processors
+    except ImportError:  # pragma: no cover - depends on the robot extra
+        return None
+
+    assert factory is not None  # registration side effect; see `declared_image_features`
+
+    try:
+        config = PreTrainedConfig.from_pretrained(repo_id)
+        preprocessor, _ = make_pre_post_processors(
+            config,
+            pretrained_path=repo_id,
+            preprocessor_overrides={"device_processor": {"device": str(device)}},
+        )
+    except Exception as exc:
+        raise PolicyError(f"could not build the input pipeline for {repo_id!r}: {exc}") from exc
+
+    return preprocessor
+
+
+def adapter_base(directory: Path | str) -> str:
+    """The checkpoint an adapter was trained against, read from the adapter itself.
+
+    A LoRA is a delta against particular weights. Applied to a different base it loads,
+    runs, and is wrong — no exception, no warning, just a policy doing something nobody
+    trained it to do. So the base is taken from `adapter_config.json`, which PEFT writes
+    from the model it was attached to, rather than from a `skill.yaml` a person edits.
+
+    Separate from `load_adapter` so a caller can compare it against what a skill declares
+    before spending minutes on a checkpoint.
+    """
+    import json
+
+    path = Path(directory) / "adapter_config.json"
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise PolicyError(f"no adapter config at {path}: {exc}") from exc
+    except ValueError as exc:
+        raise PolicyError(f"{path} is not readable as JSON: {exc}") from exc
+
+    base = config.get("base_model_name_or_path")
+    if not isinstance(base, str) or not base:
+        raise PolicyError(
+            f"{path} does not name the checkpoint it was trained against, so there is "
+            f"nothing to apply it to. PEFT writes `base_model_name_or_path`; an adapter "
+            f"without it was not written by `tendon train`."
+        )
+    return base
+
+
+def declared_image_features(repo_id: str) -> tuple[str, ...]:
+    """Image inputs a checkpoint declares, read from its config alone.
+
+    No weights. `PreTrainedConfig.from_pretrained` fetches a JSON file, which is what makes
+    this answerable before deciding to spend minutes loading 450 million parameters — and
+    the answer decides whether the run can work at all. A vision-language-action policy on
+    a body rendering no cameras fails inside the model with "All image features are missing
+    from the batch", after the checkpoint has loaded, naming neither the body nor the flag
+    that would have supplied them.
+
+    Empty for a state-only checkpoint, which is a policy that legitimately needs no video.
+    """
+    try:
+        from lerobot.configs.policies import PreTrainedConfig
+        from lerobot.policies import factory
+    except ImportError as exc:  # pragma: no cover - depends on the robot extra
+        raise PolicyError(
+            'LeRobot is not installed. Install the robot extra: pip install "tendon-os[robot]"'
+        ) from exc
+
+    # Imported for its registration side effect rather than to be called. `PreTrainedConfig`
+    # resolves the checkpoint's `type` through a registry the factory module fills on
+    # import, and without it a perfectly good checkpoint reports "Policy type 'smolvla' is
+    # not registered. Available policy types: {}" — which reads as a broken checkpoint
+    # rather than a missing import.
+    assert factory is not None
+
+    try:
+        config = PreTrainedConfig.from_pretrained(repo_id)
+    except Exception as exc:
+        raise PolicyError(f"could not read the config of {repo_id!r}: {exc}") from exc
+
+    features = getattr(config, "input_features", None) or {}
+    return tuple(name for name in features if name.startswith(_OBS_IMAGE_SINGULAR))
+
+
+def load_adapter(
+    directory: Path | str,
+    *,
+    task: str,
+    dof: int,
+    control_hz: float,
+    reference_spread: float,
+    policy_hz: float | None = None,
+    device: str | None = None,
+    **kwargs: Any,
+) -> LeRobotPolicy:
+    """Load a LoRA adapter onto the base it was trained against, and wrap it.
+
+    This is the return path for `tendon train`. LeRobot has `wrap_with_peft` and no
+    counterpart, so loading is PEFT's own: build the base, then
+    `PeftModel.from_pretrained(policy, directory)`.
+
+    **The attachment is verified, not assumed.** PEFT applies an adapter by name-matching
+    `target_modules` against the model, and a pattern that matches nothing is not an error
+    there — it produces a model identical to the base, which runs perfectly and is not the
+    thing that was trained. The parameter count has to grow, and by how much says whether
+    the adapter arrived whole. This mirrors the trainer's own guard at the other end, where
+    an adapter that failed to attach shows up as *every* parameter being trainable.
+
+    Measured on `lerobot/smolvla_base` with an adapter from `tendon train`: 450,046,176
+    parameters before, 450,788,832 after — a difference of 742,656, which is exactly what
+    the training run reported as trainable.
+    """
+    resolved = Path(directory)
+    base = adapter_base(resolved)
+
+    try:
+        from peft import PeftModel
+    except ImportError as exc:  # pragma: no cover - depends on the train extra
+        raise PolicyError(
+            'PEFT is not installed. Install the train extra: pip install "tendon-os[train]"'
+        ) from exc
+
+    policy = _load_base(base, device)
+    before = sum(parameter.numel() for parameter in policy.parameters())
+
+    try:
+        adapted = PeftModel.from_pretrained(policy, str(resolved))
+    except Exception as exc:
+        raise PolicyError(f"could not apply the adapter at {resolved} to {base}: {exc}") from exc
+
+    after = sum(parameter.numel() for parameter in adapted.parameters())
+    if after <= before:
+        raise PolicyError(
+            f"the adapter at {resolved} attached nothing to {base}: {before} parameters "
+            f"before and {after} after. Its target_modules match no module in this "
+            f"checkpoint, which usually means it was trained against a different one. "
+            f"Running it would run the base model while reporting the adapter."
+        )
+
+    adapted.eval()
+
+    # The device the base actually landed on, not the one that was asked for: `_load_base`
+    # resolves `None` to cuda-or-cpu, and the preprocessor has to agree with the model or
+    # every batch arrives on the wrong one.
+    landed = str(next(adapted.parameters()).device)
+
+    return LeRobotPolicy(
+        adapted,
+        name=f"{base}+{resolved.name}",
+        task=task,
+        dof=dof,
+        control_hz=control_hz,
+        policy_hz=policy_hz,
+        reference_spread=reference_spread,
+        preprocessor=build_preprocessor(base, landed),
+        **kwargs,
+    )
+
+
 class LeRobotPolicy:
     """A LeRobot `PreTrainedPolicy` presented as a tendon `Policy`.
 
@@ -114,6 +333,7 @@ class LeRobotPolicy:
         has_gripper: bool = True,
         frames: Callable[[], dict[str, Any]] | None = None,
         deterministic: bool = False,
+        preprocessor: Any | None = None,
     ) -> None:
         """
         Args:
@@ -148,6 +368,10 @@ class LeRobotPolicy:
             deterministic: Set for a policy that returns the same chunk every time. Sample
                 spread measures nothing for such a policy, and `services.confidence`
                 reports `NONE` rather than dressing zero spread up as certainty.
+            preprocessor: The checkpoint's own input pipeline, from `build_preprocessor`.
+                None for a test double or a policy that consumes a raw batch. When present
+                every batch goes through it before prediction, which is what tokenises the
+                task and normalises the state to the scale the checkpoint was trained on.
         """
         self._policy = policy
         self._name = name
@@ -181,6 +405,7 @@ class LeRobotPolicy:
         self._has_gripper = has_gripper
         self._frames = frames
         self._deterministic = deterministic
+        self._preprocessor = preprocessor
         # What the checkpoint says it wants. Asking is better than guessing a convention:
         # `config.input_features` is how a policy declares its own inputs.
         self._image_keys = self._declared_image_keys(policy)
@@ -246,30 +471,27 @@ class LeRobotPolicy:
         14-dimensional actions. A failure here is more likely a version mismatch than a
         mistake in the caller.
         """
-        torch = _import_torch()
-        try:
-            from lerobot.configs.policies import PreTrainedConfig
-            from lerobot.policies.factory import get_policy_class
-        except ImportError as exc:  # pragma: no cover - depends on the robot extra
-            raise PolicyError(
-                'LeRobot is not installed. Install the robot extra: pip install "tendon-os[robot]"'
-            ) from exc
-
-        # Two steps rather than one, and the reason matters. `PreTrainedPolicy` is
-        # abstract, so calling `from_pretrained` on it has no class to instantiate. The
-        # concrete class is named by the checkpoint's own config, and reading that first is
-        # also what makes this work for any LeRobot policy — act, diffusion, pi0, smolvla —
-        # without keeping a table of names here that would go stale.
-        try:
-            config = PreTrainedConfig.from_pretrained(repo_id)
-            policy_class = get_policy_class(policy_type or config.type)
-            policy = policy_class.from_pretrained(repo_id)
-        except Exception as exc:
-            raise PolicyError(f"could not load policy {repo_id!r}: {exc}") from exc
-
-        resolved = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        policy.to(resolved)
-        policy.eval()
+        if policy_type is None:
+            policy = _load_base(repo_id, device)
+        else:
+            # The one case `_load_base` cannot serve: a checkpoint whose config does not
+            # name its own type, where the caller has to. Kept here rather than pushed into
+            # the shared loader, which would give every caller a parameter for a situation
+            # that has not been met yet.
+            torch = _import_torch()
+            try:
+                from lerobot.policies.factory import get_policy_class
+            except ImportError as exc:  # pragma: no cover - depends on the robot extra
+                raise PolicyError(
+                    "LeRobot is not installed. Install the robot extra: "
+                    'pip install "tendon-os[robot]"'
+                ) from exc
+            try:
+                policy = get_policy_class(policy_type).from_pretrained(repo_id)
+            except Exception as exc:
+                raise PolicyError(f"could not load policy {repo_id!r}: {exc}") from exc
+            policy.to(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+            policy.eval()
 
         return cls(
             policy,
@@ -387,7 +609,18 @@ class LeRobotPolicy:
                     image = image.float() / 255.0
                 batch[self._image_key(camera, index)] = image.unsqueeze(0)
 
-        return batch
+        if self._preprocessor is None:
+            return batch
+
+        # Once per prediction, not once per sample: every sample conditions on the same
+        # observation, and tokenising the same task string n times would be n times the
+        # cost for the same tensor.
+        try:
+            return self._preprocessor(batch)
+        except Exception as exc:
+            raise PolicyError(
+                f"{self._name} could not prepare an observation for its own preprocessor: {exc}"
+            ) from exc
 
     def _image_key(self, camera: str, index: int) -> str:
         """Where this camera's pixels go in the batch.

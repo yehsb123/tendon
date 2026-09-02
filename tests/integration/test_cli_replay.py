@@ -178,13 +178,35 @@ def test_each_evaluation_episode_starts_the_recording_again(recorded: Path) -> N
 
 def test_both_commands_take_the_choice_through_one_function() -> None:
     """`run` and `eval` have shipped the same bug from two copies of a policy construction
-    before. Checked at the source so a third command cannot quietly grow its own."""
+    before. Checked at the source so a third command cannot quietly grow its own.
+
+    Counted by parsing rather than by matching the call text. This asserted the exact
+    argument list and broke when `--adapter` was threaded through — the same way the
+    recorder's version of this test broke, for the same reason. How many places choose a
+    policy is the property; what they pass is not part of it.
+    """
+    import ast
+
     source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
         encoding="utf-8"
     )
+    tree = ast.parse(source)
 
-    assert source.count("def _choose_policy(") == 1
-    assert source.count("_choose_policy(console, loaded, capability, policy, store)") == 2
+    definitions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_choose_policy"
+    ]
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_choose_policy"
+    ]
+
+    assert len(definitions) == 1
+    assert len(calls) == 2, f"{len(calls)} places choose a policy; run and eval are the two"
 
 
 def test_the_help_no_longer_names_a_format_nothing_writes() -> None:

@@ -89,6 +89,10 @@ def test_asking_for_the_adapter_is_answered_separately_from_a_typo(tmp_path: Pat
     extra happens to be installed, which is the shape that let the viz suite sit green and
     ungated for weeks. The name check moved ahead of `open_body` instead, so the test holds
     everywhere — and a typo no longer costs a body on the way to being told about it.
+
+    The adapter's answer used to name `policy_lerobot.py` as where the missing loader would
+    go. It is written, so the answer is now about *this* adapter — the path, which is the
+    only thing left that can be wrong before the weights load.
     """
     skill = _skill(tmp_path, adapter="/somewhere/adapter")
 
@@ -98,7 +102,8 @@ def test_asking_for_the_adapter_is_answered_separately_from_a_typo(tmp_path: Pat
     assert asked.exit_code == 1
     assert typo.exit_code == 1
     assert asked.output != typo.output
-    assert "policy_lerobot" in asked.output, "the answer should say where the missing half is"
+    assert "adapter" in asked.output
+    assert "/somewhere/adapter" in asked.output.replace("\\", "/"), "it did not name the path"
     for output in (asked.output, typo.output):
         assert "absent" not in output, "the body was consulted before the name was checked"
 

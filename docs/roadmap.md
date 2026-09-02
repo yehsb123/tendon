@@ -60,13 +60,17 @@ video, ranked, fine-tuned against `lerobot/smolvla_base` on CPU, producing a LoR
 that is 0.16% of the model — which is the number that says the adapter attached rather than
 quietly training everything.
 
-The missing half is no longer the training. It is that nothing can load the result:
-`tendon run --policy` takes `scripted` and `replay:`, and `skill.yaml`'s `policy.adapter`
-field — commented in the file as the place an adapter appears after `tendon train` — is
-read by nothing. A run that has one declared now says out loud that it is not using it,
-which is disclosure rather than a fix. Nor is confidence calibrated across skills (ADR
-0003). So the graph is real and the mechanism behind it is the simplest one that could
-produce it, which is worth saying plainly rather than leaving somebody to discover.
+The way back exists too. `tendon run --policy adapter` loads what training produced onto
+the checkpoint it was trained against and drives the body with it, verified on the real
+path: 450,046,176 parameters before the adapter and 450,788,832 after, a difference of
+exactly the 742,656 the training run reported.
+
+**What is still missing is confidence, and it is not plumbing.** ADR 0003 says no upstream
+policy reports one; a loaded checkpoint has no measured reference spread, so it reports no
+score and cannot raise its own interrupt. Design decision 2 is *the policy raises its own
+hand*, and for a real policy nothing yet decides when it should. Until that exists the
+graph is produced by remembered corrections rather than by a fine-tuned policy, which is
+worth saying plainly rather than leaving somebody to discover.
 
 ## v0.4 — Bodies and packages  *(~6 weeks)*
 

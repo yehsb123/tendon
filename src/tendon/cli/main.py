@@ -102,6 +102,25 @@ def doctor() -> None:
 #: anything and a jaw closing on nothing is the more surprising default.
 _HELD_OPEN = 1.0
 
+#: Policy names this build can run. One set, consulted by the name check and named in the
+#: refusal, so the list a person is shown cannot drift from the list that is accepted.
+_RUNNABLE_POLICIES = frozenset({"scripted", "replay", "adapter"})
+
+#: Reference spread for a loaded checkpoint: none, until somebody measures one.
+#:
+#: The number is the scale confidence is measured against, and ADR 0003 is explicit that
+#: nothing has calibrated it — it is "the caller's guess" until v0.3 measures spread
+#: against intervention outcomes. `api/app.py` passes 0.004, tuned to the synthetic policy
+#: it drives; using that here would be borrowing a constant fitted to something else and
+#: presenting the result as a measurement of this.
+#:
+#: Zero is not a disabled feature. `services/confidence.py` answers it with
+#: `ConfidenceSource.NONE` and the reason "no reference spread configured, so the
+#: measurement has no scale", which is what an operator should be told. A guessed number
+#: would produce a confident-looking score with nothing behind it, and this project's whole
+#: interrupt path keys off that score.
+_UNCALIBRATED_SPREAD = 0.0
+
 
 @app.command()
 def run(
@@ -112,9 +131,16 @@ def run(
     policy: str = typer.Option(
         "scripted",
         help=(
-            "scripted | replay:<skill>#<episode> | the skill's own policy. "
+            "scripted | replay:<skill>#<episode> | adapter[:<path>]. "
             "replay: takes a recording from the store, not a file - nothing writes "
-            "episode JSON."
+            "episode JSON. adapter runs what `tendon train` produced."
+        ),
+    ),
+    adapter: str = typer.Option(
+        "",
+        help=(
+            "Adapter directory for --policy adapter. Defaults to policy.adapter in "
+            "skill.yaml; the base checkpoint is read from the adapter, not from the skill."
         ),
     ),
     steps: int = typer.Option(500, help="Maximum control steps"),
@@ -170,7 +196,7 @@ def run(
     # misspelled. `bodies.py` already argues this rule for its own refusal: "Checked before
     # construction, not after... touching the hardware in order to decide whether to touch
     # it." Same rule, one layer up.
-    _check_policy_name(console, loaded, policy)
+    _check_policy_name(console, loaded, policy, adapter)
 
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
@@ -202,7 +228,7 @@ def run(
     capability = body.capability
 
     try:
-        running = _choose_policy(console, loaded, capability, policy, store)
+        running = _choose_policy(console, loaded, capability, policy, store, adapter, body, driver)
     except typer.Exit:
         # The body was opened before the policy was chosen, because compatibility is
         # checked against it first. A refused policy still has to give it back.
@@ -291,7 +317,16 @@ def _effective_limits(console: Console, loaded):
     return limits
 
 
-def _choose_policy(console: Console, loaded, capability, policy: str, store: str):
+def _choose_policy(
+    console: Console,
+    loaded,
+    capability,
+    policy: str,
+    store: str,
+    adapter: str = "",
+    body=None,
+    driver_name: str = "",
+):
     """Build whichever policy `--policy` asked for.
 
     One function because `run` and `eval` both take the choice and this project has shipped
@@ -300,16 +335,27 @@ def _choose_policy(console: Console, loaded, capability, policy: str, store: str
     the fixed baseline *every evaluation* needs, and evaluation was the one command that
     could not use it.
     """
-    _check_policy_name(console, loaded, policy)
+    _check_policy_name(console, loaded, policy, adapter)
 
     if policy == "scripted":
         _warn_about_an_ignored_adapter(console, loaded)
         return _baseline_policy(loaded, capability)
 
+    if policy == "adapter" or policy.startswith("adapter:"):
+        return _adapter_policy(
+            console,
+            loaded,
+            capability,
+            policy.partition(":")[2],
+            adapter,
+            body,
+            driver_name,
+        )
+
     return _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
 
 
-def _check_policy_name(console: Console, loaded, policy: str) -> None:
+def _check_policy_name(console: Console, loaded, policy: str, adapter: str = "") -> None:
     """Refuse a `--policy` this build cannot run, using only the skill and the string.
 
     Split out of `_choose_policy` so it can be called before a body is opened. Building a
@@ -320,28 +366,21 @@ def _check_policy_name(console: Console, loaded, policy: str) -> None:
     Still called from `_choose_policy` as well, so the set of runnable names is written
     down once. A second copy that drifted would refuse a name one command accepts.
     """
-    if policy == "scripted" or policy == "replay" or policy.startswith("replay:"):
+    if policy == "adapter" or policy.startswith("adapter:"):
+        # Resolved here, before a body exists, and thrown away: this call is for its
+        # refusals. Which adapter and which base are questions about the skill and two
+        # strings, and answering them after `open_body` would mean a serial port opened to
+        # be told a path was misspelled.
+        _resolve_adapter(console, loaded, policy.partition(":")[2], adapter)
         return
 
-    if policy == "adapter":
-        # Answered separately from a typo because the field is real: `skill.yaml` has a
-        # `policy.adapter` slot, `tendon train` fills it, and asking to run it is the
-        # obvious next thing. "not available yet" alongside a misspelling would suggest the
-        # adapter is as imaginary as the typo.
-        console.print("[red]nothing here can load a trained adapter yet.[/red]")
-        console.print(
-            f"[dim]`tendon train` writes one and {escape(loaded.policy_adapter or 'skill.yaml')} "
-            "is where it goes. Loading it back is the missing half - it needs PEFT applied "
-            "to a LeRobot policy, which lives in services/policy_lerobot.py "
-            "(docs/collaboration.md).[/dim]"
-        )
-        raise typer.Exit(code=1)
+    if policy in _RUNNABLE_POLICIES or policy.partition(":")[0] in _RUNNABLE_POLICIES:
+        return
 
     console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
     console.print(
-        "[dim]'scripted' and 'replay:<skill>#<episode>' run today. A LeRobot adapter for "
-        f"{escape(loaded.policy_base or 'the skill policy')} is Track A work "
-        "(docs/collaboration.md).[/dim]"
+        f"[dim]{', '.join(sorted(_RUNNABLE_POLICIES))} run today. "
+        "replay: takes <skill>#<episode>, adapter: takes a directory.[/dim]"
     )
     raise typer.Exit(code=1)
 
@@ -362,9 +401,156 @@ def _warn_about_an_ignored_adapter(console: Console, loaded) -> None:
     if getattr(loaded, "policy_adapter", None):
         console.print(
             f"[yellow]not using the adapter this skill names[/yellow] "
-            f"[dim]({escape(str(loaded.policy_adapter))}) - nothing can load one yet. "
-            f"Running the scripted baseline instead.[/dim]"
+            f"[dim]({escape(str(loaded.policy_adapter))}). Running the scripted baseline. "
+            f"To run the adapter: --policy adapter[/dim]"
         )
+
+
+def _resolve_adapter(console: Console, loaded, spec: str, adapter: str) -> tuple[Path, str]:
+    """Which adapter, and which checkpoint it belongs to, using no body.
+
+    Everything here is decidable from the skill and two strings, so it runs before
+    `open_body` — with `--physical` that is a real arm, and opening one to then say a path
+    is misspelled is the defect this project already fixed once for policy names.
+    `bodies.py` argues the rule against itself: deciding whether to touch the hardware
+    should not require touching it.
+
+    Precedence is `--adapter`, then `--policy adapter:<path>`, then `skill.yaml`'s
+    `policy.adapter`. Anything explicit beats the file, because the reason to type a path
+    is that it is not the one the file names.
+
+    Called twice — once early to validate, once inside `_adapter_policy` to use — rather
+    than passed along. It reads two strings and one JSON file; a second parameter threaded
+    through three signatures to save that is a worse trade than the work.
+    """
+    from tendon.services.policy_lerobot import PolicyError, adapter_base
+
+    path = adapter or spec or (loaded.policy_adapter or "")
+    if not path:
+        console.print("[red]no adapter to run.[/red]")
+        console.print(
+            f"[dim]train one: tendon train {escape(loaded.ref)}. Then pass --adapter "
+            "<path>, or set policy.adapter in skill.yaml.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    directory = Path(path).expanduser()
+    if not (directory / "adapter_config.json").is_file():
+        # The file rather than the directory: a path that exists but holds no adapter is
+        # the common mistake — a store, a checkpoint, or the parent of the right directory
+        # — and "not found" for a path that is plainly there reads as a bug in the tool.
+        console.print(f"[red]no adapter at {escape(str(directory))}[/red]")
+        console.print("[dim]expected adapter_config.json there, as `tendon train` writes it[/dim]")
+        raise typer.Exit(code=1)
+
+    try:
+        base = adapter_base(directory)
+    except PolicyError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if loaded.policy_base and base and loaded.policy_base != base:
+        console.print(
+            f"[red]this adapter was trained on {escape(base)}, and "
+            f"{escape(loaded.ref)} declares {escape(loaded.policy_base)}.[/red]"
+        )
+        console.print(
+            "[dim]A LoRA is a delta against particular weights. On a different base it "
+            "loads, runs, and is wrong. Fix policy.base, or point --adapter at the "
+            "adapter trained for it.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    return directory, base
+
+
+def _adapter_policy(
+    console: Console, loaded, capability, spec: str, adapter: str, body=None, driver_name: str = ""
+):
+    """Build the policy a `tendon train` run produced.
+
+    The adapter comes from `--adapter`, then `--policy adapter:<path>`, then `skill.yaml`'s
+    `policy.adapter` — the last being the field the format documents as "a LoRA adapter
+    appears here after `tendon train`". Anything explicit beats the file, because the
+    reason to type a path is that it is not the one the file names.
+
+    The base checkpoint is read from the adapter's own `adapter_config.json` rather than
+    from `skill.yaml`. A LoRA is a delta against particular weights: applied to a different
+    base it loads, runs, and is wrong, with no error anywhere. The skill's `policy.base` is
+    compared against it and a disagreement is refused rather than resolved, because
+    resolving it means choosing which of two stated intentions to ignore.
+
+    `policy.hz` is passed through. `LeRobotPolicy` refuses a rate it cannot reconcile with
+    the body's, and that refusal is the point: a chunk played at the wrong rate is a
+    trajectory nobody trained.
+    """
+    from tendon.kernel.protocols import RendersFrames
+    from tendon.kernel.types import GripperKind
+    from tendon.services.policy_lerobot import (
+        PolicyError,
+        declared_image_features,
+        load_adapter,
+    )
+
+    directory, base = _resolve_adapter(console, loaded, spec, adapter)
+
+    # What the body is actually rendering, against what the checkpoint says it needs, both
+    # read before any weights are fetched. `declared_image_features` reads a JSON config;
+    # `_video_schema` calls `render()` once. Getting this wrong costs minutes of loading
+    # and then fails inside the model with "All image features are missing from the batch",
+    # which names neither the body nor the flag that would have supplied them.
+    cameras, _ = _video_schema(body) if body is not None else ((), (0, 0))
+    try:
+        needed = declared_image_features(base)
+    except PolicyError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if needed and not cameras:
+        console.print(f"[red]{escape(base)} needs {len(needed)} camera input(s) and this[/red]")
+        console.print("[red]body is rendering none, so no batch it produces can be used.[/red]")
+        if capability.cameras:
+            from tendon.services.bodies import camera_parameter
+
+            parameter = camera_parameter(driver_name)
+            flag = f"--driver-arg {parameter}=" if parameter else "--driver-arg <cameras>="
+            console.print(
+                f"[dim]this body has {', '.join(capability.cameras)}. "
+                f"Render one: {flag}{capability.cameras[0]}[/dim]"
+            )
+        else:
+            console.print("[dim]this body declares no cameras at all[/dim]")
+        raise typer.Exit(code=1)
+
+    console.print(f"[dim]loading {escape(base)} + adapter from {escape(str(directory))}[/dim]")
+    # Said before the run, not buried in the report afterwards. The interrupt path keys off
+    # confidence, so an operator watching this needs to know the policy will not raise its
+    # own hand — anything that happens here is a safety trip or their own decision.
+    console.print(
+        "[yellow]confidence is uncalibrated for this policy[/yellow] [dim]- no reference "
+        "spread has been measured, so no score is reported and the policy cannot raise an "
+        "interrupt. ADR 0003.[/dim]"
+    )
+
+    try:
+        return load_adapter(
+            directory,
+            task=loaded.summary or loaded.ref,
+            dof=capability.dof,
+            control_hz=capability.control_hz,
+            policy_hz=loaded.policy_hz,
+            reference_spread=_UNCALIBRATED_SPREAD,
+            has_gripper=capability.gripper is not GripperKind.NONE,
+            # The pixels. `services` may not import `drivers` and an `Observation` carries
+            # frame references rather than arrays, so a caller that wants image-conditioned
+            # prediction has to hand over the source — the same injection the recorder
+            # takes, for the same reason. Omitting it is not an error anywhere: the policy
+            # simply predicts from state alone, which for a VLA is a different policy.
+            frames=body.render if isinstance(body, RendersFrames) else None,
+        )
+    except PolicyError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
 
 
 def _replay_policy(console: Console, loaded, capability, spec: str, store: str):
@@ -1252,15 +1438,12 @@ def train(
         f"[dim]trained {result.trainable_fraction:.2%} of the model "
         f"({result.trainable_parameters:,} of {result.total_parameters:,})[/dim]"
     )
-    # Not "try it: tendon run --policy adapter". There is no such policy: `_choose_policy`
-    # takes `scripted` and `replay:` and nothing else, and `skill.yaml`'s `policy.adapter`
-    # is parsed and read by nothing. So this command can now produce an adapter that
-    # nothing in the project can load, and saying so is better than a suggestion that
-    # exits 1 the moment somebody follows it.
+    # This said "nothing can load this adapter yet" for as long as that was true, which is
+    # no longer. The suggestion is checked by a test that follows it: whatever appears
+    # after `--policy` here has to be a policy `tendon run` accepts.
     console.print(
-        "[yellow]nothing can load this adapter yet.[/yellow] [dim]`tendon run` accepts "
-        "scripted and replay: only, and the policy.adapter field skill.yaml reserves for "
-        "it is parsed and read by nothing. See docs/collaboration.md.[/dim]"
+        f"[dim]run it: tendon run {escape(loaded.ref)} --policy adapter "
+        f"--adapter {escape(str(destination))}[/dim]"
     )
 
 
@@ -1282,7 +1465,13 @@ def evaluate_skill(
     ),
     policy: str = typer.Option(
         "scripted",
-        help="scripted | replay:<skill>#<episode>. The same choice `tendon run` takes.",
+        help=(
+            "scripted | replay:<skill>#<episode> | adapter[:<path>]. "
+            "The same choice `tendon run` takes."
+        ),
+    ),
+    adapter: str = typer.Option(
+        "", help="Adapter directory for --policy adapter. Defaults to skill.yaml's policy.adapter."
     ),
 ) -> None:
     """Run a skill repeatedly and report what happened.
@@ -1317,7 +1506,7 @@ def evaluate_skill(
 
     # Same order as `run`, and for the same reason: a misspelled policy should not cost a
     # body. `eval` opens one and runs thirty episodes through it.
-    _check_policy_name(console, loaded, policy)
+    _check_policy_name(console, loaded, policy, adapter)
 
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
@@ -1353,7 +1542,9 @@ def evaluate_skill(
             # Rebuilt each episode so a replay starts from the beginning of the recording
             # rather than continuing where the last one stopped. `ReplayPolicy.reset` does
             # the same, and building it here keeps the two commands' loops identical.
-            running = _choose_policy(console, loaded, capability, policy, store)
+            running = _choose_policy(
+                console, loaded, capability, policy, store, adapter, body, driver
+            )
             scheduler = Scheduler(
                 driver=body,
                 limits=_effective_limits(console, loaded),
