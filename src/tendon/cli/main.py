@@ -1352,11 +1352,50 @@ def calibrate(
         )
     written = calibration_module.calibration_path(root, loaded.ref, capability.body_id)
     console.print(f"[dim]written to {escape(str(written))}[/dim]")
+
+    _report_thresholds(console, measured, loaded.confidence_threshold)
+
+
+#: Thresholds the report walks through. Fixed rather than derived from the measurement, so
+#: two runs of the same skill can be read against each other.
+_THRESHOLD_CHOICES = (0.5, 0.4, 0.3, 0.2, 0.1)
+
+
+def _report_thresholds(console: Console, measured, declared: float) -> None:
+    """What the skill's threshold does against what was just measured.
+
+    Neither number says this on its own, and their product is surprising: the reference is
+    the median, so **a threshold of 0.5 asks for help on half of everything**. That is not
+    a defect in the scale or in the threshold — it is what the two mean together, and the
+    only way to find it out was to run and get an episode that stopped at step zero with
+    nothing on screen explaining why.
+
+    Which threshold is right is not answerable from here. It depends on what goes wrong
+    when nobody is asked, which is visible only in episodes where somebody took over —
+    ADR 0003, still v0.3. What this gives is the other half of that decision: what each
+    choice costs in interruptions, measured on the predictions that actually happened.
+    """
     console.print()
     console.print(
-        "[dim]This is the scale, not the threshold. `interrupt.confidence_threshold` in "
-        "skill.yaml stays a starting point until it is calibrated against what happened "
-        "when an operator took over - ADR 0003.[/dim]"
+        f"[bold]at this skill's threshold of {declared:g}, "
+        f"{measured.ask_rate(declared):.0%} of these predictions would have asked for "
+        f"help[/bold]"
+    )
+
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("threshold")
+    table.add_column("asks on", justify="right")
+    for candidate in _THRESHOLD_CHOICES:
+        marker = "  <- skill.yaml" if abs(candidate - declared) < 1e-9 else ""
+        table.add_row(f"{candidate:g}", f"{measured.ask_rate(candidate):.0%}{marker}")
+    console.print(table)
+
+    console.print()
+    console.print(
+        "[dim]Which of these is right is not a question this measurement can answer. It "
+        "depends on what goes wrong when nobody is asked, which is only visible in "
+        "episodes where somebody took over - ADR 0003, still v0.3. What the table gives "
+        "you is what each choice costs in interruptions.[/dim]"
     )
 
 

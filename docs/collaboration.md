@@ -3032,6 +3032,33 @@ where confidence is going to come from.
   Worth naming as a shape: **the first time a mechanism fires is the moment its reporting
   is weakest**, because until then nothing has ever exercised it. Every field on that
   result was accurate and the sentence they formed was false. 841 tests green, mypy clean.
+- **B — the policy stopping at step zero was not bad luck, it was arithmetic.** Following
+  that up: the reference is the median, so a step scores below 0.5 exactly when its spread
+  is above typical. `skill.yaml` declares 0.5. **Those two together mean "ask for help on
+  half of everything"**, and each number is defensible on its own.
+
+  Measured on the real distribution:
+
+  | threshold | asks on |
+  | --- | --- |
+  | 0.5 | 50% |
+  | 0.4 | 19% |
+  | 0.3 | 0% |
+
+  `tendon calibrate` reports this now. It is not a recommendation and does not pretend to
+  be one — which threshold is right depends on what goes wrong when nobody is asked, and
+  that is only visible in episodes where somebody took over. ADR 0003, still v0.3. What the
+  table supplies is the other half of the decision, which was never in anyone's hands: what
+  each choice costs in interruptions, on the predictions that actually happened.
+
+  `Calibration` now stores the raw spreads and derives the median, p10 and p90 from them.
+  Two reasons, and the second is the one that mattered: a summary cannot drift from what it
+  summarises, and a threshold can only be asked what it would do if the distribution is
+  there to ask. Two policies with the same median behave differently at the same threshold,
+  and a stored median alone would report them identically.
+
+  The real measurement is kept as a fixture in `test_calibration.py`. A finding worth
+  acting on is worth being able to re-check. 848 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

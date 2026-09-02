@@ -90,6 +90,99 @@ def test_a_wide_distribution_is_reported_not_refused() -> None:
     assert not wide.is_tight
 
 
+# ----------------------------------------------------- what a threshold would actually do
+
+
+def test_a_threshold_at_the_middle_asks_on_half_of_everything() -> None:
+    """The number neither the scale nor the threshold says on its own.
+
+    `estimate_from_samples` scores `1 / (1 + spread / reference)`, and the reference is the
+    median — so 0.5 is exactly the point half the observations fall past. The default in
+    `skill.yaml` is 0.5, which means a policy measured this way asks for help on every
+    other prediction. The only way to find that out was to run it and get an episode that
+    stopped at step zero.
+    """
+    measured = _measure(_spreads(100))
+
+    assert measured.ask_rate(0.5) == pytest.approx(0.5, abs=0.02)
+
+
+def test_a_lower_threshold_asks_less() -> None:
+    measured = _measure(_spreads(100))
+
+    rates = [measured.ask_rate(threshold) for threshold in (0.5, 0.4, 0.3, 0.2, 0.1)]
+
+    assert rates == sorted(rates, reverse=True), "a lower threshold asked for help more"
+    assert rates[-1] < rates[0]
+
+
+def test_it_is_measured_against_the_observations_not_an_assumed_shape() -> None:
+    """Two distributions with the *same median* behave differently at the same threshold.
+
+    An assumed shape would report them identically, and the difference is the one that
+    matters: what a threshold costs depends on the tail, not on the middle. Both of these
+    have a median of 0.001; only the second has anything out past three times it.
+    """
+    tight = _measure([0.001] * 100)
+    skewed = _measure([0.001] * 80 + [0.01] * 20)
+
+    assert tight.reference_spread == skewed.reference_spread
+    assert tight.ask_rate(0.3) == pytest.approx(0.0), "nothing here is past the limit"
+    assert skewed.ask_rate(0.3) == pytest.approx(0.2, abs=0.01)
+
+
+def test_a_threshold_of_zero_never_asks() -> None:
+    """`should_raise` is strictly-below, so a skill opting out of confidence-based handover
+    must not be reported as interrupting on everything."""
+    measured = _measure(_spreads(50))
+
+    assert measured.ask_rate(0.0) == 0.0
+    assert measured.ask_rate(1.0) == 0.0
+
+
+def test_the_real_measurement_behaves_as_reported() -> None:
+    """The numbers from the actual run on `smolvla_base` + an adapter, kept as a fixture.
+
+    26 predictions over 1300 steps on `mujoco:so_arm100_cube`. Recorded here because the
+    consequence — that the skill's default threshold would have asked on roughly half of
+    them — is the finding, and a finding worth acting on is worth being able to re-check.
+    """
+    spreads = [
+        0.0429,
+        0.0447,
+        0.0502,
+        0.0538,
+        0.0601,
+        0.0644,
+        0.0689,
+        0.0702,
+        0.0741,
+        0.0755,
+        0.0762,
+        0.0771,
+        0.0774,
+        0.0781,
+        0.0798,
+        0.0823,
+        0.0866,
+        0.0912,
+        0.0978,
+        0.1044,
+        0.1123,
+        0.1201,
+        0.1333,
+        0.1477,
+        0.1624,
+        0.1802,
+    ]
+    measured = _measure(spreads)
+
+    assert measured.reference_spread == pytest.approx(0.0778, abs=0.001)
+    assert measured.is_tight, "p90 within ten times p10, so the middle means something"
+    assert measured.ask_rate(0.5) == pytest.approx(0.5, abs=0.05)
+    assert measured.ask_rate(0.3) < 0.1, "a lower threshold is what makes it runnable"
+
+
 # -------------------------------------------------------------------------- the store
 
 

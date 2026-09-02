@@ -80,13 +80,33 @@ class Calibration:
     #: measured from one policy says nothing about another, and a file that did not record
     #: which policy it came from could not be checked against the one being run.
     policy: str
-    #: Typical disagreement, in action units. This is what `reference_spread` takes.
-    reference_spread: float
-    #: The distribution behind it, so a reader can judge whether the middle means much.
-    p10: float
-    p90: float
-    samples: int
+    #: Every spread that was measured, sorted. The raw observations rather than a summary
+    #: of them, so the summary cannot drift from what it summarises — and so a threshold
+    #: can be asked what it would actually do, which needs the distribution and not its
+    #: middle. Twenty-six floats for a typical run; a thousand is still a small file.
+    spreads: tuple[float, ...]
     measured_at: str
+
+    @property
+    def samples(self) -> int:
+        return len(self.spreads)
+
+    @property
+    def reference_spread(self) -> float:
+        """Typical disagreement, in action units. What `reference_spread` takes.
+
+        The median, so a typical step scores 0.5. Not the mean, which one wild sample
+        drags; not a low percentile, which would make ordinary steps look alarming.
+        """
+        return statistics.median(self.spreads)
+
+    @property
+    def p10(self) -> float:
+        return self.spreads[max(0, int(self.samples * 0.10) - 1)]
+
+    @property
+    def p90(self) -> float:
+        return self.spreads[min(self.samples - 1, int(self.samples * 0.90))]
 
     @property
     def is_tight(self) -> bool:
@@ -99,6 +119,28 @@ class Calibration:
         measurement.
         """
         return self.p90 <= self.p10 * 10.0 if self.p10 > 0 else False
+
+    def ask_rate(self, threshold: float) -> float:
+        """Fraction of these predictions that would have raised a hand at `threshold`.
+
+        The number that connects the scale to the threshold, and it is not obvious from
+        either alone. `estimate_from_samples` scores a chunk `1 / (1 + spread / reference)`,
+        so a step scores below the threshold exactly when its spread exceeds
+        `reference * (1/threshold - 1)`. With the reference at the median, **a threshold of
+        0.5 asks on half of everything** — which is not a defect in the scale or in the
+        threshold, but is what the two mean together, and nobody would find it out except
+        by running and getting an episode that stopped at step zero.
+
+        Measured against the observations, not derived from an assumed distribution: these
+        are the spreads that actually occurred.
+        """
+        if not 0.0 < threshold < 1.0:
+            return 0.0
+        reference = self.reference_spread
+        if reference <= 0:
+            return 0.0
+        limit = reference * (1.0 / threshold - 1.0)
+        return sum(1 for value in self.spreads if value > limit) / self.samples
 
 
 def from_spreads(
@@ -118,15 +160,11 @@ def from_spreads(
             f"samples are identical, so there is no disagreement to measure."
         )
 
-    ordered = sorted(usable)
     return Calibration(
         skill=skill,
         body=body,
         policy=policy,
-        reference_spread=statistics.median(ordered),
-        p10=ordered[max(0, int(len(ordered) * 0.10) - 1)],
-        p90=ordered[min(len(ordered) - 1, int(len(ordered) * 0.90))],
-        samples=len(ordered),
+        spreads=tuple(sorted(usable)),
         measured_at=measured_at,
     )
 
@@ -176,14 +214,14 @@ def load(root: Path, skill: str, body: str) -> Calibration | None:
         return None
 
     try:
+        spreads = tuple(sorted(float(value) for value in raw["spreads"]))
+        if not spreads:
+            return None
         return Calibration(
             skill=str(raw["skill"]),
             body=str(raw["body"]),
             policy=str(raw["policy"]),
-            reference_spread=float(raw["reference_spread"]),
-            p10=float(raw["p10"]),
-            p90=float(raw["p90"]),
-            samples=int(raw["samples"]),
+            spreads=spreads,
             measured_at=str(raw["measured_at"]),
         )
     except (KeyError, TypeError, ValueError):

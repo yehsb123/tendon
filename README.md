@@ -76,10 +76,23 @@ is refused rather than resolved.
 
 `tendon calibrate` measures what disagreement is typical for that policy on that body, so
 the confidence score has a scale to be read against — without it a loaded checkpoint
-reports nothing and cannot raise its own interrupt, and the run says so. **That is the
-scale, not the threshold.** How much disagreement should trigger a handover is a property
-of what goes wrong when it does not, which needs episodes where somebody took over; ADR
-0003 keeps it in v0.3 and the number in `skill.yaml` stays a starting point.
+reports nothing and cannot raise its own interrupt, and the run says so.
+
+**That is the scale, not the threshold**, and the difference has teeth. The reference is
+the median, so a threshold of 0.5 — the default in `skill.yaml` — means asking for help on
+half of every prediction. Measured on `smolvla_base` with an adapter:
+
+```
+threshold  asks on
+0.5            50%  <- skill.yaml
+0.4            19%
+0.3             0%
+```
+
+Which one is right is not answerable from a measurement: it depends on what goes wrong when
+nobody is asked, and that is visible only in episodes where somebody took over. ADR 0003
+keeps that in v0.3. What the table gives you is the half that was never in anyone's hands —
+what each choice costs in interruptions.
 
 **And the uncertainty is a stand-in.** It is placed at a point in joint space so the loop
 has something to hand over about — a placeholder for whatever makes a real model unsure, an
