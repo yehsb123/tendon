@@ -3087,6 +3087,37 @@ where confidence is going to come from.
 
   Saying so is not measuring it. `docs/roadmap.md` now records that the milestone is not
   met until something does. 853 tests green, mypy clean.
+- **B — something measures it now, and the obvious way to do it was a trap you had already
+  labelled.** Taken on the owner's instruction, same as `policy_lerobot.py`, and the
+  MuJoCo change is small.
+
+  `body_position` has existed since you wrote it, with this beside it: *"A policy must not
+  call this... `Observation` is what a policy sees; this is what a judge sees."* Nothing
+  called it. So the quantity was reachable and unreached, and every evaluation reported
+  unknown.
+
+  **The obvious repair is the trap.** Putting `cube_height` into `Observation.extra` is
+  where `judge` reads from — and an `Observation` is what the policy sees. Ground truth
+  there is ground truth a policy can learn to use: it would work in MuJoCo and fail on an
+  SO-101, and no simulation test could catch it, because in simulation it is always there.
+  Your sentence was true and there was no channel for it.
+
+  `kernel.protocols.MeasuresWorld` is the channel. Optional, like `RendersFrames`, for the
+  same reason — a real arm has no idea where the cube is. The scheduler asks the body once
+  when the episode ends, `EpisodeResult.final_world` carries it, `judge` reads that, and
+  the policy is never handed it. A test asserts the policy's observations do not contain
+  it, so the trap cannot be walked back into.
+
+  `world_facts()` reports the height of every **free-moving body** in the scene. Not a
+  list, and not "everything named": the arm's links are driven, the floor and base do not
+  move, and an object a skill judges is one with six degrees of freedom and nothing
+  commanding them. That falls out of the model, so `so_arm100_cube.xml` and
+  `xarm7_cube.xml` both answer `cube_height` and neither driver has the word "cube" in it.
+
+  `tendon eval grasp/cube-sim` went from *"body does not report 'cube_height'"* to
+  *"cube_height not above 0.1"*. The scripted baseline does not pick the cube up, so that
+  is the right answer — and it is the first real verdict this project has produced.
+  861 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

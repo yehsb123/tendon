@@ -776,8 +776,11 @@ def _judge(loaded, result) -> bool | None:
     if not criteria:
         return None
 
-    final = result.records[-1].observation.extra if result.records else {}
-    verdict, _ = judge(final, criteria)
+    # `result.final_world`, not the last observation. A skill judges the world; an
+    # observation is what the policy saw, and ground truth read from there is ground truth
+    # a policy could learn to use — working in simulation and failing on hardware that
+    # cannot supply it, with no simulation test able to catch it.
+    verdict, _ = judge(result.final_world, criteria)
     return verdict
 
 
@@ -1874,8 +1877,8 @@ def evaluate_skill(
             # whether the rate moves across them.
             _record_progress(console, loaded, capability, result, store)
 
-            final = result.records[-1].observation.extra if result.records else {}
-            verdict, reason = judge(final, criteria)
+            # The world at the end, not the policy's last observation. See `_judge`.
+            verdict, reason = judge(result.final_world, criteria)
             if verdict is None:
                 unknown += 1
 

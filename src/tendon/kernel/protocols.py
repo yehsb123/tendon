@@ -113,6 +113,39 @@ class RendersFrames(Protocol):
         ...
 
 
+@runtime_checkable
+class MeasuresWorld(Protocol):
+    """A body that can report facts about the world a skill judges success against.
+
+    Optional, like `RendersFrames`, and for the same reason: a real arm has no idea where
+    the cube is, and requiring this of every driver would fill the layer with stubs.
+
+    **Deliberately not part of `Observation`.** A skill declares success as a condition on
+    the world — `cube_height_above: 0.1` — and the judge has to read that from somewhere.
+    The obvious somewhere was `Observation.extra`, and it is wrong: an `Observation` is
+    what the *policy* sees, so ground truth placed there is ground truth a policy can learn
+    to use. It would work in simulation and fail on hardware that cannot supply it, and no
+    simulation test could catch that, because in simulation it is always there.
+
+    `drivers/mujoco.py` says this about its own `body_position`: "A policy must not call
+    this... `Observation` is what a policy sees; this is what a judge sees." That sentence
+    was true and there was no channel for it. This is the channel.
+
+    Read once when the episode ends. The scheduler asks the body; the result carries it;
+    `services/evaluator.py` judges from it. The policy is never handed it at all.
+    """
+
+    def world_facts(self) -> dict[str, float]:
+        """Named quantities about the world right now, in SI units.
+
+        Empty when nothing can be measured. Names are the scene's, not the skill's — a
+        skill asking for `cube_height` and a scene containing a body called `cube` meet
+        by convention, and a scene that calls it something else simply answers a skill
+        that asks for that instead.
+        """
+        ...
+
+
 class PolicyExhausted(RuntimeError):
     """A finite policy has no more actions to produce.
 

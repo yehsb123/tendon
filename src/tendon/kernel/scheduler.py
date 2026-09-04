@@ -51,7 +51,7 @@ from tendon.kernel.interrupt import (
     InterruptState,
     should_raise,
 )
-from tendon.kernel.protocols import Driver, Policy, PolicyExhausted
+from tendon.kernel.protocols import Driver, MeasuresWorld, Policy, PolicyExhausted
 from tendon.kernel.types import (
     Action,
     Intent,
@@ -135,6 +135,15 @@ class EpisodeResult:
     #: from hitting `max_steps` because a replay that finished and a replay that was cut
     #: short are different results.
     exhausted: bool = False
+    #: What the world looked like when the episode ended, from a body that can say
+    #: (`kernel.protocols.MeasuresWorld`). Empty from one that cannot, which is every real
+    #: arm — and an empty verdict is *unknown*, not *failed*.
+    #:
+    #: Kept here rather than in the final `Observation` because an observation is what the
+    #: policy sees. Ground truth there is ground truth a policy can learn to use, which
+    #: works in simulation and fails on hardware that has none, and no simulation test
+    #: catches it because in simulation it is always present.
+    final_world: dict[str, float] = field(default_factory=dict)
     #: Subscribers that raised and were dropped mid-episode. A run where the recorder died
     #: at step 12 produced 12 steps of data and otherwise looked normal; nobody should have
     #: to discover that by finding a short file later.
@@ -298,6 +307,15 @@ class Scheduler:
         result.subscriber_failures = (
             self.bus.failures[failures_before:] if self.bus is not None else ()
         )
+
+        # Once, at the end, and never handed to the policy. A skill judges success against
+        # the world; a body that can see the world says so here. Isolated because a body
+        # that raises while being asked has still produced an episode, and losing the
+        # episode to keep the verdict is the wrong trade.
+        if isinstance(self.driver, MeasuresWorld):
+            with contextlib.suppress(Exception):
+                result.final_world = dict(self.driver.world_facts())
+
         return result
 
     # ------------------------------------------------------------------ internals

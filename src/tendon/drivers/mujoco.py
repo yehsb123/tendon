@@ -354,6 +354,21 @@ class MujocoDriver(Driver):
             int(model.jnt_dofadr[model.actuator_trnid[i, 0]]) for i in self._arm_actuators
         ]
 
+        # Objects in the scene, as opposed to the robot and the furniture: a body with a
+        # free joint. The arm's links move but are driven; the floor and the base do not
+        # move at all; a cube dropped on the table has six degrees of freedom and nothing
+        # commanding them. That is exactly the set a skill judges success against, and it
+        # falls out of the model rather than a list here that would name the SO-ARM100's
+        # parts and be wrong for the next scene.
+        self._scene_objects = tuple(
+            sorted(
+                model.body(int(model.jnt_bodyid[j])).name
+                for j in range(model.njnt)
+                if int(model.jnt_type[j]) == mj.mjtJoint.mjJNT_FREE
+                and model.body(int(model.jnt_bodyid[j])).name
+            )
+        )
+
         if gripper_index is None:
             self._gripper_qpos = -1
             self._gripper_ctrl_open = 0.0
@@ -638,6 +653,30 @@ class MujocoDriver(Driver):
             return np.asarray(self._data.body(name).xpos, dtype=float).copy()
         except KeyError as exc:
             raise DriverError(f"scene has no body named {name!r}") from exc
+
+    def world_facts(self) -> dict[str, float]:
+        """Height of every free-moving object in the scene, as `<name>_height` in metres.
+
+        `kernel.protocols.MeasuresWorld`. `body_position` has existed for this since it was
+        written — "this is what a judge sees" — and nothing called it, so every evaluation
+        this project ever ran reported *unknown* for every episode: `skills/grasp/cube-sim`
+        asks for `cube_height_above: 0.1` and no code produced a `cube_height`.
+
+        Names come from the scene, not from a table here. A body called `cube` answers a
+        skill asking about `cube_height`; a scene holding something else answers a skill
+        that asks about that instead. Hardcoding the cube would make this driver work for
+        one skill and quietly fail the next, which is the failure a HAL exists to prevent.
+
+        Objects only — see `_scene_objects`. The arm's links, the floor and the base are
+        not things a skill judges success against, and every one of them here would be
+        noise a reader has to learn to skip.
+        """
+        self._require_open()
+        return {
+            # [2] is z. World frame, so this is height above the scene's floor.
+            f"{name}_height": float(self._data.body(name).xpos[2])
+            for name in self._scene_objects
+        }
 
     @property
     def frames_rendered(self) -> int:
