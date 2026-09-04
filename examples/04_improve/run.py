@@ -74,6 +74,14 @@ class Outcome:
     corrected: bool
     steps: int
     corrections_known: int
+    #: Whether the skill's success conditions held at the end, or None when nobody could
+    #: tell. Three states: "failed" and "unmeasured" are opposite claims.
+    #:
+    #: Here because the falling line is only half a result. A policy that stops asking for
+    #: help because it stopped *trying* draws exactly the same line, and this example used
+    #: to print PASS without being able to tell the two apart — the body reported nothing a
+    #: skill could judge, so there was no number to check.
+    succeeded: bool | None = None
 
 
 def sweep(dof: int, *, phase: float = 0.0, amplitude: float = 0.2, period: int = 240):
@@ -152,6 +160,29 @@ class ScriptedOperator:
 # ------------------------------------------------------------------------------- running
 
 
+def judge_episode(result) -> bool | None:
+    """Did the skill's success conditions hold when the episode ended.
+
+    Reads `result.final_world`, which the scheduler collects from a body that can see the
+    world (`kernel.protocols.MeasuresWorld`) and never shows the policy. None when nothing
+    could be judged — an unmeasured episode is not a failed one.
+
+    This is the half of the claim the example could not make. The line falling means the
+    policy asks less often; whether it still does the task is a different question, and
+    until the MuJoCo driver reported the cube's height there was no way to ask it.
+    """
+    from tendon.services.evaluator import SuccessCriterion, judge
+    from tendon.services.skill import load_skill
+
+    loaded = load_skill("grasp/cube-sim")
+    criteria = [SuccessCriterion.parse(name, value) for name, value in loaded.success_criteria]
+    if not criteria:
+        return None
+
+    verdict, _ = judge(result.final_world, criteria)
+    return verdict
+
+
 def run_episodes(episodes: int, steps: int, seed: int) -> list[Outcome]:
     import math
 
@@ -214,6 +245,7 @@ def run_episodes(episodes: int, steps: int, seed: int) -> list[Outcome]:
                     corrected=result.corrections > 0,
                     steps=result.steps,
                     corrections_known=len(memory),
+                    succeeded=judge_episode(result),
                 )
             )
     finally:
@@ -349,15 +381,43 @@ def main() -> int:
     print()
     print("PASS - the loop closes: corrections reduced how often the policy asked for help.")
 
-    # Said on the pass, not only on the fail. The rate falling is what this example set out
-    # to show and it is half of the claim: a policy that stopped *trying* would produce the
-    # same line, and this run cannot tell the two apart because nothing here judges whether
-    # the cube was picked up. Stating it beside the PASS is the difference between a result
-    # and a result somebody will over-read.
+    # The other half, on the pass and not only on the fail. A policy that stopped *trying*
+    # produces the same falling line, so the rate alone is a result somebody will over-read.
+    judged = [outcome.succeeded for outcome in outcomes if outcome.succeeded is not None]
     print()
-    print("What this does not show: whether the task still succeeded. The skill's success")
-    print("criteria need a quantity the body does not report, so every episode here is")
-    print("unjudged. A policy that learned and one that gave up draw the same line.")
+    if not judged:
+        print("Success was not measured on any episode, so this shows 'asked less often'")
+        print("and nothing more. A policy that learned and one that gave up look identical.")
+        return 0
+
+    first = [o.succeeded for o in outcomes[:WINDOW] if o.succeeded is not None]
+    last = [o.succeeded for o in outcomes[-WINDOW:] if o.succeeded is not None]
+    print(f"Success rate: {sum(first) / len(first):.0%} over the first {len(first)} judged")
+    print(f"              {sum(last) / len(last):.0%} over the last {len(last)} judged")
+    print()
+
+    if not any(judged):
+        # The measured answer for this example, and it has to be said plainly because it
+        # sits directly under the word PASS. The operator here corrects a *sweep* — a
+        # trajectory that never reaches for the cube — so the task was never being achieved
+        # at any point, before or after.
+        #
+        # What passed is the machinery: an interrupt raised before motion, a human decision
+        # recorded, later behaviour changed by it. What did not happen, and is not claimed,
+        # is a policy getting better at the task. Those are different sentences and this
+        # example only earns the first.
+        print("The task never succeeded, in any episode. This policy is a joint sweep with")
+        print("synthetic uncertain regions; it does not reach for the cube and was never")
+        print("going to. So the fall above is the *machinery* working - interrupt, decision,")
+        print("recall - and not a policy improving at anything.")
+        print()
+        print("Swapping in a real policy and a real operator is the v0.3 experiment. Until")
+        print("then, read this line as 'the loop runs', never as 'the loop learns'.")
+        return 0
+
+    print("Read them together. The rate falling while success holds is the loop working;")
+    print("the rate falling while success falls with it is a policy that stopped trying,")
+    print("and this is the number that tells them apart.")
     return 0
 
 

@@ -23,6 +23,7 @@ show the shape without putting a minute into every CI run.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 
@@ -64,6 +65,44 @@ def test_the_example_still_runs(outcomes) -> None:
     _, results = outcomes
     assert len(results) == 24
     assert all(o.steps > 0 for o in results)
+
+
+def test_every_episode_is_judged(outcomes) -> None:
+    """The half of the claim this example could not make.
+
+    A falling intervention rate and a policy that stopped *trying* are the same line.
+    Until `drivers/mujoco.py` reported the cube's height nothing could tell them apart, so
+    the example printed PASS on the fall alone and every episode was unjudged.
+    """
+    _, results = outcomes
+
+    assert all(outcome.succeeded is not None for outcome in results), (
+        "an episode came back unjudged; the body is not reporting what the skill's "
+        "success criteria name, and the graph is ambiguous again"
+    )
+
+
+def test_this_policy_never_succeeds_and_the_example_says_so(outcomes) -> None:
+    """The measured answer, pinned because it is the point.
+
+    The operator here corrects a joint sweep. It does not reach for the cube and was never
+    going to, so success is 0% throughout while the intervention rate falls to a tenth.
+    That is the exact shape somebody would misread as learning, and it is now printed
+    beside the PASS rather than left to be assumed away.
+
+    If this ever starts succeeding, the example has changed into something else and its
+    verdict text needs rewriting — which is what the failure of this test means.
+    """
+    example, results = outcomes
+
+    assert not any(outcome.succeeded for outcome in results)
+
+    verdict = inspect.getsource(example.verdict) if hasattr(example, "verdict") else ""
+    source = EXAMPLE.read_text(encoding="utf-8")
+    assert "never succeeded" in (verdict or source), (
+        "the example no longer states that the task was not achieved"
+    )
+    assert "the loop runs" in source and "the loop learns" in source
 
 
 def test_corrections_are_stored(outcomes) -> None:

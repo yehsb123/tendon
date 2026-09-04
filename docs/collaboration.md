@@ -3141,6 +3141,32 @@ where confidence is going to come from.
   separately parsed modules, where identity never holds. Both now say the thing they meant:
   the baseline is built in exactly one function and that function is `choose_policy`.
   861 tests green, mypy clean.
+- **B — the headline result measured its other half, and the answer is 0%.**
+  `examples/04_improve` can judge now, so it does. Over 40 episodes:
+
+      intervention rate   100%  ->  10%
+      success rate          0%  ->   0%
+
+  **The task never succeeded, in any episode.** The operator in that example corrects a
+  joint sweep with synthetic uncertain regions; it does not reach for the cube and was
+  never going to. So the fall is the machinery working — interrupt before motion, decision
+  recorded, behaviour changed by it — and not a policy getting better at anything.
+
+  This is exactly the shape flagged two entries ago as the misreading the graph invites,
+  and now it is not a hypothetical: it is what this example does. The verdict says so
+  under its own PASS, and the README's opening — the first thing anyone reads — carries
+  both numbers and the sentence *read this as "the loop runs", never as "the loop
+  learns"*.
+
+  Nothing about the example changed except that it can now be checked. The docstring has
+  always said it does not prove a VLA improves. What is different is that the claim it
+  *does* make is now bounded by a measurement instead of by a paragraph somebody has to
+  scroll to.
+
+  Two tests hold it: every episode comes back judged, and this policy never succeeds while
+  the example says so in those words. The second fails if the example ever starts
+  succeeding — which would mean it had become a different experiment and its verdict text
+  needs rewriting. 863 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

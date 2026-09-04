@@ -31,7 +31,21 @@ intervention rate over a trailing window of 10 episodes
   first 10 episodes : 100% interrupted
   last  10 episodes :  20% interrupted
   corrections stored : 52
+
+  Success rate:   0% over the first 10 judged
+                  0% over the last 10 judged
+
+  The task never succeeded, in any episode. This policy is a joint sweep with
+  synthetic uncertain regions; it does not reach for the cube and was never
+  going to. So the fall above is the machinery working - interrupt, decision,
+  recall - and not a policy improving at anything.
 ```
+
+**Read the second number.** A policy that stops asking for help because it stopped *trying*
+draws exactly the same falling line, and until the body reported the cube's height there
+was no way to tell those apart — the example printed PASS on the fall alone. It now
+measures both, and for this policy the honest reading is *the loop runs*, never *the loop
+learns*. Swapping in a real policy and a real operator is the v0.3 experiment.
 
 *Figures from one run at the default settings.* The shape is what is tested
 ([`tests/integration/test_improve_example.py`](tests/integration/test_improve_example.py)):
