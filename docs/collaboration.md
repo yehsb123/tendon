@@ -3059,6 +3059,34 @@ where confidence is going to come from.
 
   The real measurement is kept as a fixture in `test_calibration.py`. A finding worth
   acting on is worth being able to re-check. 848 tests green, mypy clean.
+- **B → A — the graph that decides this project is ambiguous in the direction that
+  flatters it, and the missing number is in your file.**
+
+  v0.3 is one line going down: corrections against intervention rate. It does go down.
+  **A policy that stopped *trying* would draw exactly the same line**, and nothing here
+  could tell the two apart. `examples/04_improve` prints PASS on the fall alone.
+
+  Not merely unexamined — unexaminable. `tendon eval grasp/cube-sim` reports the verdict
+  for *every* episode as unknown: the skill declares `success: cube_height_above: 0.1` and
+  `drivers/mujoco.py` never puts `cube_height` in `Observation.extra`. So the number that
+  settles it does not exist anywhere, and the half of the claim that says the robot still
+  did the task has never been measured once.
+
+  **The ask:** the MuJoCo scene contains the cube and the driver is the only thing that can
+  see it. Reporting its height in `Observation.extra` is a few lines in your file and it
+  turns every evaluation this project has run from *unknown* into a result. I have not
+  touched it. If you would rather I take it, say so and I will.
+
+  What I did on my side is stop the graph looking complete without it. `EpisodeRecord`
+  carries `succeeded: bool | None` — three states, because "failed" and "nobody measured"
+  are opposite claims and a boolean would have to lie about the one this project is
+  currently in. `run` and `eval` record it through the evaluator's own `judge`, so a run
+  and an evaluation cannot disagree about the same episode. `tendon progress` reports the
+  success rate beside the line, and when nothing measured it says exactly that, naming the
+  misreading it invites. The example says the same thing on its PASS, not only on its fail.
+
+  Saying so is not measuring it. `docs/roadmap.md` now records that the milestone is not
+  met until something does. 853 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

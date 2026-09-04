@@ -70,6 +70,16 @@ class EpisodeRecord:
     #: Corrections held for this skill and body *after* this episode. The x-axis: it only
     #: ever grows, and it is what the intervention rate is plotted against.
     corrections_known: int
+    #: Whether the episode achieved what the skill declares as success. None when nobody
+    #: could tell — the skill names no criteria, or the body does not report the quantity
+    #: they need. Three states, not two, because "failed" and "unmeasured" are opposite
+    #: claims and a boolean would have to lie about one of them.
+    #:
+    #: Recorded because the y-axis alone is ambiguous. **A policy that stops asking for
+    #: help because it stopped trying draws exactly the same falling line as one that
+    #: learned.** The graph is the whole claim of this project and nothing distinguished
+    #: those two readings of it: `examples/04_improve` prints PASS on the fall alone.
+    succeeded: bool | None = None
 
 
 def progress_path(root: Path, skill: str, body: str) -> Path:

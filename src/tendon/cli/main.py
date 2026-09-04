@@ -753,6 +753,34 @@ def _video_schema(body) -> tuple[tuple[str, ...], tuple[int, int]]:
     return tuple(frames), (height, width)
 
 
+def _judge(loaded, result) -> bool | None:
+    """Whether the episode achieved what the skill declares as success, or None.
+
+    None when nobody could tell — no criteria declared, or the body does not report the
+    quantity they need. `tendon eval grasp/cube-sim` currently answers None for every
+    episode, because `skill.yaml` asks for `cube_height` and the MuJoCo driver does not put
+    it in `Observation.extra`.
+
+    That is exactly why this is recorded rather than left to `eval`. The v0.3 graph plots
+    intervention rate against corrections, and **a policy that stops asking because it
+    stopped trying draws the same falling line as one that learned.** Without a verdict
+    beside each point the two readings are indistinguishable, and `examples/04_improve`
+    prints PASS on the fall alone.
+
+    Uses the same `judge` the evaluator does, so a run and an evaluation cannot disagree
+    about whether the same episode succeeded.
+    """
+    from tendon.services.evaluator import SuccessCriterion, judge
+
+    criteria = [SuccessCriterion.parse(name, value) for name, value in loaded.success_criteria]
+    if not criteria:
+        return None
+
+    final = result.records[-1].observation.extra if result.records else {}
+    verdict, _ = judge(final, criteria)
+    return verdict
+
+
 def _record_progress(console: Console, loaded, capability, result, store: str) -> None:
     """Append one finished episode to the progress log.
 
@@ -780,6 +808,7 @@ def _record_progress(console: Console, loaded, capability, result, store: str) -
     from tendon.services.memory_store import DEFAULT_MEMORY_ROOT, load_memory
 
     root = Path(store).parent / "progress" if store else progress.DEFAULT_PROGRESS_ROOT
+    succeeded = _judge(loaded, result)
 
     try:
         known = len(load_memory(DEFAULT_MEMORY_ROOT, loaded.ref, capability.body_id))
@@ -800,6 +829,7 @@ def _record_progress(console: Console, loaded, capability, result, store: str) -
                 interventions=result.interventions,
                 corrections=result.corrections,
                 corrections_known=known,
+                succeeded=succeeded,
             ),
         )
     except Exception as exc:  # noqa: BLE001 - isolation, not silence
@@ -1080,6 +1110,41 @@ _CHART_ROWS = (1.0, 0.875, 0.75, 0.625, 0.5, 0.375, 0.25, 0.125)
 _CHART_WIDTH = 52
 
 
+def _report_success(console: Console, records) -> None:
+    """Whether the task was still being achieved while the intervention rate fell.
+
+    The graph above is the whole claim of this project, and by itself it is ambiguous in a
+    way that favours the claim. **A policy that stops asking for help because it stopped
+    trying draws exactly the same falling line as one that learned.** Nothing distinguished
+    those readings: `examples/04_improve` prints PASS on the fall alone, and
+    `tendon eval grasp/cube-sim` reports the verdict for every episode as unknown because
+    the MuJoCo driver does not put `cube_height` in `Observation.extra`.
+
+    So this says which case is in front of you. When nothing measured success, it says that
+    rather than nothing — a graph whose other half is missing should not look complete.
+    """
+    verdicts = [record.succeeded for record in records]
+    measured = [verdict for verdict in verdicts if verdict is not None]
+
+    if not measured:
+        console.print(
+            "[yellow]success was not measured on any of these episodes[/yellow] [dim]- so a "
+            "falling rate here is 'asked less often', which a policy that stopped trying "
+            "would also produce. Have the body report what the skill's success criteria "
+            "name.[/dim]"
+        )
+        return
+
+    rate = sum(1 for verdict in measured if verdict) / len(measured)
+    unknown = len(verdicts) - len(measured)
+    line = f"[dim]succeeded on {rate:.0%} of {len(measured)} judged episodes[/dim]"
+    if unknown:
+        # Named rather than folded in. An episode nobody could judge is not a failure, and
+        # counting it as one would understate a policy that works on a rig that cannot say.
+        line += f"[dim], {unknown} could not be judged[/dim]"
+    console.print(line)
+
+
 def _chart(points: tuple[tuple[int, float], ...]) -> list[str]:
     """The curve, in ASCII.
 
@@ -1165,6 +1230,8 @@ def progress(
             for line in _chart(curve):
                 console.print(f"[dim]{escape(line)}[/dim]")
             console.print(f"[dim]  intervention rate over a trailing {window} episodes[/dim]")
+
+        _report_success(console, records)
         console.print()
 
 

@@ -44,6 +44,14 @@ Interrupt protocol, correction recording, curation, nightly LoRA.
 That graph is the entire claim of this project. If it is flat, the loop does not close, and
 no amount of additional engineering fixes it.
 
+**And it is not sufficient on its own.** A policy that stops asking for help because it
+stopped *trying* draws exactly the same falling line as one that learned. The second half
+of the criterion has to be that the task still succeeded, and today nothing measures that:
+`skill.yaml` names `cube_height`, the MuJoCo driver does not report it, so every episode is
+judged *unknown*. `tendon progress` and `examples/04_improve` now say so beside the line
+rather than presenting a fall as though it settled the question — but saying so is not
+measuring it, and this milestone is not met until something does.
+
 **Where it stands.** The line goes down, and the running system draws it. An operator
 corrects a motion in the shell; the correction reaches the policy, the episode's
 `interrupts` table and a memory that outlives both the episode and the process; and

@@ -348,6 +348,16 @@ def main() -> int:
 
     print()
     print("PASS - the loop closes: corrections reduced how often the policy asked for help.")
+
+    # Said on the pass, not only on the fail. The rate falling is what this example set out
+    # to show and it is half of the claim: a policy that stopped *trying* would produce the
+    # same line, and this run cannot tell the two apart because nothing here judges whether
+    # the cube was picked up. Stating it beside the PASS is the difference between a result
+    # and a result somebody will over-read.
+    print()
+    print("What this does not show: whether the task still succeeded. The skill's success")
+    print("criteria need a quantity the body does not report, so every episode here is")
+    print("unjudged. A policy that learned and one that gave up draw the same line.")
     return 0
 
 
