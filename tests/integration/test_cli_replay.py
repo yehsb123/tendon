@@ -185,27 +185,10 @@ def test_both_commands_take_the_choice_through_one_function() -> None:
     recorder's version of this test broke, for the same reason. How many places choose a
     policy is the property; what they pass is not part of it.
     """
-    import ast
+    from tests import cli_source
 
-    source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
-        encoding="utf-8"
-    )
-    tree = ast.parse(source)
-
-    definitions = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "_choose_policy"
-    ]
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_choose_policy"
-    ]
-
-    assert len(definitions) == 1
+    assert len(cli_source.definitions_of("choose_policy")) == 1
+    calls = cli_source.calls_to("choose_policy")
     assert len(calls) == 3, (
         f"{len(calls)} places choose a policy; run, eval and calibrate are the three. "
         f"A fourth is fine — go and look at it, then update this number. What is not fine "

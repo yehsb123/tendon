@@ -83,7 +83,7 @@ def test_the_report_says_what_the_skill_s_threshold_would_do() -> None:
     """
     from rich.console import Console
 
-    from tendon.cli.main import _report_thresholds
+    from tendon.cli.reporting import report_thresholds
     from tendon.services.calibration import from_spreads
 
     measured = from_spreads(
@@ -95,7 +95,7 @@ def test_the_report_says_what_the_skill_s_threshold_would_do() -> None:
     )
 
     console = Console(width=200, record=True)
-    _report_thresholds(console, measured, 0.5)
+    report_thresholds(console, measured, 0.5)
     printed = console.export_text()
 
     assert "0.5" in printed
@@ -109,7 +109,7 @@ def test_a_declared_threshold_outside_the_table_is_still_reported() -> None:
     skill's own value has to be answered whether or not it is one of them."""
     from rich.console import Console
 
-    from tendon.cli.main import _report_thresholds
+    from tendon.cli.reporting import report_thresholds
     from tendon.services.calibration import from_spreads
 
     measured = from_spreads(
@@ -121,7 +121,7 @@ def test_a_declared_threshold_outside_the_table_is_still_reported() -> None:
     )
 
     console = Console(width=200, record=True)
-    _report_thresholds(console, measured, 0.37)
+    report_thresholds(console, measured, 0.37)
 
     assert "0.37" in console.export_text()
 
@@ -130,8 +130,11 @@ def test_the_measured_scale_is_used_by_the_run_that_follows() -> None:
     """A measurement nothing reads is the shape this repository keeps finding. The adapter
     path loads it, checks it was measured from the same policy, and falls back to reporting
     no scale rather than to a number from somewhere else."""
-    source = (REPO / "src" / "tendon" / "cli" / "main.py").read_text(encoding="utf-8")
-    adapter_body = source.partition("def _adapter_policy(")[2].partition("\ndef ")[0]
+    import inspect
+
+    from tendon.cli.policies import _adapter_policy
+
+    adapter_body = inspect.getsource(_adapter_policy)
 
     assert "load_calibration" in adapter_body
     assert "measured.policy" in adapter_body, "a scale from another policy would be used"

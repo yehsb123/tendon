@@ -221,9 +221,9 @@ def test_train_suggests_a_command_that_run_accepts(tmp_path: Path) -> None:
     """`tendon train` ends by naming how to run what it just made. The last version of that
     line pointed at a policy which did not exist; this one is checked against the CLI's own
     answer rather than a fixed string."""
-    from tendon.cli.main import _RUNNABLE_POLICIES
+    from tendon.cli.policies import RUNNABLE_POLICIES
 
-    assert "adapter" in _RUNNABLE_POLICIES
+    assert "adapter" in RUNNABLE_POLICIES
 
     source = (REPO / "src" / "tendon" / "cli" / "main.py").read_text(encoding="utf-8")
     train_body = source.partition("def train(")[2].partition("\n@app.command")[0]

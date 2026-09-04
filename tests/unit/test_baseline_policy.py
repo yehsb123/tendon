@@ -24,7 +24,7 @@ from __future__ import annotations
 import pytest
 import typer
 
-from tendon.cli.main import _BASELINES, _baseline_policy
+from tendon.cli.policies import _BASELINES, _baseline_policy
 from tendon.kernel.types import ActionSpace, Capability, GripperKind
 from tendon.services.skill import Skill
 

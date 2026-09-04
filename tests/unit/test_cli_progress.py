@@ -20,7 +20,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from tendon.cli.main import _CHART_WIDTH, _chart, app
+from tendon.cli.main import app
+from tendon.cli.reporting import CHART_WIDTH, chart
 from tendon.services.progress import EpisodeRecord, append
 
 RUNNER = CliRunner()
@@ -102,7 +103,7 @@ def test_the_chart_is_ascii() -> None:
     chart is built character by character and that is exactly where a block character gets
     typed in.
     """
-    lines = _chart(tuple((i, 1.0 - i / 20) for i in range(20)))
+    lines = chart(tuple((i, 1.0 - i / 20) for i in range(20)))
 
     assert lines
     for line in lines:
@@ -116,7 +117,7 @@ def test_a_long_history_is_sampled_rather_than_cut(tmp_path: Path) -> None:
     part somebody opened it to see.
     """
     points = tuple((i, 1.0 - i / 500) for i in range(500))
-    lines = _chart(points)
+    lines = chart(points)
 
     assert lines
     # The axis label carries the last point's x, so the end survived the sampling.
@@ -126,14 +127,14 @@ def test_a_long_history_is_sampled_rather_than_cut(tmp_path: Path) -> None:
 def test_the_chart_fits_in_a_terminal() -> None:
     """Eighty columns, because a chart that wraps is a chart that cannot be read.
 
-    Written first as `_CHART_WIDTH + 12`, which was wrong — the axis label is indented and
+    Written first as `CHART_WIDTH + 12`, which was wrong — the axis label is indented and
     carries the word "corrections" — and a bound derived from the wrong geometry is a test
     that fails on correct code.
     """
-    lines = _chart(tuple((i, 0.5) for i in range(500)))
+    lines = chart(tuple((i, 0.5) for i in range(500)))
 
     assert lines
-    assert _CHART_WIDTH < 80
+    assert CHART_WIDTH < 80
     for line in lines:
         assert len(line) <= 80, line
 
@@ -141,4 +142,4 @@ def test_the_chart_fits_in_a_terminal() -> None:
 def test_an_empty_curve_draws_nothing(tmp_path: Path) -> None:
     """Not an empty axis. There is a difference between a rate of zero and no rate, and an
     axis with nothing on it reads like the first."""
-    assert _chart(()) == []
+    assert chart(()) == []

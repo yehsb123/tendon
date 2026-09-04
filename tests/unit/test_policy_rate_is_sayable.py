@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from tendon.cli.main import _report_policy_rate
+from tendon.cli.reporting import report_policy_rate
 from tendon.services.skill import SkillError, load_skill
 
 SKILL = """apiVersion: tendon/v1alpha1
@@ -84,7 +84,7 @@ def test_a_rate_that_cannot_be_divided_into_is_refused_at_load(tmp_path: Path) -
 def test_the_two_rates_are_stated_before_anything_moves(tmp_path: Path, capsys) -> None:
     loaded = load_skill(_skill(tmp_path, hz="30"))
 
-    _report_policy_rate(Console(width=200), loaded, _Capability(100))
+    report_policy_rate(Console(width=200), loaded, _Capability(100))
 
     output = capsys.readouterr().out
     assert "30 Hz" in output
@@ -92,10 +92,10 @@ def test_the_two_rates_are_stated_before_anything_moves(tmp_path: Path, capsys) 
 
 
 def test_nothing_is_said_when_the_rates_agree_or_are_unknown(tmp_path: Path, capsys) -> None:
-    _report_policy_rate(Console(), load_skill(_skill(tmp_path, hz="100")), _Capability(100))
+    report_policy_rate(Console(), load_skill(_skill(tmp_path, hz="100")), _Capability(100))
     assert capsys.readouterr().out == ""
 
-    _report_policy_rate(Console(), load_skill(_skill(tmp_path, hz=None)), _Capability(100))
+    report_policy_rate(Console(), load_skill(_skill(tmp_path, hz=None)), _Capability(100))
     assert capsys.readouterr().out == ""
 
 
@@ -106,11 +106,14 @@ def test_the_holding_arithmetic_is_not_duplicated_here() -> None:
     This project has twice shipped one bug from two copies of the same calculation, so the
     CLI states the inputs and computes nothing. If a hold count ever appears in `cli/`, the
     two copies can disagree and the one a person reads will be the wrong one.
-    """
-    source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
-        encoding="utf-8"
-    )
-    rate_report = source.partition("def _report_policy_rate")[2].partition("\ndef ")[0]
 
-    assert "policy_hz" in rate_report, "the function under test moved or was renamed"
-    assert "/" not in rate_report.replace("[/dim]", ""), "a rate ratio is being computed here"
+    Read from wherever the function lives rather than from a named file. The property is
+    about the code, and it survived `cli/main.py` being split into modules only because
+    this stopped naming one.
+    """
+    import inspect
+
+    source = inspect.getsource(report_policy_rate)
+
+    assert "policy_hz" in source, "the function under test moved or was renamed"
+    assert "/" not in source.replace("[/dim]", ""), "a rate ratio is being computed here"

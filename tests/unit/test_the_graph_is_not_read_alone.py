@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from tendon.cli.main import _report_success
+from tendon.cli.reporting import report_success
 from tendon.services.progress import EpisodeRecord, now
 
 
@@ -37,7 +37,7 @@ def _record(*, succeeded: bool | None, interventions: int = 0) -> EpisodeRecord:
 
 def _printed(records: list[EpisodeRecord]) -> str:
     console = Console(width=200, record=True)
-    _report_success(console, records)
+    report_success(console, records)
     return console.export_text()
 
 

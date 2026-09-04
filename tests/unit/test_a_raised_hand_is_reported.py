@@ -173,14 +173,14 @@ def test_the_report_prints_it() -> None:
     """`_report` showed `stopped_because` nowhere, which is why the run looked empty."""
     from rich.console import Console
 
-    from tendon.cli.main import _report
+    from tendon.cli.reporting import report
     from tendon.kernel.bus import Bus
 
     result = EpisodeResult(episode_id="abcdef123456")
     result.stopped_because = "low_confidence interrupt at step 0 and no operator"
 
     console = Console(width=200, record=True)
-    _report(console, result, Bus())
+    report(console, result, Bus())
 
     # Once. `export_text` clears rich's record buffer, so a second call returns "" and the
     # assertion after it fails for a reason that has nothing to do with the code.

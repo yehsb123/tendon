@@ -137,7 +137,12 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 # src layout: tests import tendon without an editable install, so a bare
 # checkout can run the unit suite. CI depends on this.
-pythonpath = ["src"]
+#
+# `.` as well, so `tests/cli_source.py` is importable as `tests.cli_source`. Several
+# structural tests assert a property of the whole command layer, and they each used to
+# name `src/tendon/cli/main.py`; when that file was split every one of them broke and not
+# one of the properties had changed. Sharing the reader keeps the property stated once.
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
 markers = [
     "hardware: needs a GPU or a physical robot; skipped by default",

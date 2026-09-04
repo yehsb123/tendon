@@ -101,17 +101,22 @@ def test_eval_and_run_build_the_same_baseline_policy() -> None:
     """
     import ast
 
-    path = Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py"
-    source = path.read_text(encoding="utf-8")
+    from tests import cli_source
 
-    # Both commands now go through `_choose_policy`, which decides between the scripted
+    source = cli_source.source()
+
+    # Every command goes through `choose_policy`, which decides between the scripted
     # baseline and a replay and then calls the builder. That is a stronger version of the
-    # same property: neither command names a policy constructor at all, so neither can
-    # grow its own idea of what "the baseline" is.
-    # Three commands now: `calibrate` measures a policy and so has to build the same one
-    # the run under test would use, or it would measure something else.
-    assert source.count("= _choose_policy(") == 3
-    assert source.count("= _baseline_policy(") == 0
+    # same property: no command names a policy constructor at all, so none can grow its
+    # own idea of what "the baseline" is.
+    #
+    # Three of them: `run`, `eval`, and `calibrate` — which measures a policy and so has to
+    # build the same one the run under test would use, or it measures something else.
+    assert len(cli_source.calls_to("choose_policy")) == 3
+
+    # And the builder is reached only through it. A command calling it directly is how the
+    # two copies came apart the first time.
+    assert cli_source.callers_of("_baseline_policy") == {"choose_policy"}
 
     # Where policies are actually built. This once asserted `ScriptedPolicy(` appeared
     # exactly once, which was a proxy for the real property and stopped being true the
@@ -148,21 +153,11 @@ def test_both_commands_record_through_the_same_helper() -> None:
     and the test read two callers as none. The property is how many places call the
     helper, and an argument list is not part of that.
     """
-    import ast
+    from tests import cli_source
 
-    source = (Path(__file__).resolve().parents[2] / "src/tendon/cli/main.py").read_text(
-        encoding="utf-8"
-    )
+    assert cli_source.source().count("Recorder(root=root") == 1
 
-    assert source.count("Recorder(root=root") == 1
-
-    calls = [
-        node
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_attach_recorder"
-    ]
+    calls = cli_source.calls_to("attach_recorder")
     assert len(calls) == 2, f"{len(calls)} commands attach a recorder; run and eval are the two"
 
 

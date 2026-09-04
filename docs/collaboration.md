@@ -3118,6 +3118,29 @@ where confidence is going to come from.
   *"cube_height not above 0.1"*. The scripted baseline does not pick the cube up, so that
   is the right answer — and it is the first real verdict this project has produced.
   861 tests green, mypy clean.
+- **B — `cli/main.py` was 1,957 lines, and the split broke seven tests that were testing
+  the file layout.** Four modules now: `main` keeps the app and the eleven commands,
+  `policies` decides what runs, `observers` holds the recorder, viewer and video schema,
+  `reporting` holds everything that prints. `main.py` is 1,228 and each of the others is
+  under 410.
+
+  The interesting part is what broke. Seven structural tests failed and **not one property
+  had changed** — "two commands attach a recorder", "no command builds its own baseline",
+  "train suggests a policy run accepts" are all true of the package however the functions
+  are distributed. Every one of them said `src/tendon/cli/main.py`, so each was a test of
+  the file layout wearing the name of a test about behaviour.
+
+  `tests/cli_source.py` is the shared reader: `calls_to`, `callers_of`, `definitions_of`
+  over every module in `cli/`. It matches `f(...)` and `module.f(...)` alike, because which
+  of those a call site writes is a consequence of where a function lives, and none of these
+  properties are about that. Where the target is a single function,
+  `inspect.getsource(fn)` replaced the file read outright — it cannot go stale at all.
+
+  Two related asserts were replaced rather than repointed. One had become
+  `assert ... or True`, which passes unconditionally; the other compared AST nodes across
+  separately parsed modules, where identity never holds. Both now say the thing they meant:
+  the baseline is built in exactly one function and that function is `choose_policy`.
+  861 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

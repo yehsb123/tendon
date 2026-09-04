@@ -15,6 +15,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from tendon import __version__
+from tendon.cli import observers, policies, reporting
 from tendon.cli.doctor import Status, run_checks, summarise
 
 #: Repeatable driver arguments. Defined once at module level because a `typer.Option`
@@ -104,7 +105,7 @@ _HELD_OPEN = 1.0
 
 #: Policy names this build can run. One set, consulted by the name check and named in the
 #: refusal, so the list a person is shown cannot drift from the list that is accepted.
-_RUNNABLE_POLICIES = frozenset({"scripted", "replay", "adapter"})
+policies.RUNNABLE_POLICIES = frozenset({"scripted", "replay", "adapter"})
 
 #: Reference spread for a loaded checkpoint: none, until somebody measures one.
 #:
@@ -196,7 +197,7 @@ def run(
     # misspelled. `bodies.py` already argues this rule for its own refusal: "Checked before
     # construction, not after... touching the hardware in order to decide whether to touch
     # it." Same rule, one layer up.
-    _check_policy_name(console, loaded, policy, adapter)
+    policies.check_policy_name(console, loaded, policy, adapter)
 
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
@@ -228,7 +229,9 @@ def run(
     capability = body.capability
 
     try:
-        running = _choose_policy(console, loaded, capability, policy, store, adapter, body, driver)
+        running = policies.choose_policy(
+            console, loaded, capability, policy, store, adapter, body, driver
+        )
     except typer.Exit:
         # The body was opened before the policy was chosen, because compatibility is
         # checked against it first. A refused policy still has to give it back.
@@ -236,7 +239,7 @@ def run(
         raise
 
     bus: Bus[StepRecord] = Bus()
-    viewer = _attach_viewer(console, bus, loaded, view=view, save=view_save)
+    viewer = observers.attach_viewer(console, bus, loaded, view=view, save=view_save)
 
     scheduler = Scheduler(
         driver=body,
@@ -256,12 +259,12 @@ def run(
         f"({capability.dof} axes, {capability.control_hz:g} Hz) via {escape(policy)}[/dim]"
     )
 
-    _report_policy_rate(console, loaded, capability)
+    reporting.report_policy_rate(console, loaded, capability)
 
-    recorder, root = _attach_recorder(console, bus, loaded, store, body)
+    recorder, root = observers.attach_recorder(console, bus, loaded, store, body)
     if recorder is not None:
-        cameras, frame_size = _video_schema(body)
-        _report_video(console, cameras, capability, driver)
+        cameras, frame_size = observers.video_schema(body)
+        reporting.report_video(console, cameras, capability, driver)
         recorder.start(loaded.ref, capability, cameras=cameras, frame_size=frame_size)
 
     try:
@@ -282,7 +285,7 @@ def run(
                 body.close()
 
     _record_progress(console, loaded, capability, result, store)
-    _report(console, result, bus, root)
+    reporting.report(console, result, bus, root)
 
     if result.subscriber_failures:
         # The bus isolates a failing subscriber so a body never stops moving because of a
@@ -315,442 +318,6 @@ def _effective_limits(console: Console, loaded):
     if ceiling is not None and limits != loaded.limits:
         console.print("[dim]local limits are tighter than the skill's; using the tighter[/dim]")
     return limits
-
-
-def _choose_policy(
-    console: Console,
-    loaded,
-    capability,
-    policy: str,
-    store: str,
-    adapter: str = "",
-    body=None,
-    driver_name: str = "",
-):
-    """Build whichever policy `--policy` asked for.
-
-    One function because `run` and `eval` both take the choice and this project has shipped
-    the same bug twice from two copies of a policy construction. `eval` had no choice at all
-    until now, which was its own version of the problem: `ReplayPolicy` describes itself as
-    the fixed baseline *every evaluation* needs, and evaluation was the one command that
-    could not use it.
-    """
-    _check_policy_name(console, loaded, policy, adapter)
-
-    if policy == "scripted":
-        _warn_about_an_ignored_adapter(console, loaded)
-        return _baseline_policy(loaded, capability)
-
-    if policy == "adapter" or policy.startswith("adapter:"):
-        return _adapter_policy(
-            console,
-            loaded,
-            capability,
-            policy.partition(":")[2],
-            adapter,
-            body,
-            driver_name,
-        )
-
-    return _replay_policy(console, loaded, capability, policy.partition(":")[2], store)
-
-
-def _check_policy_name(console: Console, loaded, policy: str, adapter: str = "") -> None:
-    """Refuse a `--policy` this build cannot run, using only the skill and the string.
-
-    Split out of `_choose_policy` so it can be called before a body is opened. Building a
-    policy needs the body's `Capability`; deciding whether the *name* is one we can run
-    does not, and running that check second meant `--policy scriptd` opened a body — with
-    `--physical`, a real arm — before saying the name was misspelled.
-
-    Still called from `_choose_policy` as well, so the set of runnable names is written
-    down once. A second copy that drifted would refuse a name one command accepts.
-    """
-    if policy == "adapter" or policy.startswith("adapter:"):
-        # Resolved here, before a body exists, and thrown away: this call is for its
-        # refusals. Which adapter and which base are questions about the skill and two
-        # strings, and answering them after `open_body` would mean a serial port opened to
-        # be told a path was misspelled.
-        _resolve_adapter(console, loaded, policy.partition(":")[2], adapter)
-        return
-
-    if policy in _RUNNABLE_POLICIES or policy.partition(":")[0] in _RUNNABLE_POLICIES:
-        return
-
-    console.print(f"[red]policy {escape(policy)!r} is not available yet.[/red]")
-    console.print(
-        f"[dim]{', '.join(sorted(_RUNNABLE_POLICIES))} run today. "
-        "replay: takes <skill>#<episode>, adapter: takes a directory.[/dim]"
-    )
-    raise typer.Exit(code=1)
-
-
-def _warn_about_an_ignored_adapter(console: Console, loaded) -> None:
-    """Say when a skill names an adapter that this run is not using.
-
-    `skill.yaml` carries a `policy.adapter` field, commented in the file itself as "a LoRA
-    adapter appears here after `tendon train`". Nothing reads it. So somebody could train
-    an adapter, write its path in exactly where the format tells them to, run the skill,
-    and get the scripted baseline — with one word of output, `via scripted`, standing
-    between them and the belief that they were watching their own model.
-
-    Not a refusal. Running the baseline on a skill that has weights is legitimate and is
-    how every evaluation gets its control arm. What is not legitimate is doing it silently
-    while the file says otherwise.
-    """
-    if getattr(loaded, "policy_adapter", None):
-        console.print(
-            f"[yellow]not using the adapter this skill names[/yellow] "
-            f"[dim]({escape(str(loaded.policy_adapter))}). Running the scripted baseline. "
-            f"To run the adapter: --policy adapter[/dim]"
-        )
-
-
-def _resolve_adapter(console: Console, loaded, spec: str, adapter: str) -> tuple[Path, str]:
-    """Which adapter, and which checkpoint it belongs to, using no body.
-
-    Everything here is decidable from the skill and two strings, so it runs before
-    `open_body` — with `--physical` that is a real arm, and opening one to then say a path
-    is misspelled is the defect this project already fixed once for policy names.
-    `bodies.py` argues the rule against itself: deciding whether to touch the hardware
-    should not require touching it.
-
-    Precedence is `--adapter`, then `--policy adapter:<path>`, then `skill.yaml`'s
-    `policy.adapter`. Anything explicit beats the file, because the reason to type a path
-    is that it is not the one the file names.
-
-    Called twice — once early to validate, once inside `_adapter_policy` to use — rather
-    than passed along. It reads two strings and one JSON file; a second parameter threaded
-    through three signatures to save that is a worse trade than the work.
-    """
-    from tendon.services.policy_lerobot import PolicyError, adapter_base
-
-    path = adapter or spec or (loaded.policy_adapter or "")
-    if not path:
-        console.print("[red]no adapter to run.[/red]")
-        console.print(
-            f"[dim]train one: tendon train {escape(loaded.ref)}. Then pass --adapter "
-            "<path>, or set policy.adapter in skill.yaml.[/dim]"
-        )
-        raise typer.Exit(code=1)
-
-    directory = Path(path).expanduser()
-    if not (directory / "adapter_config.json").is_file():
-        # The file rather than the directory: a path that exists but holds no adapter is
-        # the common mistake — a store, a checkpoint, or the parent of the right directory
-        # — and "not found" for a path that is plainly there reads as a bug in the tool.
-        console.print(f"[red]no adapter at {escape(str(directory))}[/red]")
-        console.print("[dim]expected adapter_config.json there, as `tendon train` writes it[/dim]")
-        raise typer.Exit(code=1)
-
-    try:
-        base = adapter_base(directory)
-    except PolicyError as exc:
-        console.print(f"[red]{escape(str(exc))}[/red]")
-        raise typer.Exit(code=1) from exc
-
-    if loaded.policy_base and base and loaded.policy_base != base:
-        console.print(
-            f"[red]this adapter was trained on {escape(base)}, and "
-            f"{escape(loaded.ref)} declares {escape(loaded.policy_base)}.[/red]"
-        )
-        console.print(
-            "[dim]A LoRA is a delta against particular weights. On a different base it "
-            "loads, runs, and is wrong. Fix policy.base, or point --adapter at the "
-            "adapter trained for it.[/dim]"
-        )
-        raise typer.Exit(code=1)
-
-    return directory, base
-
-
-def _adapter_policy(
-    console: Console, loaded, capability, spec: str, adapter: str, body=None, driver_name: str = ""
-):
-    """Build the policy a `tendon train` run produced.
-
-    The adapter comes from `--adapter`, then `--policy adapter:<path>`, then `skill.yaml`'s
-    `policy.adapter` — the last being the field the format documents as "a LoRA adapter
-    appears here after `tendon train`". Anything explicit beats the file, because the
-    reason to type a path is that it is not the one the file names.
-
-    The base checkpoint is read from the adapter's own `adapter_config.json` rather than
-    from `skill.yaml`. A LoRA is a delta against particular weights: applied to a different
-    base it loads, runs, and is wrong, with no error anywhere. The skill's `policy.base` is
-    compared against it and a disagreement is refused rather than resolved, because
-    resolving it means choosing which of two stated intentions to ignore.
-
-    `policy.hz` is passed through. `LeRobotPolicy` refuses a rate it cannot reconcile with
-    the body's, and that refusal is the point: a chunk played at the wrong rate is a
-    trajectory nobody trained.
-    """
-    from tendon.kernel.protocols import RendersFrames
-    from tendon.kernel.types import GripperKind
-    from tendon.services.policy_lerobot import (
-        PolicyError,
-        declared_image_features,
-        load_adapter,
-    )
-
-    directory, base = _resolve_adapter(console, loaded, spec, adapter)
-
-    # What the body is actually rendering, against what the checkpoint says it needs, both
-    # read before any weights are fetched. `declared_image_features` reads a JSON config;
-    # `_video_schema` calls `render()` once. Getting this wrong costs minutes of loading
-    # and then fails inside the model with "All image features are missing from the batch",
-    # which names neither the body nor the flag that would have supplied them.
-    cameras, _ = _video_schema(body) if body is not None else ((), (0, 0))
-    try:
-        needed = declared_image_features(base)
-    except PolicyError as exc:
-        console.print(f"[red]{escape(str(exc))}[/red]")
-        raise typer.Exit(code=1) from exc
-
-    if needed and not cameras:
-        console.print(f"[red]{escape(base)} needs {len(needed)} camera input(s) and this[/red]")
-        console.print("[red]body is rendering none, so no batch it produces can be used.[/red]")
-        if capability.cameras:
-            from tendon.services.bodies import camera_parameter
-
-            parameter = camera_parameter(driver_name)
-            flag = f"--driver-arg {parameter}=" if parameter else "--driver-arg <cameras>="
-            console.print(
-                f"[dim]this body has {', '.join(capability.cameras)}. "
-                f"Render one: {flag}{capability.cameras[0]}[/dim]"
-            )
-        else:
-            console.print("[dim]this body declares no cameras at all[/dim]")
-        raise typer.Exit(code=1)
-
-    # Said before the run, not buried in the report afterwards. The interrupt path keys off
-    # confidence, so an operator watching this needs to know whether the policy can raise
-    # its own hand at all — and when it cannot, that anything happening here is a safety
-    # trip or their own decision.
-    from tendon.services.calibration import DEFAULT_CALIBRATION_ROOT
-    from tendon.services.calibration import load as load_calibration
-
-    measured = load_calibration(DEFAULT_CALIBRATION_ROOT, loaded.ref, capability.body_id)
-    spread = _UNCALIBRATED_SPREAD
-
-    if measured is None:
-        console.print(
-            "[yellow]no measured scale for this policy on this body[/yellow] [dim]- no "
-            "score will be reported and the policy cannot raise an interrupt. "
-            f"Measure one: tendon calibrate {escape(loaded.ref)}[/dim]"
-        )
-    elif measured.policy != f"{base}+{directory.name}":
-        # A reference measured from one policy says nothing about another. Refusing to use
-        # it beats using it: a stale scale produces confident-looking scores on the wrong
-        # units, and the interrupt threshold is read against them.
-        console.print(
-            f"[yellow]the measured scale is for {escape(measured.policy)}[/yellow] "
-            f"[dim]and this is a different policy, so it is not being used. "
-            f"Re-measure: tendon calibrate {escape(loaded.ref)}[/dim]"
-        )
-    else:
-        spread = measured.reference_spread
-        console.print(
-            f"[dim]reference spread {spread:.6f}, measured over {measured.samples} "
-            f"predictions on {escape(measured.measured_at)}[/dim]"
-        )
-
-    console.print(f"[dim]loading {escape(base)} + adapter from {escape(str(directory))}[/dim]")
-
-    try:
-        return load_adapter(
-            directory,
-            task=loaded.summary or loaded.ref,
-            dof=capability.dof,
-            control_hz=capability.control_hz,
-            policy_hz=loaded.policy_hz,
-            reference_spread=spread,
-            has_gripper=capability.gripper is not GripperKind.NONE,
-            # The pixels. `services` may not import `drivers` and an `Observation` carries
-            # frame references rather than arrays, so a caller that wants image-conditioned
-            # prediction has to hand over the source — the same injection the recorder
-            # takes, for the same reason. Omitting it is not an error anywhere: the policy
-            # simply predicts from state alone, which for a VLA is a different policy.
-            frames=body.render if isinstance(body, RendersFrames) else None,
-        )
-    except PolicyError as exc:
-        console.print(f"[red]{escape(str(exc))}[/red]")
-        raise typer.Exit(code=1) from exc
-
-
-def _replay_policy(console: Console, loaded, capability, spec: str, store: str):
-    """Play a recorded episode back, from `replay:<skill>` or `replay:<skill>#<index>`.
-
-    `ReplayPolicy` has existed and been tested since early on, described in its own module
-    as "the fixed baseline every evaluation needs: a run whose behaviour cannot drift". The
-    `--policy` help has advertised `replay:` for as long. Nothing called it, and the format
-    the help named — `<episode.json>` — was never written by anything: the store holds
-    LeRobotDataset parquet.
-
-    So the spec names a skill and an episode in the store rather than a file, which is where
-    recordings actually are, and `services/episodes` already reads them.
-    """
-    from tendon.services.episodes import EpisodeReadError, read_episodes
-    from tendon.services.policies import ReplayPolicy
-    from tendon.services.store import DEFAULT_ROOT
-
-    reference, _, index_text = spec.partition("#")
-    reference = reference or loaded.ref
-
-    try:
-        index = int(index_text) if index_text else 0
-    except ValueError as exc:
-        raise typer.BadParameter(f"{index_text!r} is not an episode number") from exc
-
-    root = Path(store) if store else DEFAULT_ROOT
-    try:
-        episodes = read_episodes(root / reference.replace("/", "__"))
-    except EpisodeReadError as exc:
-        console.print(f"[red]{escape(str(exc))}[/red]")
-        console.print(f"[dim]record some first: tendon run {escape(reference)}[/dim]")
-        raise typer.Exit(code=1) from exc
-
-    if index >= len(episodes):
-        console.print(
-            f"[red]{escape(reference)} has {len(episodes)} episodes; "
-            f"there is no episode {index}[/red]"
-        )
-        raise typer.Exit(code=1)
-
-    episode = episodes[index]
-    console.print(
-        f"[dim]replaying {escape(reference)} episode {index}, {len(episode.actions)} steps[/dim]"
-    )
-    return ReplayPolicy(
-        episode.actions,
-        # The rate the episode was recorded at, not the rate this body runs at. A replay
-        # played at a different rate is a different motion, and the shell would draw a
-        # trajectory over the wrong span.
-        control_hz=1.0 / episode.dt_s,
-        name=f"replay:{reference}#{index}",
-    )
-
-
-def _baseline_policy(loaded, capability):
-    """The scripted policy both `run` and `eval` use when no model is loaded.
-
-    One function because there were two copies, and only one of them was fixed. `run`
-    learned to command the jaw of a body that has one — without it the recorder's schema
-    is a channel wider than the action and every episode dies at step 0 — and `eval` kept
-    the old constructor. The bug was repaired and still present, in the command that runs
-    thirty episodes instead of one.
-
-    Which policy depends on what the skill declares. `policy.baseline` names something that
-    attempts the task; without it there is nothing to attempt and the fallback is a joint
-    sweep. That distinction is the difference between evaluating a skill and evaluating a
-    motion that happens to run on the same body — `tendon eval grasp/cube-sim` reported an
-    intervention rate and failure modes for a sweep that never reached for the cube.
-    """
-    from tendon.services.policies import FunctionPolicy, sine_sweep
-
-    if loaded.policy_baseline:
-        return _named_baseline(loaded, capability)
-
-    return FunctionPolicy(
-        sine_sweep(dof=capability.dof),
-        control_hz=capability.control_hz,
-        dof=capability.dof,
-        name=loaded.ref,
-        # A body with a jaw has to be told what the jaw is doing, even by a baseline that
-        # only sweeps one joint. Held open: this policy has no notion of grasping
-        # anything, and a jaw that closes on nothing is the more surprising default.
-        gripper=_HELD_OPEN if capability.gripper.value != "none" else None,
-    )
-
-
-#: Baselines a skill can name in `policy.baseline`. Deliberately a small closed set rather
-#: than an import path: a skill file naming a Python object would let a downloaded skill
-#: choose what code runs, and skills are meant to be shareable (v0.4).
-_BASELINES = {"cube-pick"}
-
-
-def _named_baseline(loaded, capability):
-    """Build the baseline a skill asked for by name."""
-    from tendon.services.policy_scripted import CUBE_PICK, ScriptedPolicy
-
-    if loaded.policy_baseline not in _BASELINES:
-        raise typer.BadParameter(
-            f"{loaded.ref} asks for baseline {loaded.policy_baseline!r}, which this tendon "
-            f"does not have. Known: {sorted(_BASELINES)}"
-        )
-
-    return ScriptedPolicy(
-        name=f"{loaded.ref}/baseline",
-        stages=CUBE_PICK,
-        control_hz=capability.control_hz,
-    )
-
-
-def _attach_viewer(console: Console, bus, loaded, *, view: bool, save: str):
-    """Stream the run into Rerun, when somebody asked for it.
-
-    **Opt-in, unlike recording, and that difference is the point.** The recorder costs
-    0.04 ms per step and is always attached because of it — design decision 1 is only
-    structural because nobody would want it off. This costs about eighty times that, since
-    it encodes frames a person will look at, and `services/viz.py` says so in its own
-    docstring: attach it to a run being watched, not to every run being collected.
-
-    So there is a flag here and none for recording. A flag on the wrong one of these would
-    be the difference between a project that collects data and a project that means to.
-    """
-    if not view and not save:
-        return None
-
-    from tendon.services.viz import RerunLogger, VizError
-
-    try:
-        viewer = RerunLogger(
-            session_name=f"tendon/{loaded.ref}",
-            spawn=view,
-            save_path=save or None,
-            confidence_threshold=loaded.confidence_threshold,
-        )
-    except VizError as exc:
-        # Not fatal. The run is still worth doing and still recorded; what is missing is
-        # somewhere to watch it. Refusing would make an optional extra decide whether a
-        # body moves.
-        console.print(f"[yellow]not viewing: {escape(str(exc))}[/yellow]")
-        return None
-
-    viewer.attach_to(bus)
-    if save:
-        console.print(f"[dim]writing a Rerun recording to {escape(save)}[/dim]")
-    return viewer
-
-
-#: LeRobot's default when nothing is rendered. Never used to size a real frame — that comes
-#: from the body — only to fill an argument the schema requires when there is no video.
-_NO_VIDEO_SIZE = (480, 640)
-
-
-def _video_schema(body) -> tuple[tuple[str, ...], tuple[int, int]]:
-    """Which cameras this body is rendering, and at what size, asked once.
-
-    Read from a real frame rather than from the body's declared `Capability.cameras`,
-    because those are different questions: a body exposes cameras it is not rendering, and
-    `features_for` is explicit that declaring one that will not be supplied turns every
-    `add_frame` into an error. The frame is the only thing that knows.
-
-    Nothing here is driver-specific. `RendersFrames` is the contract, `render()` names its
-    own cameras, and the array says how big they are, so a driver written after this works
-    without being added to a list.
-    """
-    from tendon.kernel.protocols import RendersFrames
-
-    if not isinstance(body, RendersFrames):
-        return (), _NO_VIDEO_SIZE
-
-    frames = body.render()
-    if not frames:
-        return (), _NO_VIDEO_SIZE
-
-    sample = next(iter(frames.values()))
-    height, width = int(sample.shape[0]), int(sample.shape[1])
-    return tuple(frames), (height, width)
 
 
 def _judge(loaded, result) -> bool | None:
@@ -837,167 +404,6 @@ def _record_progress(console: Console, loaded, capability, result, store: str) -
         )
     except Exception as exc:  # noqa: BLE001 - isolation, not silence
         console.print(f"[yellow]could not record progress: {escape(str(exc))}[/yellow]")
-
-
-def _report_policy_rate(console: Console, loaded, capability) -> None:
-    """State both rates when a skill declares one for its policy, before anything moves.
-
-    `requires.control_hz` is how fast the body accepts setpoints. `policy.hz` is how fast
-    the policy's chunk was meant to be played. Assuming they are equal was a live defect:
-    a 30 Hz policy on a 100 Hz body ran its trajectory more than three times too fast,
-    silently, and in proportion to how fast the body happened to be — so the faster the
-    machine, the more wrong the motion, which is the opposite of what anybody debugging it
-    would assume.
-
-    The two numbers only, no arithmetic. Deciding how many ticks to hold each action is
-    `LeRobotPolicy`'s, and this project has twice shipped one bug from two copies of the
-    same calculation. Stating the inputs cannot go out of step with the thing that uses
-    them.
-    """
-    policy_hz = getattr(loaded, "policy_hz", None)
-    if not policy_hz or policy_hz == capability.control_hz:
-        return
-
-    console.print(
-        f"[dim]policy actions are for {policy_hz:g} Hz; this body runs at "
-        f"{capability.control_hz:g} Hz[/dim]"
-    )
-
-
-def _report_video(console: Console, cameras: tuple[str, ...], capability, driver_name: str) -> None:
-    """Say what video this episode will contain, while it can still be changed.
-
-    Recording without it is a legitimate run, so this is not a warning about a mistake. It
-    is here because the cost of not knowing is paid much later: a vision-language-action
-    policy cannot be trained on state alone, and `tendon train` is where that surfaced —
-    four minutes into loading a checkpoint, about episodes recorded weeks earlier.
-
-    Only when the body has cameras it is not rendering. A body with none is not withholding
-    anything and does not need a line every run saying so.
-    """
-    if cameras:
-        console.print(f"[dim]recording video from {', '.join(cameras)}[/dim]")
-        return
-    if not capability.cameras:
-        return
-
-    from tendon.services.bodies import camera_parameter
-
-    line = (
-        f"[dim]no video: {escape(capability.body_id)} has "
-        f"{', '.join(capability.cameras)} and is rendering none."
-    )
-    # Named only when this driver really takes it. A suggestion that is right for MuJoCo
-    # and wrong for the next body is worse than no suggestion, and which one it is can be
-    # asked rather than assumed.
-    parameter = camera_parameter(driver_name)
-    if parameter:
-        line += f" --driver-arg {parameter}={capability.cameras[0]} to record one."
-    console.print(line + "[/dim]")
-
-
-def _attach_recorder(console: Console, bus, loaded, store: str, body=None):
-    """Subscribe a recorder to the step bus, or say why nothing is being recorded.
-
-    Returns the recorder (None when unavailable) and the store path it is writing to.
-    The caller opens each episode with `recorder.start(...)` and closes it with
-    `finish()`: subscribing is per-run, but an episode is per-episode, and `eval` runs
-    thirty of them through one subscription.
-
-    Recording is not optional and there is no flag to turn it off, but LeRobot is an
-    optional extra and the kernel and the simulator both work without it. So the one
-    honest thing to do when it is missing is to run anyway and say plainly that this
-    episode is not being kept. Failing the run would make an optional dependency
-    mandatory; staying quiet would let someone collect nothing for an afternoon.
-    """
-    from tendon.services.store import DEFAULT_ROOT
-
-    root = Path(store) if store else DEFAULT_ROOT
-
-    try:
-        from tendon.services.recorder import Recorder
-    except ImportError:
-        console.print("[yellow]not recording: LeRobot is not installed[/yellow]")
-        console.print(
-            "[dim]this episode will not be kept - " + escape('pip install -e ".[robot]"') + "[/dim]"
-        )
-        # No path either: naming a store nothing was written to is the same lie in a
-        # quieter form.
-        return None, None
-
-    # Recorded under the skill's own reference rather than the recorder's default
-    # `tendon/local`. Episodes are grouped by what was being done, which is what the
-    # store's "skill" column claims to show, what `store.py` decodes a directory name
-    # back into, and the only grouping a training run can use.
-    from tendon.kernel.protocols import RendersFrames
-
-    recorder = Recorder(root=root, repo_id=loaded.ref)
-    # Pixels come from the body, not from the step: a `StepRecord` carries an
-    # `Observation`, and an observation carries frame references rather than frames.
-    # `services/` cannot import `drivers/` to go and fetch them, which is why the contract
-    # this checks lives in the kernel.
-    renders = body is not None and isinstance(body, RendersFrames)
-    recorder.attach_to(bus, frames=body.render if renders else None)
-    return recorder, root
-
-
-def _report(console: Console, result, bus, root: Path | None = None) -> None:
-    """What happened, and anything that would otherwise be found later.
-
-    Unchecked limits and dropped subscribers are printed even on a clean run. A caller who
-    has to infer that an episode ran partly unverified will not infer it.
-    """
-    table = Table(show_header=False, box=None, pad_edge=False)
-    table.add_row("episode", result.episode_id[:12])
-    table.add_row("steps", str(result.steps))
-    table.add_row("ended", "policy exhausted" if result.exhausted else result.state.value)
-    table.add_row("interventions", f"{result.interventions} ({result.corrections} corrections)")
-    table.add_row("clamped", str(sum(1 for r in result.records if r.clamped)))
-    if root is not None:
-        # On the table rather than in a closing line, because "where did it go" is part of
-        # what happened. A run that recorded and a run that did not used to print
-        # identically, which is how this command passed for a milestone it did not meet.
-        table.add_row("recorded to", str(root))
-    console.print(table)
-
-    if result.stopped_because:
-        # First, and yellow, because it is the difference between an episode that ended and
-        # one that was stopped. A policy raising its own hand with nobody to answer prints
-        # `steps 0`, `ended running`, `interventions 0` otherwise — three true statements
-        # adding up to "nothing happened", for the one event design decision 2 exists to
-        # produce.
-        console.print()
-        console.print(f"[yellow]stopped:[/yellow] {escape(result.stopped_because)}")
-
-    if result.unchecked:
-        console.print()
-        console.print("[yellow]limits that could not be evaluated:[/yellow]")
-        for item, count in result.unchecked.items():
-            share = f"{count} of {result.steps} steps" if result.steps else f"{count} steps"
-            console.print(f"  [dim]{share}[/dim]  {escape(item)}")
-
-    if result.fault_reason:
-        console.print()
-        console.print("[red]interrupt faulted - context could not support a resume:[/red]")
-        for reason in result.fault_reason:
-            console.print(f"  {escape(reason)}")
-
-    for failure in result.subscriber_failures:
-        console.print(
-            f"[red]subscriber {escape(failure.name)} died at step {failure.step}:[/red] "
-            f"{escape(failure.error)}"
-        )
-
-    slowest = bus.slowest()
-    if slowest is not None:
-        # "Subscribers" rather than "recording": with `--view` attached there are two, and
-        # the expensive one is usually the viewer. Naming the total after the cheap half
-        # would put the recorder's name on the viewer's cost, which is exactly the reading
-        # that would get design decision 1 blamed for something it does not do.
-        console.print(
-            f"[dim]subscribers cost {bus.mean_publish_cost() * 1000:.4f} ms per step "
-            f"(slowest: {escape(slowest[0])})[/dim]"
-        )
 
 
 @app.command()
@@ -1104,88 +510,6 @@ def shell(
     serve(port=port, host="127.0.0.1", skills_dir=skills_dir)
 
 
-#: Rate levels the terminal chart draws, top to bottom. Eight rows: enough to read a fall
-#: at a glance, short enough to sit above a prompt without scrolling.
-_CHART_ROWS = (1.0, 0.875, 0.75, 0.625, 0.5, 0.375, 0.25, 0.125)
-
-#: Widest the chart gets. Points are sampled down to this rather than truncated, so a long
-#: history still shows its whole shape.
-_CHART_WIDTH = 52
-
-
-def _report_success(console: Console, records) -> None:
-    """Whether the task was still being achieved while the intervention rate fell.
-
-    The graph above is the whole claim of this project, and by itself it is ambiguous in a
-    way that favours the claim. **A policy that stops asking for help because it stopped
-    trying draws exactly the same falling line as one that learned.** Nothing distinguished
-    those readings: `examples/04_improve` prints PASS on the fall alone, and
-    `tendon eval grasp/cube-sim` reports the verdict for every episode as unknown because
-    the MuJoCo driver does not put `cube_height` in `Observation.extra`.
-
-    So this says which case is in front of you. When nothing measured success, it says that
-    rather than nothing — a graph whose other half is missing should not look complete.
-    """
-    verdicts = [record.succeeded for record in records]
-    measured = [verdict for verdict in verdicts if verdict is not None]
-
-    if not measured:
-        console.print(
-            "[yellow]success was not measured on any of these episodes[/yellow] [dim]- so a "
-            "falling rate here is 'asked less often', which a policy that stopped trying "
-            "would also produce. Have the body report what the skill's success criteria "
-            "name.[/dim]"
-        )
-        return
-
-    rate = sum(1 for verdict in measured if verdict) / len(measured)
-    unknown = len(verdicts) - len(measured)
-    line = f"[dim]succeeded on {rate:.0%} of {len(measured)} judged episodes[/dim]"
-    if unknown:
-        # Named rather than folded in. An episode nobody could judge is not a failure, and
-        # counting it as one would understate a policy that works on a rig that cannot say.
-        line += f"[dim], {unknown} could not be judged[/dim]"
-    console.print(line)
-
-
-def _chart(points: tuple[tuple[int, float], ...]) -> list[str]:
-    """The curve, in ASCII.
-
-    ASCII rather than block characters. `tests/unit/test_console_output.py` exists because
-    this project keeps crashing on a cp949 console, and a chart that raises
-    `UnicodeEncodeError` while reporting progress would be a fitting way to lose the
-    argument. The README draws the same shape with block characters, which is fine: markdown
-    is not a terminal.
-    """
-    if not points:
-        return []
-
-    if len(points) > _CHART_WIDTH:
-        # Sampled, not truncated: the interesting part of this line is usually the end,
-        # and showing the first 52 points of a long history would hide exactly that.
-        #
-        # Spread across the whole range rather than stepping by a fixed stride. A stride
-        # walks off the end and drops the last point, which is the one that says where
-        # things currently stand — the first version of this did precisely that.
-        last = len(points) - 1
-        points = tuple(points[round(i * last / (_CHART_WIDTH - 1))] for i in range(_CHART_WIDTH))
-
-    width = len(points)
-    lines = []
-    for level in _CHART_ROWS:
-        bar = "".join("#" if rate >= level else " " for _, rate in points)
-        lines.append(f"{level:>4.0%} |{bar}")
-
-    lines.append("     +" + "-" * width)
-
-    # The two ends of the x-axis, padded to the chart's own width so the label cannot grow
-    # wider than the thing it labels.
-    start, end = str(points[0][0]), str(points[-1][0])
-    gap = max(1, width - len(start) - len(end))
-    lines.append(f"      {start}{' ' * gap}{end} corrections")
-    return lines
-
-
 @app.command()
 def progress(
     window: int = typer.Option(10, help="Episodes the intervention rate is measured over"),
@@ -1230,11 +554,11 @@ def progress(
             )
         else:
             console.print()
-            for line in _chart(curve):
+            for line in reporting.chart(curve):
                 console.print(f"[dim]{escape(line)}[/dim]")
             console.print(f"[dim]  intervention rate over a trailing {window} episodes[/dim]")
 
-        _report_success(console, records)
+        reporting.report_success(console, records)
         console.print()
 
 
@@ -1340,7 +664,7 @@ def calibrate(
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
 
-    _check_policy_name(console, loaded, policy, adapter)
+    policies.check_policy_name(console, loaded, policy, adapter)
 
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
@@ -1358,7 +682,9 @@ def calibrate(
     capability = body.capability
 
     try:
-        running = _choose_policy(console, loaded, capability, policy, "", adapter, body, driver)
+        running = policies.choose_policy(
+            console, loaded, capability, policy, "", adapter, body, driver
+        )
     except typer.Exit:
         body.close()
         raise
@@ -1423,50 +749,7 @@ def calibrate(
     written = calibration_module.calibration_path(root, loaded.ref, capability.body_id)
     console.print(f"[dim]written to {escape(str(written))}[/dim]")
 
-    _report_thresholds(console, measured, loaded.confidence_threshold)
-
-
-#: Thresholds the report walks through. Fixed rather than derived from the measurement, so
-#: two runs of the same skill can be read against each other.
-_THRESHOLD_CHOICES = (0.5, 0.4, 0.3, 0.2, 0.1)
-
-
-def _report_thresholds(console: Console, measured, declared: float) -> None:
-    """What the skill's threshold does against what was just measured.
-
-    Neither number says this on its own, and their product is surprising: the reference is
-    the median, so **a threshold of 0.5 asks for help on half of everything**. That is not
-    a defect in the scale or in the threshold — it is what the two mean together, and the
-    only way to find it out was to run and get an episode that stopped at step zero with
-    nothing on screen explaining why.
-
-    Which threshold is right is not answerable from here. It depends on what goes wrong
-    when nobody is asked, which is visible only in episodes where somebody took over —
-    ADR 0003, still v0.3. What this gives is the other half of that decision: what each
-    choice costs in interruptions, measured on the predictions that actually happened.
-    """
-    console.print()
-    console.print(
-        f"[bold]at this skill's threshold of {declared:g}, "
-        f"{measured.ask_rate(declared):.0%} of these predictions would have asked for "
-        f"help[/bold]"
-    )
-
-    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
-    table.add_column("threshold")
-    table.add_column("asks on", justify="right")
-    for candidate in _THRESHOLD_CHOICES:
-        marker = "  <- skill.yaml" if abs(candidate - declared) < 1e-9 else ""
-        table.add_row(f"{candidate:g}", f"{measured.ask_rate(candidate):.0%}{marker}")
-    console.print(table)
-
-    console.print()
-    console.print(
-        "[dim]Which of these is right is not a question this measurement can answer. It "
-        "depends on what goes wrong when nobody is asked, which is only visible in "
-        "episodes where somebody took over - ADR 0003, still v0.3. What the table gives "
-        "you is what each choice costs in interruptions.[/dim]"
-    )
+    reporting.report_thresholds(console, measured, loaded.confidence_threshold)
 
 
 def _collect(policy, spreads: list[float]) -> None:
@@ -1803,7 +1086,7 @@ def evaluate_skill(
 
     # Same order as `run`, and for the same reason: a misspelled policy should not cost a
     # body. `eval` opens one and runs thirty episodes through it.
-    _check_policy_name(console, loaded, policy, adapter)
+    policies.check_policy_name(console, loaded, policy, adapter)
 
     try:
         body = open_body(driver, allow_physical=physical, **_driver_kwargs(driver_arg))
@@ -1821,15 +1104,15 @@ def evaluate_skill(
         f"{count} episodes of up to {steps} steps[/dim]"
     )
 
-    _report_policy_rate(console, loaded, capability)
+    reporting.report_policy_rate(console, loaded, capability)
 
     bus: Bus[StepRecord] = Bus()
-    recorder, root = _attach_recorder(console, bus, loaded, store, body)
+    recorder, root = observers.attach_recorder(console, bus, loaded, store, body)
     # Asked once for the sweep, not once per episode: the body renders the same cameras at
     # the same size throughout, and `render()` costs a frame each time it is called.
-    cameras, frame_size = _video_schema(body)
+    cameras, frame_size = observers.video_schema(body)
     if recorder is not None:
-        _report_video(console, cameras, capability, driver)
+        reporting.report_video(console, cameras, capability, driver)
 
     outcomes: list[EpisodeOutcome] = []
     unknown = 0
@@ -1839,7 +1122,7 @@ def evaluate_skill(
             # Rebuilt each episode so a replay starts from the beginning of the recording
             # rather than continuing where the last one stopped. `ReplayPolicy.reset` does
             # the same, and building it here keeps the two commands' loops identical.
-            running = _choose_policy(
+            running = policies.choose_policy(
                 console, loaded, capability, policy, store, adapter, body, driver
             )
             scheduler = Scheduler(
@@ -1891,7 +1174,7 @@ def evaluate_skill(
                     corrections=result.corrections,
                     faulted=result.state.value == "faulted",
                     failure_mode=reason,
-                    confidence_source=_episode_source(result),
+                    confidence_source=reporting.episode_source(result),
                 )
             )
     finally:
@@ -1939,21 +1222,6 @@ def evaluate_skill(
         for message in failures:
             console.print(f"  [dim]{escape(message)}[/dim]")
         raise typer.Exit(code=1)
-
-
-def _episode_source(result):
-    """Which estimator drove handovers in this episode.
-
-    Read from the run rather than assumed: an evaluation that mislabels the estimator
-    produces a rate that is not comparable to anything, while looking like it is.
-    """
-    from tendon.kernel.types import ConfidenceSource
-
-    for record in result.records:
-        intent = getattr(record, "intent", None)
-        if intent is not None:
-            return intent.confidence.source
-    return ConfidenceSource.NONE
 
 
 if __name__ == "__main__":

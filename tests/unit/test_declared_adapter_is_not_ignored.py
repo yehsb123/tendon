@@ -56,7 +56,7 @@ def test_the_scripted_baseline_says_it_is_not_the_adapter(tmp_path: Path, capsys
     """Checked on `_choose_policy` rather than through `run`, which would need a body."""
     from rich.console import Console
 
-    from tendon.cli.main import _warn_about_an_ignored_adapter
+    from tendon.cli.policies import _warn_about_an_ignored_adapter
     from tendon.services.skill import load_skill
 
     loaded = load_skill(str(_skill(tmp_path, adapter="/somewhere/adapter")))
@@ -70,7 +70,7 @@ def test_the_scripted_baseline_says_it_is_not_the_adapter(tmp_path: Path, capsys
 def test_a_skill_with_no_adapter_is_not_told_off_every_run(tmp_path: Path, capsys) -> None:
     from rich.console import Console
 
-    from tendon.cli.main import _warn_about_an_ignored_adapter
+    from tendon.cli.policies import _warn_about_an_ignored_adapter
     from tendon.services.skill import load_skill
 
     loaded = load_skill(str(_skill(tmp_path, adapter=None)))

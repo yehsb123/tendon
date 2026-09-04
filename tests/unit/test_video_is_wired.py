@@ -23,7 +23,8 @@ import numpy as np
 import pytest
 from rich.console import Console
 
-from tendon.cli.main import _report_video, _video_schema
+from tendon.cli.observers import video_schema
+from tendon.cli.reporting import report_video
 from tendon.kernel.protocols import RendersFrames
 
 
@@ -57,7 +58,7 @@ def test_the_schema_follows_the_frame_not_the_declared_cameras() -> None:
     an error. The frame is the only thing that knows which it is."""
     body = _Rendering({"wrist": np.zeros((240, 320, 3), dtype=np.uint8)})
 
-    cameras, size = _video_schema(body)
+    cameras, size = video_schema(body)
 
     assert cameras == ("wrist",)
     assert size == (240, 320), "height, width - swapping these fails at the first frame"
@@ -67,8 +68,8 @@ def test_a_body_that_renders_nothing_declares_no_cameras() -> None:
     """A body that could render and was not asked to returns `{}`. Treated as "no video
     this run" rather than as an error, because rendering costs time per frame and a run
     that does not need it should not pay."""
-    assert _video_schema(_Rendering({})) == ((), (480, 640))
-    assert _video_schema(_Blind()) == ((), (480, 640))
+    assert video_schema(_Rendering({})) == ((), (480, 640))
+    assert video_schema(_Blind()) == ((), (480, 640))
 
 
 def test_a_body_with_cameras_recording_none_says_so_while_it_can_be_changed(
@@ -76,7 +77,7 @@ def test_a_body_with_cameras_recording_none_says_so_while_it_can_be_changed(
 ) -> None:
     """The cost of not knowing is paid much later: at `tendon train`, four minutes into
     loading a checkpoint, about episodes recorded weeks earlier."""
-    _report_video(Console(), (), _Capability(("wrist", "scene")), "mujoco")
+    report_video(Console(), (), _Capability(("wrist", "scene")), "mujoco")
 
     output = capsys.readouterr().out
     assert "no video" in output
@@ -87,7 +88,7 @@ def test_a_body_with_no_cameras_is_not_told_off_every_run(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """It is not withholding anything."""
-    _report_video(Console(), (), _Capability(()), "mujoco")
+    report_video(Console(), (), _Capability(()), "mujoco")
 
     assert capsys.readouterr().out == ""
 
@@ -97,7 +98,7 @@ def test_no_parameter_is_suggested_for_a_driver_that_does_not_take_one(
 ) -> None:
     """A suggestion right for MuJoCo and wrong for the next body is worse than none, and
     which one it is can be asked rather than assumed."""
-    _report_video(Console(), (), _Capability(("wrist",)), "no-such-body")
+    report_video(Console(), (), _Capability(("wrist",)), "no-such-body")
 
     output = capsys.readouterr().out
     assert "no video" in output
@@ -107,7 +108,7 @@ def test_no_parameter_is_suggested_for_a_driver_that_does_not_take_one(
 def test_the_recorder_is_handed_the_frames_source(monkeypatch) -> None:
     """The half that was never connected. Asserted on the call rather than on a recorded
     file, because the failure was that the argument was never passed at all."""
-    import tendon.cli.main as cli
+    from tendon.cli import observers as cli
 
     passed: dict[str, Any] = {}
 
@@ -124,8 +125,8 @@ def test_the_recorder_is_handed_the_frames_source(monkeypatch) -> None:
         ref = "grasp/cube-sim"
 
     body = _Rendering({"wrist": np.zeros((240, 320, 3), dtype=np.uint8)})
-    cli._attach_recorder(Console(), object(), _Loaded(), "", body)
+    cli.attach_recorder(Console(), object(), _Loaded(), "", body)
     assert passed["frames"] is not None, "a rendering body was attached with no frame source"
 
-    cli._attach_recorder(Console(), object(), _Loaded(), "", _Blind())
+    cli.attach_recorder(Console(), object(), _Loaded(), "", _Blind())
     assert passed["frames"] is None, "a body that cannot render was asked to"
