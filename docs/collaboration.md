@@ -3167,6 +3167,31 @@ where confidence is going to come from.
   the example says so in those words. The second fails if the example ever starts
   succeeding — which would mean it had become a different experiment and its verdict text
   needs rewriting. 863 tests green, mypy clean.
+- **B — two more surfaces swept, and the second one was the operator's seat.**
+
+  **`tendon doctor` called every limitation an absence.** `Status.LIMITED` is defined in
+  that file as *works, but something is degraded*, and the summary listed all of them
+  under "Not yet available". On this machine that read *"Not yet available: storage,
+  training"* — with 11 GB free and `tendon train` having produced an adapter half an hour
+  earlier. **The first command anybody runs was telling them the thing they had just done
+  could not be done.** It also claimed "you can run and record episodes" whenever anything
+  was limited, which is a guess about which check is limited — and a degraded `datasets`
+  is precisely the one that stops recording, so the sentence was likeliest to be wrong in
+  the case it was written for. Both gone; each line already says what its own limit costs.
+
+  **The shell was dropping `stopped_because` on arrival.** The runtime has sent it since
+  sessions were written. `SessionSnapshot` in `client.ts` never declared it, so the one
+  message that separates *the policy raised its own hand and nobody answered* from
+  *nothing happened* reached the operator's view and was discarded. Declared and shown now.
+
+  Why the contract test missed it: it covers the endpoints that need no session, and it
+  asserts only the dangerous direction — everything the shell declares must arrive. For a
+  session snapshot that rule is too weak in a way the others are not, because **the shell
+  is the only consumer**. A field sent there and undeclared is not spare data for another
+  client; it is information travelling to the seat it was written for and being thrown
+  away. Both directions are asserted for that shape now, and the check was verified by
+  deleting the field and watching it fail by name. 867 tests green, 22 shell tests green,
+  mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

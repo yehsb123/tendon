@@ -163,6 +163,46 @@ def test_a_recorded_episode_arrives_in_the_shape_the_progress_view_reads(
     _assert_shape(sample, "Progress")
 
 
+def _session_snapshot() -> dict[str, Any]:
+    """A snapshot without running an episode.
+
+    The session endpoints need a live session, which is why this shape went unchecked while
+    every other one was covered — and it is the shape the operator actually watches.
+    Built from `SessionState` directly: the dictionary is what the contract is about, and
+    driving MuJoCo to obtain one would test the scheduler instead.
+    """
+    from tendon.api.session import EpisodeSession, SessionState
+
+    state = SessionState(session_id="s1", skill="grasp/cube-sim", body_id="mujoco:arm")
+    state.stopped_because = "low_confidence interrupt at step 0 and no operator is attached"
+    return EpisodeSession.snapshot(type("S", (), {"state": state})())
+
+
+def test_the_session_shape_is_the_one_the_shell_declares() -> None:
+    _assert_shape(_session_snapshot(), "SessionSnapshot")
+
+
+def test_nothing_in_a_session_snapshot_is_dropped_by_the_shell() -> None:
+    """Both directions here, unlike the endpoints above, because the shell is the only
+    consumer of this one. A field the runtime puts in a session and the shell does not
+    declare is not "extra data for another client" — it is information travelling to the
+    operator's seat and being discarded on arrival.
+
+    That is not hypothetical. `stopped_because` was sent from the day sessions were
+    written and declared nowhere in the shell, so the one message that distinguishes "the
+    policy raised its own hand and nobody answered" from "nothing happened" reached the
+    view and was dropped.
+    """
+    declared = set(_declared("SessionSnapshot"))
+    sent = set(_session_snapshot())
+
+    dropped = sorted(sent - declared)
+    assert not dropped, (
+        f"the runtime sends {dropped} in a session snapshot and the shell reads none of "
+        f"them. Declare the field in client.ts and show it, or stop sending it."
+    )
+
+
 def test_every_endpoint_the_shell_calls_is_one_the_runtime_serves(client: TestClient) -> None:
     """A path is a string on both sides. Renaming one in `app.py` breaks the shell and
     nothing else, which is the quietest way this pair can come apart."""

@@ -40,6 +40,29 @@ function NotRecording({ recording }: { recording: boolean | undefined }) {
 }
 
 /**
+ * Why the episode ended, when it did not simply run out.
+ *
+ * The runtime has sent `stopped_because` since sessions were written; the shell did not
+ * declare the field, so it arrived and was dropped in the one seat where it matters most.
+ *
+ * The case it exists for: a policy raises its own hand, nobody is there to answer, and the
+ * scheduler stops before the body moves — which is the correct thing to do and leaves a
+ * session reading `steps 0`, `running`, `interventions 0`. Three true fields adding up to
+ * "nothing happened", for the one event this whole project exists to produce.
+ *
+ * Not an error style. Stopping was right; being unable to tell was the defect.
+ */
+function StoppedEarly({ reason }: { reason: string | null | undefined }) {
+  if (!reason) return null;
+
+  return (
+    <p className="hint">
+      Stopped: {reason}
+    </p>
+  );
+}
+
+/**
  * Where the handover you are about to see comes from.
  *
  * The policy raises its own hand at a point in joint space that was chosen in advance, so
@@ -168,6 +191,7 @@ export function Live() {
       />
 
       <NotRecording recording={session?.recording} />
+      <StoppedEarly reason={session?.stopped_because} />
 
       <StandIn uncertainty={session?.uncertainty} />
 

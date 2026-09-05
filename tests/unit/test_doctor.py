@@ -66,7 +66,38 @@ def test_summary_names_what_is_limited() -> None:
     status, message = summarise(checks)
     assert status is Status.LIMITED
     assert "training" in message
-    assert "record" in message, "a limited environment should say what still works"
+
+
+def test_a_limited_thing_is_not_described_as_unavailable() -> None:
+    """`Status.LIMITED` is defined as *works, but something is degraded*. The summary
+    listed every limited check under "Not yet available", which on a real machine read
+    "Not yet available: storage, training" with 11 GB free and `tendon train` having
+    produced an adapter half an hour earlier.
+
+    The first command anybody runs was telling them the thing they had just done could not
+    be done.
+    """
+    checks = [Check("training", Status.LIMITED, "cpu-only torch")]
+    _, message = summarise(checks)
+
+    assert "not yet available" not in message.lower()
+    assert "unavailable" not in message.lower()
+    assert "limit" in message.lower(), "it should say what LIMITED actually means"
+
+
+def test_the_summary_does_not_guess_which_capabilities_survive() -> None:
+    """It used to claim "you can run and record episodes" whenever anything was limited.
+    That is a guess about *which* check is limited, and a degraded `datasets` is precisely
+    the one that stops recording — so the sentence was most likely to be wrong in the case
+    it was written for.
+
+    Each check's own line already says what its limitation costs, which is where a claim
+    about a specific capability belongs.
+    """
+    checks = [Check("datasets", Status.LIMITED, "lerobot missing, so nothing is recorded")]
+    _, message = summarise(checks)
+
+    assert "record" not in message.lower()
 
 
 def test_summary_of_a_blocked_environment_says_nothing_can_run() -> None:

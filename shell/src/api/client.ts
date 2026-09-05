@@ -195,6 +195,21 @@ export interface SessionSnapshot {
    * so rather than let somebody find out from an empty `Episodes` afterwards.
    */
   recording?: boolean;
+  /**
+   * Why the episode ended early, when something outside it asked.
+   *
+   * The runtime has sent this since sessions were written and the shell did not declare
+   * it, so it arrived and was dropped — in the one seat where it matters most. The case
+   * it exists for is a policy raising its own hand with nobody to answer: the episode
+   * stops before the body moves, and every other field reads as an episode that did
+   * nothing. `steps 0`, `running`, `interventions 0` are three true statements adding up
+   * to a false one.
+   *
+   * Also set when an operator disconnects while a decision is pending, which is the same
+   * problem from the other side: somebody who reconnects to a short run should be told it
+   * stopped because they were gone.
+   */
+  stopped_because?: string | null;
   pending?: unknown | null;
 }
 

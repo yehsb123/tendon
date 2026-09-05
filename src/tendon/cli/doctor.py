@@ -336,9 +336,20 @@ def summarise(checks: list[Check]) -> tuple[Status, str]:
             + ". Nothing can run until these are fixed."
         )
     if limited:
+        # "Working with limits", not "not yet available". `Status.LIMITED` is defined two
+        # screens up as *works, but something is degraded* — and the summary called every
+        # one of them absent. On this machine that read "Not yet available: storage,
+        # training", with 11 GB free and `tendon train` producing an adapter half an hour
+        # earlier. The first command anybody runs was telling them the thing they had just
+        # done could not be done.
+        #
+        # No capability is named here either. The old line claimed "you can run and record
+        # episodes", which is a guess about which checks are limited: a degraded `datasets`
+        # is precisely the one that stops recording. Each line above already says what its
+        # own limitation costs, and that is the honest place for it.
         return Status.LIMITED, (
-            "You can run and record episodes. Not yet available: "
+            f"{len(limited)} thing(s) work with a limit: "
             + ", ".join(c.name for c in limited)
-            + "."
+            + ". Each line above says what it costs."
         )
     return Status.OK, "Everything is available, including training and publishing."
