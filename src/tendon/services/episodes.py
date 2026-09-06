@@ -155,9 +155,17 @@ def rank_episodes(directory: Path, *, limit: int | None = None) -> Ranking:
     jerks = sorted(signals.peak_jerk for _, signals in measured)
     jerk_reference = jerks[len(jerks) // 2] or 1.0
 
+    # What the operator wrote when they took over. Carried into the reasons rather than
+    # scored: a note is the one signal here that a person authored, and turning a sentence
+    # into a number would throw away the only part of this ranking somebody can argue with.
+    notes = operator_notes(directory)
+
     scored = []
     for episode, signals in measured:
         value, reasons = score_episode(signals, jerk_reference=jerk_reference)
+        written = notes.get(int(episode.episode_id)) if episode.episode_id.isdigit() else None
+        if written:
+            reasons = (*reasons, *(f'operator: "{note}"' for note in written))
         scored.append(
             ScoredEpisode(
                 episode_id=episode.episode_id, score=value, signals=signals, reasons=reasons
@@ -206,6 +214,53 @@ def _has_gripper(info: dict[str, Any]) -> bool:
     action = features.get("action")
     names = action.get("names") if isinstance(action, dict) else None
     return isinstance(names, list) and bool(names) and names[-1] == "gripper"
+
+
+def operator_notes(directory: Path) -> dict[int, tuple[str, ...]]:
+    """What an operator wrote when they took over, per episode.
+
+    Empty when the store cannot say — no sidecar, an older schema, a locked file. Absence
+    is not an error here: a note is an annotation, and a curator that refused to rank
+    episodes without one would refuse every store recorded before this existed.
+
+    **This is the most valuable column in the dataset and nothing read it.** The note
+    travels from the shell's correction editor, through `DecisionRequest`, into
+    `InterruptResolution`, into the sidecar's `note` column — and stopped. `rank_episodes`
+    took `episode_index` out of that table and nothing else, so the one place a human
+    explained *why* they intervened was written on every correction and shown to nobody.
+
+    Deduplicated per episode, in the order they were given. An operator correcting the same
+    approach twice writes the same sentence twice, and a reader wants to know what was
+    said, not how many times.
+    """
+    sidecar = directory / "tendon_sidecar.duckdb"
+    if not sidecar.is_file():
+        return {}
+
+    try:
+        import duckdb
+
+        con = duckdb.connect(str(sidecar), read_only=True)
+    except Exception:  # noqa: BLE001 - a locked or corrupt sidecar is not fatal here
+        return {}
+
+    try:
+        rows = con.execute(
+            "SELECT episode_index, note FROM interrupts "
+            "WHERE episode_index IS NOT NULL AND note IS NOT NULL AND note <> '' "
+            "ORDER BY episode_index, frame_index"
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - the table or column may not exist on older data
+        return {}
+    finally:
+        con.close()
+
+    notes: dict[int, list[str]] = {}
+    for index, note in rows:
+        seen = notes.setdefault(int(index), [])
+        if note not in seen:
+            seen.append(str(note))
+    return {index: tuple(values) for index, values in notes.items()}
 
 
 def _interrupted_episodes(directory: Path) -> set[int] | None:

@@ -3215,6 +3215,24 @@ where confidence is going to come from.
   that reads it, and being dropped on arrival.** `cube_height` was reachable and unreached,
   `stopped_because` was sent and undeclared, `resolution` was sent and discarded. None of
   them raised anything anywhere. 874 tests green, 22 shell tests green, mypy clean.
+- **B — fourth instance, and it was the most valuable column in the dataset.** Checked the
+  other direction, shell to runtime, and followed the operator's `note` all the way down:
+  the correction editor, `DecisionRequest`, `InterruptResolution`, the sidecar's `note`
+  column. It arrives. Then `_interrupted_episodes` selects `episode_index` from that table
+  and nothing else, so **the one place a human explained why they intervened was written
+  on every correction and read by nobody.**
+
+  Every other signal the curator ranks on is measured — jerk, idle fraction, gripper churn.
+  The note is the only one a person authored, and it was the only one thrown away.
+
+  `operator_notes()` reads them back and they join the ranking's reasons, prefixed
+  `operator:` so a reader can tell a sentence somebody wrote from a number something
+  measured. Not scored: turning a sentence into a number would discard the only part of
+  this ranking anybody can argue with, and arguing with it is what the reasons list is for.
+
+  Absence is not an error — no sidecar, older schema, locked file all return nothing, and a
+  curator that refused to rank without notes would refuse every store recorded before this
+  existed. 880 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 
