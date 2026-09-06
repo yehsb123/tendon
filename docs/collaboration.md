@@ -3192,6 +3192,29 @@ where confidence is going to come from.
   away. Both directions are asserted for that shape now, and the check was verified by
   deleting the field and watching it fail by name. 867 tests green, 22 shell tests green,
   mypy clean.
+- **B — the same question asked of the socket found the same answer.** Having widened the
+  contract test for session snapshots, the websocket was the obvious next place: the shell
+  is the only consumer there too, and it was covered by nothing.
+
+  **`resolved` carries `resolution` and `ResolvedMessage` declared only `step`.** That
+  message exists for one case, stated in its own comment — *"Someone resolved it, possibly
+  another viewer. Keeps every shell in sync."* So a second operator watched the controls
+  disappear and never learned whether the motion had been **approved or rejected**, which
+  are opposite instructions to a robot. The shell's handler cleared the question and threw
+  the answer away in the same line.
+
+  Declared, stored as `lastResolution`, shown in `Live`, and cleared when a new episode
+  starts — it belongs to the episode that produced it.
+
+  The socket table in the test is written by hand and a second test checks it against every
+  `"type": "<kind>"` literal in `api/`, so a message added without an entry fails rather
+  than going unchecked. Both directions asserted, and both verified by deleting the field
+  and watching the failure name it.
+
+  Three of these now, all the same shape: **a field crossing a boundary into the only place
+  that reads it, and being dropped on arrival.** `cube_height` was reachable and unreached,
+  `stopped_because` was sent and undeclared, `resolution` was sent and discarded. None of
+  them raised anything anywhere. 874 tests green, 22 shell tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

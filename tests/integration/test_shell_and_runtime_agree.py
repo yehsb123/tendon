@@ -203,6 +203,78 @@ def test_nothing_in_a_session_snapshot_is_dropped_by_the_shell() -> None:
     )
 
 
+SOCKET_TS = REPO / "shell" / "src" / "api" / "socket.ts"
+
+#: Every websocket message the runtime sends, with the keys it sends, and the interface the
+#: shell declares for it. Written down rather than discovered, because these are produced
+#: from four scattered `send_json` and `_offer` calls under conditions a test cannot
+#: reproduce cheaply — an interrupt raised, an operator answering, an episode ending.
+#:
+#: A table has to be maintained, and the alternative was worse: this shape went unchecked
+#: entirely, and `resolution` was dropped in it for the life of the project.
+SOCKET_MESSAGES = {
+    "intent": ("IntentMessage", {"type", "intent", "step"}),
+    "state": ("StateMessage", {"type", "step", "observation", "commanded", "applied", "clamped"}),
+    "interrupt": ("InterruptMessage", {"type", "context"}),
+    "resolved": ("ResolvedMessage", {"type", "step", "resolution"}),
+    "finished": ("FinishedMessage", {"type", "state"}),
+    "error": ("ErrorMessage", {"type", "detail"}),
+}
+
+
+def _declared_in_socket(interface: str) -> dict[str, bool]:
+    source = SOCKET_TS.read_text(encoding="utf-8")
+    match = re.search(rf"export interface {interface} \{{(.*?)\n\}}", source, re.S)
+    assert match, f"no interface {interface} in socket.ts"
+
+    body = re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.S)
+    body = re.sub(r"//.*", "", body)
+    return {name: bool(optional) for name, optional in re.findall(r"^\s*(\w+)(\??):", body, re.M)}
+
+
+@pytest.mark.parametrize("kind", sorted(SOCKET_MESSAGES))
+def test_the_shell_reads_every_key_the_socket_sends(kind: str) -> None:
+    """Both directions, for the same reason as the session snapshot: the shell is the only
+    consumer of this socket.
+
+    `resolved` carried `resolution` from the day it was written and the shell declared only
+    `step`. That message exists precisely for the case where *somebody else* answered — its
+    own comment says "possibly another viewer, keeps every shell in sync" — so a second
+    operator watched the controls disappear and never learned whether the motion had been
+    approved or rejected. Those are opposite instructions to a robot.
+    """
+    interface, sent = SOCKET_MESSAGES[kind]
+    declared = _declared_in_socket(interface)
+
+    missing = [name for name, optional in declared.items() if name not in sent and not optional]
+    assert not missing, f"{interface} declares {missing}, which the runtime never sends"
+
+    dropped = sorted(sent - set(declared))
+    assert not dropped, (
+        f"the runtime sends {dropped} in a {kind!r} message and {interface} reads none of "
+        f"them. Declare and use them, or stop sending them."
+    )
+
+
+def test_the_socket_table_matches_what_the_runtime_actually_sends() -> None:
+    """The table above is maintained by hand, so this checks it against the source.
+
+    Every `"type": "<kind>"` literal in `api/` has to appear in it. A message added without
+    an entry is a message nobody checks, which is how the last one went unnoticed.
+    """
+    api = REPO / "src" / "tendon" / "api"
+    sent_kinds = {
+        match
+        for path in api.glob("*.py")
+        for match in re.findall(r'"type":\s*"(\w+)"', path.read_text(encoding="utf-8"))
+    }
+
+    assert sent_kinds <= set(SOCKET_MESSAGES), (
+        f"the runtime sends {sorted(sent_kinds - set(SOCKET_MESSAGES))}, which this table "
+        f"does not list, so nothing checks the shell reads it"
+    )
+
+
 def test_every_endpoint_the_shell_calls_is_one_the_runtime_serves(client: TestClient) -> None:
     """A path is a string on both sides. Renaming one in `app.py` breaks the shell and
     nothing else, which is the quietest way this pair can come apart."""

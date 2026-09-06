@@ -52,6 +52,15 @@ interface SessionStore {
   pending: InterruptContext | null;
   deciding: boolean;
   decisionError: string | null;
+  /**
+   * How the last interrupt was answered, and at which step.
+   *
+   * Null until one is. Kept because the `resolved` message exists for the case where
+   * *somebody else* answered — and the shell was clearing the question without recording
+   * the answer, so a second viewer saw the controls vanish and never learned what had been
+   * decided. Approve and reject are opposite instructions to a robot.
+   */
+  lastResolution: { step: number; resolution: string } | null;
 
   checkRuntime: () => Promise<void>;
   choose: (skill: string | null, body: string | null) => Promise<void>;
@@ -84,6 +93,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   pending: null,
   deciding: false,
   decisionError: null,
+  lastResolution: null,
   correcting: false,
 
   setCorrecting(open) {
@@ -139,7 +149,9 @@ export const useSession = create<SessionStore>((set, get) => ({
     }
 
     const snapshot = result.value;
-    set({ session: snapshot, step: 0, intent: null, pending: null });
+    // `lastResolution` too: it belongs to the episode that produced it, and carrying it
+    // into the next one would show a decision nobody made about what is on screen now.
+    set({ session: snapshot, step: 0, intent: null, pending: null, lastResolution: null });
 
     socket?.close();
     socket = connect(
@@ -201,7 +213,10 @@ function applyMessage(
       break;
 
     case "resolved":
-      set({ pending: null });
+      set({
+        pending: null,
+        lastResolution: { step: message.step, resolution: message.resolution },
+      });
       break;
 
     case "finished": {

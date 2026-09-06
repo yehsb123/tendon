@@ -49,6 +49,16 @@ export interface InterruptMessage {
 export interface ResolvedMessage {
   type: "resolved";
   step: number;
+  /**
+   * What they decided: approved, rejected, or corrected.
+   *
+   * The runtime has always sent this and the shell declared only `step`, so a second
+   * viewer learned *that* the question was answered and never *how* — and the whole point
+   * of this message is the case where somebody else answered it. Approve and reject are
+   * opposite instructions to a robot, and watching one arrive as the other is the reading
+   * that matters here.
+   */
+  resolution: string;
 }
 
 /** The episode ended. Carries the final snapshot so the view does not have to re-fetch. */

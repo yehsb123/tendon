@@ -40,6 +40,29 @@ function NotRecording({ recording }: { recording: boolean | undefined }) {
 }
 
 /**
+ * How the last interrupt was answered.
+ *
+ * The `resolved` message exists for the case where *somebody else* answered — its own
+ * comment says "possibly another viewer. Keeps every shell in sync" — and the shell was
+ * clearing the question without recording the answer. A second operator saw the controls
+ * vanish and never learned what had been decided, which for approve versus reject is the
+ * difference between two opposite instructions to a robot.
+ */
+function LastDecision({
+  decision,
+}: {
+  decision: { step: number; resolution: string } | null;
+}) {
+  if (decision === null) return null;
+
+  return (
+    <p className="taught" data-empty="true">
+      Step {decision.step}: {decision.resolution}.
+    </p>
+  );
+}
+
+/**
  * Why the episode ended, when it did not simply run out.
  *
  * The runtime has sent `stopped_because` since sessions were written; the shell did not
@@ -156,6 +179,7 @@ export function Live() {
     decisionError,
     correcting,
     setCorrecting,
+    lastResolution,
     observation,
     bodies,
     skills,
@@ -192,6 +216,7 @@ export function Live() {
 
       <NotRecording recording={session?.recording} />
       <StoppedEarly reason={session?.stopped_because} />
+      <LastDecision decision={lastResolution} />
 
       <StandIn uncertainty={session?.uncertainty} />
 
