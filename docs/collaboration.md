@@ -3256,6 +3256,33 @@ where confidence is going to come from.
   that was verified by deleting the line and watching it fail. A test that a comment
   mentions something is not a test that anything uses it. 887 tests green, 22 shell tests
   green, mypy clean.
+- **B — all four examples broke the rule their own index states.** `examples/README.md`:
+  *"Each example is a complete scenario that runs from a clean checkout. If an example
+  needs a step that is not in its README, the example is broken."*
+
+  `02_preview` said "open the shell and watch" and `03_intervene` said "force a
+  low-confidence situation". Neither said how — nine lines each, no command anywhere, and
+  no `run.py` either. By the index's own sentence, broken.
+
+  Then the test I wrote for it caught the other two. `01_record` and `04_improve` ship a
+  `run.py` and **neither README contained the line that runs it.** I had assumed the ones
+  with scripts were fine, which is the assumption the test existed to replace.
+
+  And `04_improve` — the project's headline example — claimed **"Needs: `[sim,train]` and
+  one consumer GPU"**. It needs neither. It runs the instance-based learner and no torch;
+  I have run it on this CPU machine a dozen times. That line turned the one example a
+  newcomer is pointed at away from anybody without a GPU, which is the direction a wrong
+  requirement costs most in.
+
+  All four now carry the commands, verified by running them. `02` and `03` say plainly why
+  they have no script — what they prove needs a person looking — rather than leaving a
+  reader to hunt for a missing file.
+
+  Six tests hold the rule, including one asserting the index still states it: if that
+  sentence is ever softened, these are enforcing something the project no longer asks for.
+  The same shape as the unit contract sitting unenforced in `CONTRIBUTING.md` for the life
+  of the project — **a rule in a document that nothing checks reads as satisfied.**
+  905 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 
