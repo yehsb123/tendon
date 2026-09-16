@@ -22,7 +22,7 @@ import {
   type SessionSnapshot,
   type SocketHandle,
 } from "../api/client";
-import type { SkillSummary } from "../api/client";
+import type { SkillDetail, SkillSummary } from "../api/client";
 import type { InboundMessage } from "../api/socket";
 import type { Intent, InterruptContext, Observation } from "../api/types";
 
@@ -40,6 +40,15 @@ interface SessionStore {
   chosenBody: string | null;
   /** Whether that pairing can run, and every reason it cannot. Null until asked. */
   compatibility: Compatibility | null;
+  /**
+   * The chosen skill's detail, fetched when it is chosen.
+   *
+   * Carried for `capped`: whether this machine's `~/.tendon/limits.yaml` narrowed the
+   * bounds the skill asked for. `Skills` shows it on a page somebody visits to read about
+   * a skill; `Live` is where they start one, and that is the screen where the number in
+   * force matters.
+   */
+  chosenDetail: SkillDetail | null;
 
   // episode
   session: SessionSnapshot | null;
@@ -84,6 +93,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   chosenSkill: null,
   chosenBody: null,
   compatibility: null,
+  chosenDetail: null,
 
   session: null,
   step: 0,
@@ -122,7 +132,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   },
 
   async choose(skill, body) {
-    set({ chosenSkill: skill, chosenBody: body, compatibility: null });
+    set({ chosenSkill: skill, chosenBody: body, compatibility: null, chosenDetail: null });
     if (skill === null || body === null) return;
 
     // Split here rather than in the request, so a ref that is not `namespace/name`
@@ -138,6 +148,17 @@ export const useSession = create<SessionStore>((set, get) => ({
     // incompatible would hide a runtime problem behind a wrong explanation.
     set({ compatibility: result.ok ? result.value : null });
     if (!result.ok) set({ statusDetail: result.error });
+
+    // The skill's own detail, for one fact that belongs on the screen where somebody
+    // presses start: whether this machine's ceiling narrowed the limits. `tendon run`
+    // prints "local limits are tighter than the skill's" on every run and the shell said
+    // nothing, so the same fact was disclosed on one surface and withheld on the other —
+    // and the withheld one is the operator's.
+    //
+    // Null on failure rather than stale: a cap notice left over from another skill is
+    // worse than no notice, because it is about the wrong motion.
+    const detail = await api.skill(namespace, name);
+    set({ chosenDetail: detail.ok ? detail.value : null });
   },
 
   async start(skill, body) {

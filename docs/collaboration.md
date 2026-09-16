@@ -3233,6 +3233,29 @@ where confidence is going to come from.
   Absence is not an error — no sidecar, older schema, locked file all return nothing, and a
   curator that refused to rank without notes would refuse every store recorded before this
   existed. 880 tests green, mypy clean.
+- **B — the same fact disclosed on one surface and withheld on the other.** Swept the
+  remaining shell paths. Compatibility is fine: the shell fetches it for display and
+  `api/app.py` refuses an incompatible pairing on start, so the defence is at the right
+  layer and the view is only a courtesy.
+
+  The ceiling is not. `~/.tendon/limits.yaml` can be tighter than what a skill asks for,
+  and when it is the tighter bound is what runs. `tendon run` prints *"local limits are
+  tighter than the skill's; using the tighter"* on every run. The shell printed it on
+  `Skills` — a page somebody visits to read about a skill — and **not on `Live`, which is
+  where they press start.** Wrong way round: the reader is deciding whether to care, the
+  operator is about to move a robot under bounds they did not choose.
+
+  `choose` now fetches the detail alongside the compatibility check and `Live` shows it
+  before the button, cleared when a different skill is chosen — a cap notice left over from
+  another skill is worse than none, because it is true of a motion that is not the one
+  about to run.
+
+  **And my first test for it was vacuous.** It asserted `"capped" in source`, which passed
+  with the component deleted: the docstring explaining why the component existed still
+  contained the word. Now it strips comments and asserts on `.capped` being *read*, and
+  that was verified by deleting the line and watching it fail. A test that a comment
+  mentions something is not a test that anything uses it. 887 tests green, 22 shell tests
+  green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

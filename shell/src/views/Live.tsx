@@ -40,6 +40,28 @@ function NotRecording({ recording }: { recording: boolean | undefined }) {
 }
 
 /**
+ * That this machine's ceiling narrowed what the skill asked for.
+ *
+ * `tendon run` prints "local limits are tighter than the skill's; using the tighter" on
+ * every run. The shell said it on the `Skills` page — which somebody visits to read about
+ * a skill — and not here, which is where they press start. The same fact disclosed on one
+ * surface and withheld on the other, and the withheld one is the operator's.
+ *
+ * Before the button rather than after it. Somebody who reads it afterwards has already
+ * started a motion under bounds they did not know had changed.
+ */
+function CappedLimits({ capped }: { capped: boolean | undefined }) {
+  if (!capped) return null;
+
+  return (
+    <p className="hint">
+      This machine's ceiling is tighter than the skill's own limits. What runs is the
+      tighter of the two — see Skills for both numbers.
+    </p>
+  );
+}
+
+/**
  * How the last interrupt was answered.
  *
  * The `resolved` message exists for the case where *somebody else* answered — its own
@@ -180,6 +202,7 @@ export function Live() {
     correcting,
     setCorrecting,
     lastResolution,
+    chosenDetail,
     observation,
     bodies,
     skills,
@@ -214,6 +237,7 @@ export function Live() {
         running={session?.running ?? false}
       />
 
+      <CappedLimits capped={chosenDetail?.capped} />
       <NotRecording recording={session?.recording} />
       <StoppedEarly reason={session?.stopped_because} />
       <LastDecision decision={lastResolution} />
