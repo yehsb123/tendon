@@ -117,6 +117,15 @@ class Skill:
     #: modes for a motion that never reached for the cube.
     policy_baseline: str | None = None
     eval_episodes: int = 50
+    #: Which sections `tendon eval` prints, from `eval.report`.
+    #:
+    #: The field was in the format and in the shipped `skill.yaml` from the start, and
+    #: nothing read it: the three sections were printed unconditionally and the list
+    #: happened to name those three. A declaration that cannot be wrong is not a
+    #: declaration. It controls these three only — `episodes`, `corrections` and `faults`
+    #: are counts of what the run did and are always shown, because a report that can hide
+    #: how many episodes it is based on is worse than a verbose one.
+    report: tuple[str, ...] = ("success_rate", "intervention_rate", "failure_modes")
     #: Success conditions, checked against the body's `world_facts()` at the end of an
     #: episode. The body supplies the quantity; the skill names it. Neither knows about
     #: the other.
@@ -211,6 +220,12 @@ def load_skill(path: str | Path, *, root: Path | None = None) -> Skill:
         if not metadata.get(required):
             raise SkillError(f"{path} metadata is missing {required!r}")
 
+    # One pass over every closed block, in one place. The safety block had this check and
+    # the other three did not, which is how one copy of a rule becomes a rule that applies
+    # to one thing.
+    for name in _CLOSED_BLOCKS:
+        _reject_near_misses(_mapping(raw, name, path, optional=True), name, path)
+
     return Skill(
         namespace=str(metadata["namespace"]),
         name=str(metadata["name"]),
@@ -226,6 +241,7 @@ def load_skill(path: str | Path, *, root: Path | None = None) -> Skill:
         policy_baseline=_optional_str(_mapping(raw, "policy", path, optional=True).get("baseline")),
         eval_episodes=int(_mapping(raw, "eval", path, optional=True).get("episodes", 50)),
         success_criteria=_success(_mapping(raw, "eval", path, optional=True), path),
+        report=_report(_mapping(raw, "eval", path, optional=True), path),
         source=path,
     )
 
@@ -320,16 +336,61 @@ def _requirements(block: dict[str, Any], path: Path) -> Requirements:
 #: Known keys in the safety block. A misspelling here silently leaves a limit unset, which
 #: is the one kind of typo worth refusing over.
 _SAFETY_KEYS = {"max_joint_velocity", "max_force", "workspace_min", "workspace_max"}
+_INTERRUPT_KEYS = {"confidence_threshold"}
+_POLICY_KEYS = {"base", "adapter", "hz", "baseline"}
+_EVAL_KEYS = {"episodes", "success", "report"}
+#: `requires` was the fifth block and had no check either. A typo here is quieter than the
+#: others rather than louder: `action_spaces` misspelled leaves the tuple empty, and an
+#: empty requirement is satisfied by every body, so `check_compatibility` returns no
+#: reasons and the skill runs on a body that cannot do what it needs.
+_REQUIRES_KEYS = {"dof", "gripper", "action_spaces", "cameras", "control_hz"}
+
+#: Every block whose keys are closed, and what belongs in each.
+#:
+#: The *top level* stays open, which is where forward compatibility actually lives: a
+#: later tendon adds a whole block — a `training:` section — far more readily than it adds
+#: a key inside `interrupt:`, and adding one there would be a format change under an
+#: `apiVersion` that still says `v1alpha1`.
+_CLOSED_BLOCKS = {
+    "safety": _SAFETY_KEYS,
+    "interrupt": _INTERRUPT_KEYS,
+    "policy": _POLICY_KEYS,
+    "eval": _EVAL_KEYS,
+    "requires": _REQUIRES_KEYS,
+}
+
+
+def _reject_near_misses(block: dict[str, Any], name: str, path: Path) -> None:
+    """Refuse a key this loader does not read, inside a block whose keys are closed.
+
+    The reasoning was already written down for `safety` — "a misspelled limit is not
+    enforced, and nothing downstream would report it as missing" — and then applied to
+    that block alone. It is the same sentence for the other three, and measured, one
+    letter each:
+
+    - `interrupt.confidence_treshold` loaded and the threshold stayed 0.5. Against the
+      spread `tendon calibrate` measures, 0.5 asks for help on half of every prediction
+      where the 0.05 the author wrote asks on almost none.
+    - `policy.bases` loaded with no base policy at all.
+    - `eval.successs` loaded with no success criteria, so **every episode is judged
+      unknown, forever, and the report says the rig cannot measure success** — which is
+      the exact state this project spent weeks in for an unrelated reason and is
+      therefore the last state anybody would question.
+
+    A load-time refusal, like `UnsupportedActionSpace`: the alternative is finding out
+    from a number that is quietly wrong.
+    """
+    unknown = set(block) - _CLOSED_BLOCKS[name]
+    if unknown:
+        known = sorted(_CLOSED_BLOCKS[name])
+        raise SkillError(
+            f"{path}: unknown key(s) in the {name} block: {sorted(unknown)}. "
+            f"Known keys are {known}. A misspelled key is not read, and nothing "
+            "downstream would report it as missing."
+        )
 
 
 def _limits(block: dict[str, Any], path: Path) -> SafetyLimits:
-    unknown = set(block) - _SAFETY_KEYS
-    if unknown:
-        raise SkillError(
-            f"{path}: unknown key(s) in the safety block: {sorted(unknown)}. "
-            f"Known keys are {sorted(_SAFETY_KEYS)}. A misspelled limit is not enforced, "
-            "and nothing downstream would report it as missing."
-        )
 
     try:
         return SafetyLimits(
@@ -373,6 +434,35 @@ def _policy_hz(block: dict[str, Any], path: Path) -> float | None:
     if hz <= 0:
         raise SkillError(f"{path}: policy.hz must be positive, got {hz:g}")
     return hz
+
+
+#: The sections `eval.report` can choose between. Counts of what the run did — episodes,
+#: corrections, faults — are not in here and are always printed.
+_REPORT_SECTIONS = ("success_rate", "intervention_rate", "failure_modes")
+
+
+def _report(block: dict[str, Any], path: Path) -> tuple[str, ...]:
+    """Parse `eval.report`, refusing a section name nothing can print.
+
+    An unrecognised name is the same failure as a misspelled key one level up, and worse
+    here because the consequence is a section quietly missing from a report rather than a
+    load error: `report: [sucess_rate]` would print two sections and the author would read
+    the absence as "there was nothing to say".
+    """
+    value = block.get("report")
+    if value is None:
+        return _REPORT_SECTIONS
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise SkillError(f"{path}: eval.report must be a list of section names")
+
+    unknown = [name for name in value if name not in _REPORT_SECTIONS]
+    if unknown:
+        raise SkillError(
+            f"{path}: eval.report names {unknown}, which nothing prints. "
+            f"Known sections are {list(_REPORT_SECTIONS)}; episodes, corrections and "
+            "faults are counts of the run and are always shown."
+        )
+    return tuple(value)
 
 
 def _success(block: dict[str, Any], path: Path) -> tuple[tuple[str, float], ...]:

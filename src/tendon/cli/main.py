@@ -1141,14 +1141,20 @@ def evaluate_skill(
 
     report = evaluate(outcomes, skill=loaded.ref)
 
+    # `eval.report` from the skill. It named these three from the first version of the
+    # format and nothing read it, so the list was a description that could not be wrong.
+    sections = loaded.report
+
     table = Table(show_header=False, box=None, pad_edge=False)
-    if unknown == len(outcomes):
-        # Every episode unjudged. Printing "0.0% success" here would be a number that
-        # looks like a measurement and is not one.
-        table.add_row("success rate", "[yellow]not measurable[/yellow]")
-    else:
-        table.add_row("success rate", f"{report.success_rate:.1%}")
-    table.add_row("intervention rate", f"{report.intervention_rate:.1%}")
+    if "success_rate" in sections:
+        if unknown == len(outcomes):
+            # Every episode unjudged. Printing "0.0% success" here would be a number that
+            # looks like a measurement and is not one.
+            table.add_row("success rate", "[yellow]not measurable[/yellow]")
+        else:
+            table.add_row("success rate", f"{report.success_rate:.1%}")
+    if "intervention_rate" in sections:
+        table.add_row("intervention rate", f"{report.intervention_rate:.1%}")
     table.add_row("corrections", str(report.corrections))
     table.add_row("faults", str(report.faults))
     table.add_row("episodes", str(report.episodes))
@@ -1156,7 +1162,7 @@ def evaluate_skill(
         table.add_row("recorded to", str(root))
     console.print(table)
 
-    if report.failure_modes:
+    if report.failure_modes and "failure_modes" in sections:
         console.print()
         console.print("[dim]failure modes[/dim]")
         for mode, n in report.failure_modes.items():

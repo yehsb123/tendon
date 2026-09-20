@@ -3582,3 +3582,37 @@ where confidence is going to come from.
   working tree. Two "failures" earlier today were mine — I edited source while a soak was
   reading it. Totals so far, all green apart from those two: **152,646 test executions
   across 204 distinct orderings.**
+- **B — one letter in `skill.yaml` and the system does something else, silently.** The
+  `safety` block refused unknown keys with the reason written on it: "a misspelled limit
+  is not enforced, and nothing downstream would report it as missing." That reasoning was
+  applied to that block and nowhere else. Measured, one letter each:
+
+  | typo | before |
+  |---|---|
+  | `interrupt.confidence_treshold` | loads, threshold silently 0.5 |
+  | `policy.bases` | loads, no base policy at all |
+  | `eval.successs` | loads, **no success criteria** |
+  | `requires.action_spacess` | loads, requirement empty, so every body satisfies it |
+  | `safety.max_joint_velocty` | refused |
+
+  `eval.successs` is the one that matters most: no criteria means every episode is judged
+  unknown and the report says success cannot be measured — **which is the state this
+  project has genuinely been in for weeks**, so it is the last result anyone would
+  question. An author could reach it by typo and read their own report as confirmation
+  that the rig cannot judge.
+
+  Closed now, in one pass over one table rather than a check per parser. The top level
+  stays open, which is where forward compatibility actually lives: a later tendon adds a
+  `training:` block far more readily than a key inside `interrupt:`. Verified that a new
+  top-level block still loads and that the shipped skill still loads.
+
+  **And `eval.report` was accepted and read by nothing.** The format has named the three
+  sections since the beginning and `tendon eval` printed all three unconditionally, so the
+  list happened to be right and could not have been wrong. It is honoured now; a section
+  name nothing can print is refused at load, because `report: [sucess_rate]` would
+  otherwise drop a section and read as "there was nothing to say". Counts — episodes,
+  corrections, faults — stay unconditional.
+
+  Both of those were found by my own new test, not by me: `requires` was a fifth parsed
+  block with no closed set, and `report` was a key declared known that the loader never
+  looked up. 988 green, ruff and mypy clean.
