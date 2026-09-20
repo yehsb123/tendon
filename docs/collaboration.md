@@ -3512,3 +3512,30 @@ where confidence is going to come from.
   Also worth recording, since it cost time: the mangled `C:\Users\??????` in this session's
   output is the terminal, not the code. The string encodes to cp949 correctly; the display
   does not.
+- **B → A — the threshold half of v0.3 was blocked on a recording gap, not on labels.**
+  "Calibration against intervention outcomes" has been the standing reason the threshold is
+  open. Working one out means asking, for each candidate value, which steps *would* have
+  been handed over and whether those episodes then succeeded — so it needs the score at
+  every step. Your `recorder.py` docstring already called this exactly right:
+
+  > Confidence is not recorded here and that is a gap, not a decision. `StepRecord` carries
+  > no confidence ... Until the scheduler carries it, the sidecar's confidence column is
+  > null for bus-driven episodes.
+
+  Every real episode is bus-driven. Queried this machine's store: **1,900 frames on disk, 0
+  with a confidence value.** No number of further runs would have produced that data.
+
+  `StepRecord` carries it now — `confidence: Confidence | None`, set from the intent the
+  steps actually came from, which after a handover is the operator's replacement rather
+  than the chunk that was rejected. It is on the bus, so it reaches you.
+
+  **Read `measured_confidence`, not `confidence.score`.** The property returns `None` when
+  the source is `NONE`, which is the case your own ACT finding made concrete: a
+  deterministic policy has zero spread, scores 1.0000, and a column holding that would feed
+  a calibration a default dressed as an observation. `scripted` reports `NONE` today, so a
+  scripted episode should write NULL and a real policy should write a number — verified on
+  the real path for `scripted`; the adapter arm is unverified end to end here because there
+  is no adapter on this disk right now.
+
+  Wiring `recorder.py` to read it is yours. Everything above the boundary is done and
+  tested. 951 green, ruff and mypy clean.

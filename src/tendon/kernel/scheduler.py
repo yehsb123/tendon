@@ -54,6 +54,8 @@ from tendon.kernel.interrupt import (
 from tendon.kernel.protocols import Driver, MeasuresWorld, Policy, PolicyExhausted
 from tendon.kernel.types import (
     Action,
+    Confidence,
+    ConfidenceSource,
     Intent,
     InterruptContext,
     InterruptReason,
@@ -109,6 +111,39 @@ class StepRecord:
     clamped: bool = False
     #: Limits that could not be evaluated for this action.
     unchecked: tuple[str, ...] = ()
+    #: How sure the policy was about the chunk this step came from.
+    #:
+    #: A property of the chunk rather than of the step, which is why it took a while to
+    #: land here: `predict` is called once and yields many actions, so every step in a
+    #: chunk carries the same score. Repeating it per step is the point — the recorder
+    #: subscribes to steps, and nothing else crosses that boundary.
+    #:
+    #: Why this field exists at all: `services/recorder.py` has had a `confidence` column
+    #: since the sidecar was written, and it is NULL in every episode ever recorded,
+    #: because the bus carries `StepRecord` and `StepRecord` carried no confidence. Its
+    #: own docstring called that "a gap, not a decision". Measured on this machine: 1,900
+    #: frames on disk, 0 with a value. **Threshold calibration — the last open piece of
+    #: v0.3 — needs the score at each step and whether the episode then succeeded, and the
+    #: first half was never being written down.**
+    confidence: Confidence | None = None
+
+    @property
+    def measured_confidence(self) -> float | None:
+        """The score, but only when something actually measured it.
+
+        `Confidence.source` of `NONE` means no estimator ran, and `score` is then a default
+        rather than an observation. Anything persisting the bare float would write that
+        default into a column that a calibration later reads as data.
+
+        This is not hypothetical here. A deterministic policy — ACT — produces identical
+        samples, so chunk variance measures a spread of zero and reports **1.0000**: a
+        policy that can never raise its own hand, wearing the number that says it never
+        needs to. Handing out a `float | None` instead of a float is how a consumer is kept
+        from storing that as a measurement without having to know the story.
+        """
+        if self.confidence is None or self.confidence.source is ConfidenceSource.NONE:
+            return None
+        return self.confidence.score
 
 
 @dataclass
@@ -286,6 +321,12 @@ class Scheduler:
                     applied=applied,
                     clamped=was_clamped,
                     unchecked=checked.unchecked,
+                    # `intent` and not the one predicted at the top of the loop: a
+                    # handover replaces it, and the operator's replacement is what these
+                    # steps actually executed. Recording the score of a chunk that was
+                    # rejected would attach the policy's uncertainty to somebody else's
+                    # motion.
+                    confidence=intent.confidence,
                 )
                 result.records.append(record)
                 if self.bus is not None:
