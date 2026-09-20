@@ -3415,3 +3415,16 @@ where confidence is going to come from.
   work from an hour ago. `skill.yaml` declaring the rate is the right home for it -- the
   adapter can refuse a mismatch but has no way to discover the number, because no
   checkpoint publishes one.
+- **B — the defect my own refactor left is now a test rather than a memory.**
+  `tests/unit/test_no_silent_leftovers.py` fails on three shapes no other tool objects to:
+  a module-level `other.NAME = ...` rebinding another module's attribute at import, a
+  module-level constant defined and read nowhere in the package, and `assert <constant>` or
+  `assert ... or True`. All three have occurred here — the first two from one bulk rename
+  during the `cli/` split, the third while repairing a test that same refactor broke.
+
+  I ran both scans by hand two rounds ago and they came back clean, which is worth exactly
+  nothing on the next rename. The checks are functions taking source and returning what
+  they found, so the tree and a planted sample go through one implementation; a check whose
+  proof is a second copy of its logic can rot while the proof stays green. Verified by
+  planting a real offender in `src/tendon/` and in `tests/` and watching each fire with the
+  file and line, then removing them. 923 green, ruff and mypy clean.
