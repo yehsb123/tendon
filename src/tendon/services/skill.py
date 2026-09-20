@@ -117,8 +117,13 @@ class Skill:
     #: modes for a motion that never reached for the cube.
     policy_baseline: str | None = None
     eval_episodes: int = 50
-    #: Success conditions, checked against `Observation.extra` at the end of an episode.
-    #: The body supplies the quantity; the skill names it. Neither knows about the other.
+    #: Success conditions, checked against the body's `world_facts()` at the end of an
+    #: episode. The body supplies the quantity; the skill names it. Neither knows about
+    #: the other.
+    #:
+    #: Not `Observation.extra`, which is what this line said before `MeasuresWorld`
+    #: existed: that dictionary goes to the policy, so naming a criterion satisfied from
+    #: it tells a skill author to publish the answer to the model being graded.
     success_criteria: tuple[tuple[str, float], ...] = ()
     source: Path | None = None
 

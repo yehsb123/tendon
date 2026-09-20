@@ -174,12 +174,19 @@ class InterventionPoint:
 class SuccessCriterion:
     """One condition a skill declares as success.
 
-    Read from `skill.yaml`, checked against `Observation.extra` at the end of an episode.
-    `cube_height_above: 0.1` becomes `SuccessCriterion("cube_height", 0.1, "above")`.
+    Read from `skill.yaml`, checked against the body's `world_facts()` at the end of an
+    episode. `cube_height_above: 0.1` becomes `SuccessCriterion("cube_height", 0.1,
+    "above")`.
 
     The value comes from the driver, because only the driver knows what the scene
     contains. That keeps task-specific knowledge out of the kernel — a skill names a
     quantity, a body supplies it, and neither has to know about the other.
+
+    **`world_facts()` and not `Observation.extra`**, which is what this said until the
+    `MeasuresWorld` protocol existed. `extra` is the dictionary the *policy* receives, so
+    a ground-truth quantity placed there is one the policy can learn from and one that
+    will not exist on hardware. Judging from it scores a model on information it was
+    handed.
     """
 
     key: str
@@ -198,17 +205,17 @@ class SuccessCriterion:
                 return cls(name[: -len(suffix)], float(threshold), comparison)
         return cls(name, float(threshold), "above")
 
-    def met_by(self, extra: dict[str, Any]) -> bool | None:
+    def met_by(self, facts: dict[str, Any]) -> bool | None:
         """Whether this held. None when the body did not report the quantity.
 
         None is not failure. A skill asking about cube height on a body that does not
         report it has not failed the task — nobody measured, and recording that as a
         failure would make an unmeasurable setup look like a broken policy.
         """
-        if self.key not in extra:
+        if self.key not in facts:
             return None
         try:
-            value = float(extra[self.key])
+            value = float(facts[self.key])
         except (TypeError, ValueError):
             return None
         return value > self.threshold if self.comparison == "above" else value < self.threshold
@@ -240,7 +247,7 @@ def judge_result(loaded, result) -> bool | None:
 
 
 def judge(
-    final_extra: dict[str, Any], criteria: Sequence[SuccessCriterion]
+    final_world: dict[str, Any], criteria: Sequence[SuccessCriterion]
 ) -> tuple[bool | None, str | None]:
     """Did the episode succeed, and if not, why.
 
@@ -254,7 +261,7 @@ def judge(
         return None, "skill declares no success criteria"
 
     for criterion in criteria:
-        met = criterion.met_by(final_extra)
+        met = criterion.met_by(final_world)
         if met is None:
             return None, f"body does not report {criterion.key!r}"
         if not met:

@@ -1011,10 +1011,11 @@ def evaluate_skill(
 ) -> None:
     """Run a skill repeatedly and report what happened.
 
-    Success is judged from `Observation.extra` at the end of each episode, against the
-    conditions the skill declares. When the body does not report the quantity, the verdict
-    is *unknown* rather than *failed* - nobody measured, and recording that as failure
-    would make an unmeasurable setup look like a broken policy.
+    Success is judged from the body's `world_facts()` at the end of each episode, against
+    the conditions the skill declares - not from the observation, which the policy also
+    reads. When the body does not report the quantity, the verdict is *unknown* rather
+    than *failed* - nobody measured, and recording that as failure would make an
+    unmeasurable setup look like a broken policy.
 
     Every episode is recorded, on the same terms as `tendon run`. This command produces
     thirty episodes where that one produces a single episode, so it was the larger hole in

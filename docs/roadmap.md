@@ -46,11 +46,20 @@ no amount of additional engineering fixes it.
 
 **And it is not sufficient on its own.** A policy that stops asking for help because it
 stopped *trying* draws exactly the same falling line as one that learned. The second half
-of the criterion has to be that the task still succeeded, and today nothing measures that:
-`skill.yaml` names `cube_height`, the MuJoCo driver does not report it, so every episode is
-judged *unknown*. `tendon progress` and `examples/04_improve` now say so beside the line
-rather than presenting a fall as though it settled the question — but saying so is not
-measuring it, and this milestone is not met until something does.
+of the criterion has to be that the task still succeeded.
+
+**That half is measured now.** The MuJoCo driver reports `cube_height` through
+`world_facts` — ground truth, kept out of `Observation.extra` so no policy can learn from
+it — and `tendon eval grasp/cube-sim` returns a verdict per episode rather than *unknown*:
+three episodes, success rate 0.0%, failure mode `cube_height not above 0.1`.
+
+**And what it says is that the falling line is not learning.** `examples/04_improve` falls
+from 100% to 20% interrupted over 52 corrections while success holds at 0% across both the
+first ten judged episodes and the last ten. The scripted policy is a joint sweep with
+synthetic uncertain regions and never reaches for the cube, so the fall is the machinery —
+interrupt, decision, recall — working. The milestone is not met by it. What changed is that
+this is a measurement instead of a suspicion, and the example says it in those words rather
+than presenting the fall as though it settled the question.
 
 **Where it stands.** The line goes down, and the running system draws it. An operator
 corrects a motion in the shell; the correction reaches the policy, the episode's
@@ -73,12 +82,21 @@ the checkpoint it was trained against and drives the body with it, verified on t
 path: 450,046,176 parameters before the adapter and 450,788,832 after, a difference of
 exactly the 742,656 the training run reported.
 
-**What is still missing is confidence, and it is not plumbing.** ADR 0003 says no upstream
-policy reports one; a loaded checkpoint has no measured reference spread, so it reports no
-score and cannot raise its own interrupt. Design decision 2 is *the policy raises its own
-hand*, and for a real policy nothing yet decides when it should. Until that exists the
-graph is produced by remembered corrections rather than by a fine-tuned policy, which is
-worth saying plainly rather than leaving somebody to discover.
+**Confidence has a scale now and still has no threshold.** ADR 0003's postscript separates
+the two, and only the second needs intervention outcomes. `tendon calibrate` measures how
+much disagreement is typical for a policy on a body — 0.0777 over 26 predictions for
+`smolvla_base` with an adapter on `mujoco:so_arm100_cube`, against the 0.004 `api/app.py`
+had been passing for its synthetic policy — and both `cli/policies.py` and `api/app.py`
+load it, so a loaded checkpoint reports a score and can raise its own interrupt.
+
+**What nothing decides is how much disagreement means *ask*.** Against that measured
+distribution `skill.yaml`'s default threshold of 0.5 asks for help on half of every
+prediction, 0.4 on 19%, 0.3 on none. Nobody fitted those to anything, because what would
+fit them is the cost of not asking — visible only in episodes where somebody took over and
+what happened after. That is the v0.3 work that remains, and it is not plumbing.
+
+Until it exists the graph is produced by remembered corrections rather than by a fine-tuned
+policy, which is worth saying plainly rather than leaving somebody to discover.
 
 ## v0.4 — Bodies and packages  *(~6 weeks)*
 

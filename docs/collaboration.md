@@ -3428,3 +3428,35 @@ where confidence is going to come from.
   proof is a second copy of its logic can rot while the proof stays green. Verified by
   planting a real offender in `src/tendon/` and in `tests/` and watching each fire with the
   file and line, then removing them. 923 green, ruff and mypy clean.
+- **B — the roadmap was describing a repository that no longer exists.** Two claims in the
+  v0.3 section were true when written and are not now, and a stale rationale keeps its
+  conclusion alive after the fact under it is gone.
+
+  It said the MuJoCo driver does not report `cube_height`, so every episode is judged
+  unknown. Checked rather than recalled: `world_facts()` returns `{'cube_height': 0.015}`
+  at reset, and `tendon eval grasp/cube-sim --episodes 3` returns success rate **0.0%**
+  with failure mode `cube_height not above 0.1`. That is a measurement, and it is the
+  second half of the v0.3 criterion. What it measures is that `examples/04_improve` falls
+  from 100% to 20% interrupted over 52 corrections while success holds at 0% in both the
+  first and last ten judged — so the fall is the machinery, now demonstrably rather than
+  suspectedly.
+
+  It also said a loaded checkpoint has no measured reference spread and cannot raise its
+  own interrupt. `tendon calibrate` measures one — 0.0777 over 26 predictions, stored and
+  re-read — and `cli/policies.py` and `api/app.py` both load it. Rewritten to ADR 0003's
+  postscript: the **scale** exists, the **threshold** does not, and only the threshold
+  needs intervention outcomes.
+
+  **And three docstrings still told a skill author to publish the answer to the model.**
+  `evaluator.SuccessCriterion`, `skill.Skill.success_criteria` and `tendon eval --help` all
+  said success is judged from `Observation.extra`. It is judged from `world_facts()`, and
+  `extra` is what the policy reads — so the sentence named the exact hazard `MeasuresWorld`
+  was added to avoid, as the instruction. `judge`'s parameter was still called
+  `final_extra`; it is `final_world`.
+
+  `tests/integration/test_success_criteria_are_measurable.py` now holds the two halves
+  against each other for every skill: each criterion must be in `world_facts()`, and none
+  may be in `Observation.extra`. Opposite directions on purpose — satisfying the first by
+  adding the key to `extra` is the obvious fix and the wrong one. Verified by planting an
+  unreportable criterion in `skill.yaml` and by wrapping the driver to leak `cube_height`
+  into the observation, and watching each fire. 928 green, ruff and mypy clean.
