@@ -3492,3 +3492,23 @@ where confidence is going to come from.
   registry is the same object and has lost no keys, so the test that breaks it is the test
   that reports it. Planted a swapping test and watched it be named. 930 green, five
   shuffled seeds green, ruff and mypy clean.
+- **B — every command in this session was run behind `PYTHONIOENCODING=utf-8`, and nobody
+  had checked whether it was needed.** It is not: `doctor`, `progress`, `run` and all
+  eleven `--help` screens render fine on this machine's cp949 console. So that pending item
+  is retired, and what it was hiding is worth more than the item was.
+
+  `Console().print("\u2014")` raises `UnicodeEncodeError` here. One em dash. There are over
+  three hundred in `src/tendon` and none of them crashes anything, because every one sits in
+  a docstring or comment that nothing renders — the command docstrings, their option `help=`
+  strings and every literal passed to `console.print` are ASCII, all of them, today.
+
+  **That is a habit and not a rule.** A default console on a Korean or Japanese Windows box
+  is cp949 or cp932; one em dash in a help string turns a help screen into a traceback for
+  everyone on those machines, and the author's own terminal never shows it.
+  `tests/unit/test_the_console_can_print_it.py` now checks both surfaces. Verified by
+  planting an em dash in a real printed string in `reporting.py` and in the `run` command's
+  docstring, and watching each fire with the file, line and codepoint.
+
+  Also worth recording, since it cost time: the mangled `C:\Users\??????` in this session's
+  output is the terminal, not the code. The string encodes to cp949 correctly; the display
+  does not.
