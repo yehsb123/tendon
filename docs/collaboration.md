@@ -3311,6 +3311,35 @@ where confidence is going to come from.
   is CLI-only by design: there is nothing in a recording being played back for an operator
   to supervise. Two lists in two places is how this gap opened. 914 tests green, 22 shell
   tests green, mypy clean.
+- **B — a boolean where there were three states, in the number an evaluation is read for.**
+  Followed the same thread one step further and found two more, both verified from source
+  rather than assumed.
+
+  **`EpisodeOutcome.succeeded` was `bool`, and the caller filled it with `bool(verdict)`.**
+  `bool(None)` is `False`. `usable` excluded only faulted episodes, so `success_rate`
+  divided successes by every episode and **counted every unmeasurable one as a failure**.
+  Until `cube_height` started being reported that was every episode this project could
+  produce: the number read 0% and said *the policy fails every time* where the truth was
+  *nobody measured*. The same collapse put "body does not report 'cube_height'" into a
+  table headed **failure modes**.
+
+  Three-state now, with two denominators: `intervention_rate` over every unfaulted
+  episode, `success_rate` over the judged ones and `None` when there are none. A rate of
+  zero is a measurement and having none is not.
+
+  **And `api/app.py` recorded no verdict at all** — `_record_progress` took the skill's
+  *name*, so it had no criteria to judge against. An episode started from the shell landed
+  on the v0.3 graph unjudged while one from `tendon run` landed judged: two kinds of point
+  on the axis the project is decided by. `judge_result` in `services/evaluator.py` is the
+  one place all three callers use now, and a test asserts exactly which files call it.
+
+  **One defect was mine, from the refactor two entries ago.** A bulk rename turned the
+  *definition* of `_RUNNABLE_POLICIES` into `policies.RUNNABLE_POLICIES = frozenset(...)`
+  in `cli/main.py` — a statement reaching into another module and rebinding its attribute
+  at import. It assigned the same value, so nothing broke and nothing complained. Two dead
+  constants sat beside it. **A rename that edits a definition as though it were a call site
+  leaves working code that means something else**, and neither ruff nor mypy has anything
+  to say about it. 917 tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 

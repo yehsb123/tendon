@@ -46,6 +46,7 @@ __all__ = [
     "EpisodeOutcome",
     "SuccessCriterion",
     "judge",
+    "judge_result",
     "EvaluationResult",
     "InterventionPoint",
     "evaluate",
@@ -67,7 +68,14 @@ class EpisodeOutcome:
 
     episode_id: str
     skill: str
-    succeeded: bool
+    #: Whether the skill's success conditions held, or None when nobody could tell.
+    #:
+    #: Three states, because "failed" and "unmeasured" are opposite claims. This was
+    #: `bool`, and the caller filled it with `bool(verdict)` — which turns None into False.
+    #: Every episode this project could produce was unjudged until the MuJoCo driver began
+    #: reporting `cube_height`, so `success_rate` read 0% everywhere and said *the policy
+    #: fails every time* when the truth was *nobody measured*.
+    succeeded: bool | None
     #: Interrupts a human actually resolved during this episode.
     interventions: int = 0
     #: Of those, the ones supplying a replacement intent.
@@ -95,6 +103,9 @@ class EvaluationResult:
     corrections: int
     #: Episodes ending in a fault. Excluded from intervention counts, reported here.
     faults: int
+    #: Episodes nobody could judge — the skill declares no criteria, or the body does not
+    #: report the quantity they need. Neither successes nor failures.
+    unjudged: int = 0
     failure_modes: dict[str, int] = field(default_factory=dict)
     #: Estimators seen across the evaluated episodes. More than one means the rates are
     #: not comparable and the result says so.
@@ -103,8 +114,23 @@ class EvaluationResult:
     caveats: tuple[str, ...] = ()
 
     @property
-    def success_rate(self) -> float:
-        return self.successes / self.episodes if self.episodes else 0.0
+    def judged(self) -> int:
+        """Episodes a verdict could be reached on."""
+        return self.episodes - self.unjudged
+
+    @property
+    def success_rate(self) -> float | None:
+        """Successes over *judged* episodes, or None when none were.
+
+        Divided by `episodes` until now, which counted every unmeasurable episode as a
+        failure. That was every episode this project could produce until the MuJoCo driver
+        began reporting `cube_height`, so the number read 0% and said *the policy fails
+        every time* where the truth was *nobody measured*.
+
+        None rather than 0.0 for the same reason the field behind it is three-state: a rate
+        of zero is a measurement, and having none is not.
+        """
+        return self.successes / self.judged if self.judged else None
 
     @property
     def is_comparable(self) -> bool:
@@ -128,9 +154,20 @@ class InterventionPoint:
     """
 
     cumulative_corrections: int
+    #: Over every unfaulted episode in the window.
     intervention_rate: float
-    success_rate: float
+    #: Over the *judged* ones only, or None when none of them could be judged.
+    #:
+    #: A separate denominator from `intervention_rate` on purpose. Whether somebody was
+    #: asked is answerable for every episode; whether the task was done is not, and folding
+    #: the unanswerable ones in as failures reports a rig that cannot measure as a policy
+    #: that cannot work.
+    success_rate: float | None
+    #: Episodes the intervention rate is over.
     episodes: int
+    #: Of those, how many could be judged. `episodes` and `judged` differing is the signal
+    #: that the second rate rests on less than the first.
+    judged: int = 0
 
 
 @dataclass(frozen=True)
@@ -177,6 +214,31 @@ class SuccessCriterion:
         return value > self.threshold if self.comparison == "above" else value < self.threshold
 
 
+def judge_result(loaded, result) -> bool | None:
+    """Whether a finished episode met the skill's success conditions, or None.
+
+    One function because three callers need the answer and each would otherwise write the
+    same four lines: `tendon run`, `tendon eval`, and the API's session — and the API's
+    did not write them at all, so an episode started from the shell landed on the v0.3
+    graph with no verdict while one started from the command line landed with one. Two
+    kinds of point on the same axis.
+
+    Reads `result.final_world`, which the scheduler collects from a body that can see the
+    world and never shows the policy. Not the final observation: ground truth a policy can
+    read is ground truth it can learn to use, and that works in simulation and fails on
+    hardware that has none.
+
+    None when the skill declares no criteria, or when the body cannot report the quantity
+    they need. Not False — those are opposite claims about what happened.
+    """
+    criteria = [SuccessCriterion.parse(name, value) for name, value in loaded.success_criteria]
+    if not criteria:
+        return None
+
+    verdict, _ = judge(getattr(result, "final_world", {}) or {}, criteria)
+    return verdict
+
+
 def judge(
     final_extra: dict[str, Any], criteria: Sequence[SuccessCriterion]
 ) -> tuple[bool | None, str | None]:
@@ -219,6 +281,7 @@ def evaluate(outcomes: Sequence[EpisodeOutcome], *, skill: str) -> EvaluationRes
 
     episodes = len(outcomes)
     successes = sum(1 for o in outcomes if o.succeeded)
+    unjudged = sum(1 for o in outcomes if o.succeeded is None)
     faults = sum(1 for o in outcomes if o.faulted)
 
     # Faulted episodes contribute no interventions by construction — the machine never
@@ -229,7 +292,11 @@ def evaluate(outcomes: Sequence[EpisodeOutcome], *, skill: str) -> EvaluationRes
 
     failure_modes: dict[str, int] = {}
     for outcome in outcomes:
-        if outcome.succeeded:
+        # `is not False`, not truthiness: an unjudged episode is not a failure mode. It was
+        # grouped as one, under whatever reason `judge` gave for being unable to decide —
+        # so "body does not report 'cube_height'" appeared in a table headed *failure
+        # modes*, which reads as the policy failing that way.
+        if outcome.succeeded is not False:
             continue
         label = outcome.failure_mode or "unlabelled"
         failure_modes[label] = failure_modes.get(label, 0) + 1
@@ -268,6 +335,7 @@ def evaluate(outcomes: Sequence[EpisodeOutcome], *, skill: str) -> EvaluationRes
         skill=skill,
         episodes=episodes,
         successes=successes,
+        unjudged=unjudged,
         intervention_rate=intervened / episodes,
         interventions_per_episode=total_interventions / episodes,
         corrections=corrections,
@@ -315,12 +383,21 @@ def intervention_curve(
         if not usable:
             continue
 
+        # Two denominators, because the two rates answer different questions of different
+        # episodes. Every unfaulted episode can say whether somebody was asked; only a
+        # judged one can say whether the task was done, and counting an unjudged episode as
+        # a failure would report a rig that cannot measure as a policy that cannot work.
+        judged = [o for o in usable if o.succeeded is not None]
+
         points.append(
             InterventionPoint(
                 cumulative_corrections=cumulative_corrections,
                 intervention_rate=sum(1 for o in usable if o.interventions > 0) / len(usable),
-                success_rate=sum(1 for o in usable if o.succeeded) / len(usable),
+                success_rate=(
+                    sum(1 for o in judged if o.succeeded) / len(judged) if judged else None
+                ),
                 episodes=len(usable),
+                judged=len(judged),
             )
         )
 

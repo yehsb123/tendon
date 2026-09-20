@@ -99,28 +99,13 @@ def doctor() -> None:
         raise typer.Exit(code=1)
 
 
-#: Jaw position the baseline policy holds. Open, because a scripted sweep is not grasping
-#: anything and a jaw closing on nothing is the more surprising default.
-_HELD_OPEN = 1.0
-
-#: Policy names this build can run. One set, consulted by the name check and named in the
-#: refusal, so the list a person is shown cannot drift from the list that is accepted.
-policies.RUNNABLE_POLICIES = frozenset({"scripted", "replay", "adapter"})
-
-#: Reference spread for a loaded checkpoint: none, until somebody measures one.
-#:
-#: The number is the scale confidence is measured against, and ADR 0003 is explicit that
-#: nothing has calibrated it — it is "the caller's guess" until v0.3 measures spread
-#: against intervention outcomes. `api/app.py` passes 0.004, tuned to the synthetic policy
-#: it drives; using that here would be borrowing a constant fitted to something else and
-#: presenting the result as a measurement of this.
-#:
-#: Zero is not a disabled feature. `services/confidence.py` answers it with
-#: `ConfidenceSource.NONE` and the reason "no reference spread configured, so the
-#: measurement has no scale", which is what an operator should be told. A guessed number
-#: would produce a confident-looking score with nothing behind it, and this project's whole
-#: interrupt path keys off that score.
-_UNCALIBRATED_SPREAD = 0.0
+# `HELD_OPEN`, `RUNNABLE_POLICIES` and `UNCALIBRATED_SPREAD` live in `cli/policies.py`
+# with the code that reads them. They were left behind here when that module was split
+# out, and one of them was worse than dead: a bulk rename turned the *definition* of
+# `_RUNNABLE_POLICIES` into `policies.RUNNABLE_POLICIES = frozenset(...)`, a statement that
+# reached into another module and rebound its attribute at import. It assigned the same
+# value, so nothing broke and nothing complained — a rename that edits a definition as
+# though it were a call site leaves exactly this: working code that means something else.
 
 
 @app.command()
@@ -320,37 +305,6 @@ def _effective_limits(console: Console, loaded):
     return limits
 
 
-def _judge(loaded, result) -> bool | None:
-    """Whether the episode achieved what the skill declares as success, or None.
-
-    None when nobody could tell — no criteria declared, or the body does not report the
-    quantity they need. `tendon eval grasp/cube-sim` currently answers None for every
-    episode, because `skill.yaml` asks for `cube_height` and the MuJoCo driver does not put
-    it in `Observation.extra`.
-
-    That is exactly why this is recorded rather than left to `eval`. The v0.3 graph plots
-    intervention rate against corrections, and **a policy that stops asking because it
-    stopped trying draws the same falling line as one that learned.** Without a verdict
-    beside each point the two readings are indistinguishable, and `examples/04_improve`
-    prints PASS on the fall alone.
-
-    Uses the same `judge` the evaluator does, so a run and an evaluation cannot disagree
-    about whether the same episode succeeded.
-    """
-    from tendon.services.evaluator import SuccessCriterion, judge
-
-    criteria = [SuccessCriterion.parse(name, value) for name, value in loaded.success_criteria]
-    if not criteria:
-        return None
-
-    # `result.final_world`, not the last observation. A skill judges the world; an
-    # observation is what the policy saw, and ground truth read from there is ground truth
-    # a policy could learn to use — working in simulation and failing on hardware that
-    # cannot supply it, with no simulation test able to catch it.
-    verdict, _ = judge(result.final_world, criteria)
-    return verdict
-
-
 def _record_progress(console: Console, loaded, capability, result, store: str) -> None:
     """Append one finished episode to the progress log.
 
@@ -375,10 +329,11 @@ def _record_progress(console: Console, loaded, capability, result, store: str) -
     the graph that nobody can see.
     """
     from tendon.services import progress
+    from tendon.services.evaluator import judge_result
     from tendon.services.memory_store import DEFAULT_MEMORY_ROOT, load_memory
 
     root = Path(store).parent / "progress" if store else progress.DEFAULT_PROGRESS_ROOT
-    succeeded = _judge(loaded, result)
+    succeeded = judge_result(loaded, result)
 
     try:
         known = len(load_memory(DEFAULT_MEMORY_ROOT, loaded.ref, capability.body_id))
@@ -1169,7 +1124,10 @@ def evaluate_skill(
                 EpisodeOutcome(
                     episode_id=result.episode_id,
                     skill=loaded.ref,
-                    succeeded=bool(verdict),
+                    # `verdict`, not `bool(verdict)`. None means nobody could judge, and
+                    # `bool(None)` is False — which reported an unmeasurable rig as a
+                    # policy that failed, in the one number an evaluation is read for.
+                    succeeded=verdict,
                     interventions=result.interventions,
                     corrections=result.corrections,
                     faulted=result.state.value == "faulted",

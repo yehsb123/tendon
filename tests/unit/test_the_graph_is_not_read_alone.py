@@ -78,27 +78,101 @@ def test_the_verdict_has_three_states_not_two() -> None:
     assert _record(succeeded=True).succeeded is True
 
 
-def test_a_run_and_an_evaluation_judge_the_same_way() -> None:
-    """`_judge` calls the evaluator's own `judge` rather than reimplementing the
-    comparison, so a run and an evaluation cannot disagree about the same episode."""
+def test_an_unjudged_episode_is_not_counted_as_a_failure() -> None:
+    """`EpisodeOutcome.succeeded` was `bool`, and the caller filled it with
+    `bool(verdict)` — which turns None into False.
+
+    So `success_rate` divided successes by *every* episode, counting the unmeasurable ones
+    as failures. Until the MuJoCo driver began reporting `cube_height` that was every
+    episode this project could produce, and the number read 0%: *the policy fails every
+    time*, where the truth was *nobody measured*.
+    """
+    from tendon.services.evaluator import EpisodeOutcome, evaluate
+
+    def outcome(episode_id: str, succeeded: bool | None) -> EpisodeOutcome:
+        return EpisodeOutcome(episode_id=episode_id, skill="grasp/cube-sim", succeeded=succeeded)
+
+    result = evaluate(
+        [outcome("a", True), outcome("b", None), outcome("c", None)], skill="grasp/cube-sim"
+    )
+
+    assert result.episodes == 3
+    assert result.unjudged == 2
+    assert result.judged == 1
+    assert result.success_rate == 1.0, "the one judged episode succeeded"
+
+
+def test_a_run_nobody_could_judge_has_no_success_rate_rather_than_zero() -> None:
+    """None, not 0.0. A rate of zero is a measurement; having none is not, and the two
+    read as opposite results about the same run."""
+    from tendon.services.evaluator import EpisodeOutcome, evaluate
+
+    result = evaluate(
+        [EpisodeOutcome(episode_id=str(i), skill="s", succeeded=None) for i in range(3)],
+        skill="s",
+    )
+
+    assert result.success_rate is None
+
+
+def test_an_unjudged_episode_is_not_a_failure_mode() -> None:
+    """They were grouped as one, under whatever reason `judge` gave for being unable to
+    decide — so "body does not report 'cube_height'" appeared in a table headed *failure
+    modes*, which reads as the policy failing that way."""
+    from tendon.services.evaluator import EpisodeOutcome, evaluate
+
+    result = evaluate(
+        [
+            EpisodeOutcome(
+                episode_id="a",
+                skill="s",
+                succeeded=None,
+                failure_mode="body does not report 'cube_height'",
+            ),
+            EpisodeOutcome(episode_id="b", skill="s", succeeded=False, failure_mode="too low"),
+        ],
+        skill="s",
+    )
+
+    assert result.failure_modes == {"too low": 1}
+
+
+def test_everything_that_judges_an_episode_judges_it_the_same_way() -> None:
+    """Three callers need the verdict: `tendon run`, `tendon eval`, and the API's session.
+
+    Each would otherwise write the same four lines, and one of them wrote none — the API
+    recorded no verdict at all, so an episode started from the shell landed on the v0.3
+    graph unjudged while one from the command line landed judged. Two kinds of point on
+    the axis the project is decided by.
+
+    `judge_result` is the one place now. Asserted by who calls it rather than by reading a
+    named function's body, which is what broke when that function moved.
+    """
     import ast
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[2] / "src" / "tendon" / "cli" / "main.py").read_text(
-        encoding="utf-8"
+    root = Path(__file__).resolve().parents[2] / "src" / "tendon"
+    callers = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.py")
+        if "judge_result(" in path.read_text(encoding="utf-8") and path.name != "evaluator.py"
+    }
+
+    assert callers == {"cli/main.py", "api/app.py"}, (
+        f"{sorted(callers)} judge episodes; the CLI and the API are the two, and a third "
+        f"place doing it means a third answer to the same question"
     )
-    body = source.partition("def _judge(")[2].partition("\ndef ")[0]
 
-    assert "from tendon.services.evaluator import" in body
-    assert "judge(" in body
-
-    # And nothing in the CLI compares a criterion by hand, which is how the two would drift.
-    tree = ast.parse(source)
-    comparisons = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "holds"
+    # And nobody compares a criterion by hand, which is how the copies would drift apart.
+    hand_rolled = [
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.py")
+        if path.name != "evaluator.py"
+        and any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"holds", "met_by"}
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        )
     ]
-    assert not comparisons, "the CLI is evaluating success criteria itself"
+    assert not hand_rolled, f"{hand_rolled} evaluate success criteria themselves"

@@ -300,16 +300,25 @@ def _effective(loaded):
     return tighten(loaded.limits, load_local_limits())
 
 
-def _record_progress(progress_root, skill, body_id, memories, result) -> None:
-    """Append what this episode cost in human attention.
+def _record_progress(progress_root, loaded, body_id, memories, result) -> None:
+    """Append what this episode cost in human attention, and whether it worked.
 
     Written after the episode rather than during it, and isolated: a log that cannot be
     appended to must not turn a finished run into a failed one. Reported for the same
     reason as the memory — a line that silently never appeared is a graph with a hole in
     it that nobody can see.
+
+    Takes the loaded skill rather than its name because the verdict needs the success
+    criteria. It took the name, so this recorded no verdict at all: an episode started
+    from the shell landed on the v0.3 graph unjudged while one started from `tendon run`
+    landed judged. **Two kinds of point on the axis the project is decided by** — and a
+    falling line means nothing without the second half, since a policy that stopped trying
+    draws the same one.
     """
     from tendon.services import progress
+    from tendon.services.evaluator import judge_result
 
+    skill = loaded.ref
     memory = memories.get((skill, body_id))
     try:
         progress.append(
@@ -325,6 +334,7 @@ def _record_progress(progress_root, skill, body_id, memories, result) -> None:
                 interventions=result.interventions,
                 corrections=result.corrections,
                 corrections_known=len(memory) if memory is not None else 0,
+                succeeded=judge_result(loaded, result),
             ),
         )
     except Exception as exc:  # noqa: BLE001 - isolation, not silence
@@ -845,7 +855,7 @@ def create_app(
             # often the policy asked and how much it had been taught by then, which are
             # the two axes of the graph the roadmap says v0.3 is measured by.
             on_result=lambda result: _record_progress(
-                progress_root, loaded.ref, capability.body_id, memories, result
+                progress_root, loaded, capability.body_id, memories, result
             ),
             # The body is opened here and handed to a thread. Until now it was closed only
             # when starting failed, so every episode that ran left one open — a MuJoCo
