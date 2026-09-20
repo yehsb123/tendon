@@ -53,9 +53,73 @@ def test_discovery_reports_why_a_driver_is_unavailable() -> None:
 
 
 def test_available_returns_only_loadable_bodies() -> None:
+    """The two answers must be the same answer.
+
+    This failed for real under a shuffled suite. `test_driver_arguments.py` replaced
+    `drivers.base._REGISTRY` with a copy for the duration of a fixture; the first
+    `available()` inside that window imported every driver module, so all three
+    registrations landed in the copy, and the modules stayed in `sys.modules` so the
+    lazy import never repeated. Teardown restored a dict snapshotted before any of them
+    registered, and `available()` returned `()` for the rest of the process.
+
+    Two of the failures it caused were the physical-body refusal tests below — safety
+    coverage, switched off by whichever file pytest happened to run first.
+
+    **What this can and cannot catch, now that `discover()` reads the registry too.** It
+    catches a driver registered under a name that is not its module's, which is the case
+    where `--driver <module>` would not find a body that exists. It no longer catches an
+    empty registry, because both sides would be empty and agree — the test below is the one
+    that holds that, and it is the one to read first if this file ever goes strange.
+    """
     names = set(available())
     discovered = {i.name for i in discover() if i.available}
     assert names == discovered
+
+
+def test_every_driver_module_that_imports_also_registers() -> None:
+    """The invariant that actually caught the registry being emptied.
+
+    It has to be stated directly rather than fall out of two functions agreeing. When the
+    registry was wiped, *both* sides went empty: `available()` returned `()`, `discover()`
+    now calls every module unregistered, and the comparison above passes on two empty sets
+    while `test_a_physical_body_is_refused_by_default` finds no physical body and skips.
+    Green, and testing nothing.
+
+    No list of expected drivers, because that is the failure this whole file was written
+    about. The claim is a shape: a module that imports must produce a driver.
+    """
+    unregistered = [
+        info.name
+        for info in discover()
+        if info.unavailable_because and "registers no driver" in info.unavailable_because
+    ]
+
+    assert not unregistered, (
+        f"{unregistered} import cleanly and register nothing. Every body would be "
+        f"unopenable and most tests here would skip rather than fail."
+    )
+
+
+def test_a_module_that_imports_without_registering_is_not_called_available(monkeypatch) -> None:
+    """`discover()` used to read import success as availability, so a module that produced
+    no driver was listed as a working body.
+
+    That is the shape that made the failure above invisible rather than merely present: the
+    only two functions that could contradict each other were the two doing the contradicting.
+    """
+    from tendon.services import bodies
+
+    monkeypatch.setattr(
+        bodies,
+        "_driver_modules",
+        lambda: ("tendon.services.bodies",),  # imports, registers nothing
+    )
+
+    (info,) = discover()
+
+    assert info.available is False
+    assert info.unavailable_because
+    assert "registers no driver" in info.unavailable_because
 
 
 def test_opening_an_unknown_body_names_what_exists() -> None:

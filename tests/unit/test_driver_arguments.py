@@ -49,9 +49,14 @@ def demanding(monkeypatch: pytest.MonkeyPatch) -> str:
             self.repo_id = repo_id
             self.port = port
 
-    registry = dict(driver_base._REGISTRY)
-    registry["demanding"] = Demanding
-    monkeypatch.setattr(driver_base, "_REGISTRY", registry)
+    # setitem, not setattr on a copy. Drivers register as an import side effect and
+    # `available()` imports them lazily, so the first call inside a window where
+    # `_REGISTRY` points at a copy writes every registration into the copy — and the
+    # modules stay in `sys.modules`, so the import never happens again. Teardown then
+    # restores a dict that was snapshotted before any of them registered, leaving
+    # `available()` empty for the rest of the process. Two safety tests in
+    # `test_bodies.py` silently lost their subject that way whenever this file ran first.
+    monkeypatch.setitem(driver_base._REGISTRY, "demanding", Demanding)
     monkeypatch.setattr(driver_base, "is_simulated", lambda name: True)
     return "demanding"
 
@@ -123,9 +128,7 @@ def test_a_driver_that_cannot_be_inspected_still_answers(monkeypatch) -> None:
         def __new__(cls, *args, **kwargs):
             raise TypeError("missing 1 required positional argument: 'mystery'")
 
-    registry = dict(driver_base._REGISTRY)
-    registry["odd"] = Odd
-    monkeypatch.setattr(driver_base, "_REGISTRY", registry)
+    monkeypatch.setitem(driver_base._REGISTRY, "odd", Odd)
     monkeypatch.setattr(driver_base, "is_simulated", lambda name: True)
 
     with pytest.raises(MissingDriverArgument) as excinfo:

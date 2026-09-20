@@ -119,6 +119,12 @@ def discover() -> tuple[BodyInfo, ...]:
     Reports the ones that failed to import alongside the ones that worked. A driver whose
     backend is missing is a different situation from a driver that does not exist, and a
     list that silently omits the first leaves someone wondering where it went.
+
+    **Importing is not registering**, and this used to treat them as one thing. A module
+    that imported cleanly was reported available whether or not a driver came out of it, so
+    `discover()` could say `human` was there while `available()` — which reads the registry
+    — did not list it. Nothing could observe that disagreement, because the two functions
+    that would disagree were the only two that knew.
     """
     infos: list[BodyInfo] = []
     for module in _driver_modules():
@@ -127,6 +133,15 @@ def discover() -> tuple[BodyInfo, ...]:
             __import__(module)
         except ImportError as exc:
             infos.append(BodyInfo(name=short, unavailable_because=str(exc)))
+            continue
+        registered = set(driver_base.available())
+        if short not in registered:
+            infos.append(
+                BodyInfo(
+                    name=short,
+                    unavailable_because=f"imports, but registers no driver named {short!r}",
+                )
+            )
         else:
             infos.append(BodyInfo(name=short, simulated=driver_base.is_simulated(short)))
     return tuple(infos)
