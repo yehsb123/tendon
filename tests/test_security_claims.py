@@ -119,3 +119,64 @@ def test_the_ceiling_over_a_skill_is_described_and_real() -> None:
 
     capped = tighten(SafetyLimits(max_joint_velocity=99.0), SafetyLimits(max_joint_velocity=2.0))
     assert capped.max_joint_velocity == 2.0
+
+
+def test_the_ceiling_cannot_be_used_to_widen_a_skills_own_bound() -> None:
+    """The other direction, and the one that makes it a control rather than a setting.
+
+    A local file that could loosen a skill's limit would be a way to disable a safety bound
+    by editing a config, which is what the document says it cannot be. Worth asserting
+    separately: `tighten` passing the narrowing case tells you nothing about the widening
+    one, and a reader is being told to rely on this.
+    """
+    from tendon.kernel.types import SafetyLimits
+    from tendon.services.limits import tighten
+
+    assert "loosen" in SECURITY, "the document has to state the direction, not imply it"
+
+    widened = tighten(SafetyLimits(max_joint_velocity=1.0), SafetyLimits(max_joint_velocity=500.0))
+    assert widened.max_joint_velocity == 1.0, "the skill's own bound has to survive"
+
+
+def test_the_document_does_not_blame_a_command_that_does_not_exist() -> None:
+    """ "Skills are remote code" used to be attributed to `tendon install`, which is v0.4.
+
+    A safety notice pointing at a future command reads as a future risk. It is live now:
+    `tendon run <path>` loads any `skill.yaml`, that file declares the safety limits the
+    arm runs under, and no local ceiling is configured by default. Measured — a copy of
+    this repository's own skill with `max_joint_velocity: 99.0` loads and 99.0 stands.
+    """
+    from tendon.services.limits import load_local_limits
+
+    remote = SECURITY.split("**Skills are remote code")[1].split("\n\n**")[0]
+
+    assert "v0.4" in remote, "say that install does not exist yet"
+    assert "tendon run" in remote, "and name the route that does load a skill today"
+
+    assert load_local_limits(REPO / "no-such-limits.yaml") is None, (
+        "an absent ceiling is the default, which is why the risk is live"
+    )
+
+
+def test_a_skill_from_any_path_supplies_the_bounds_it_runs_under() -> None:
+    """The mechanism behind that paragraph, checked rather than described.
+
+    Nothing about `load_skill` requires a skill to come from this repository, and the
+    limits it returns are the ones the file asked for.
+    """
+    import tempfile
+
+    import yaml
+
+    from tendon.services.skill import load_skill
+
+    raw = yaml.safe_load((REPO / "skills" / "grasp" / "cube-sim" / "skill.yaml").read_text("utf-8"))
+    raw["safety"]["max_joint_velocity"] = 99.0
+
+    directory = Path(tempfile.mkdtemp()) / "handed-to-you"
+    directory.mkdir()
+    (directory / "skill.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    assert load_skill(directory).limits.max_joint_velocity == 99.0, (
+        "a file from anywhere proposes the bound; that is what the document has to say"
+    )

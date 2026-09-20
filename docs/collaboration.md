@@ -3642,3 +3642,21 @@ where confidence is going to come from.
   fenced block is formatted to be copied. 71 blocks scanned, both directions verified by
   planting. `docs/collaboration.md` is exempt: it is a record of what was true when each
   line was written. 994 green, ruff and mypy clean.
+- **B — `SECURITY.md` was attributing a live risk to a command that does not exist.**
+  Followed the `tendon install` thread into the safety notice. "Skills are remote code.
+  `tendon install` fetches weights and configuration from the Hugging Face Hub" — and
+  `install` is v0.4, so a reader could take the whole paragraph as describing something
+  that has not arrived.
+
+  It has. `tendon run <path>` and `tendon eval <path>` load any `skill.yaml`, and that file
+  declares the safety limits the arm runs under. Measured: a copy of this repository's own
+  skill with `max_joint_velocity: 99.0` loads from a temporary directory and 99.0 is the
+  bound that stands, because no local ceiling is configured and none is by default.
+  Rewritten to say so, and to name what does fetch weights today.
+
+  Checked the mitigation before telling anyone to rely on it — all four claims about
+  `~/.tendon/limits.yaml` hold: 99 → 2 when the site is stricter, 1.0 stays 1.0 when the
+  site is looser, absent means the skill's limits stand, unparseable raises
+  `LocalLimitsError`. The widening case had no test; `tighten` passing the narrowing one
+  says nothing about it, and that direction is what makes it a control rather than a
+  setting. Three tests added to `tests/test_security_claims.py`. 997 green.

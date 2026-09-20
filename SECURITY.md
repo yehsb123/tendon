@@ -128,10 +128,20 @@ episode nobody has connected to yet is ordinary — the shell posts and then ope
 and `tendon run` never connects at all — and stopping those would stop the runs this
 protects.
 
-**Skills are remote code.** `tendon install` fetches weights and configuration from the
-Hugging Face Hub. A skill declares its own safety limits, which means an installed skill
-proposes the bounds it runs under. Treat a skill from an untrusted namespace the way you
-would treat any code you did not write, and review `skill.yaml` before running it.
+**Skills are remote code, and this is live now.** An earlier version of this paragraph
+attributed the risk to `tendon install`, which does not exist — it is v0.4 — and a safety
+notice that points at a future command reads as a future risk.
+
+The risk does not wait for it. `tendon run <path>` and `tendon eval <path>` load any
+`skill.yaml` you point them at, and `policy.base` in that file names weights fetched from
+the Hugging Face Hub. **A skill declares its own safety limits**, so a file somebody sends
+you proposes the bounds your arm runs under. Measured on this machine: a `skill.yaml`
+copied from this repository with `max_joint_velocity: 99.0` loads and that is the limit
+that stands, because no local ceiling is configured and none is by default.
+
+Treat a skill from anyone you do not trust the way you would treat any code you did not
+write, read `skill.yaml` before running it, and if a machine touches hardware, configure
+the ceiling described below rather than relying on what arrives in the file.
 
 **A machine can now put a ceiling over what a skill asks for.** `~/.tendon/limits.yaml`
 holds `SafetyLimits`, and the effective bound is the stricter of the two, field by field.
