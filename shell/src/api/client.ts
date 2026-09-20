@@ -228,13 +228,19 @@ export const api = {
   skill: (namespace: string, name: string) =>
     request<SkillDetail>(`/api/skills/${namespace}/${name}`),
 
-  startSession: (skill: string, body: string, maxSteps = 500) =>
+  startSession: (skill: string, body: string, policy = "scripted", maxSteps = 500) =>
     request<SessionSnapshot>("/api/sessions", {
       method: "POST",
       // `allow_physical` is deliberately not sent. Starting a run that moves real
       // hardware is not something this screen should be able to do by clicking Start;
       // the runtime refuses with a reason and the operator sees it.
-      body: JSON.stringify({ skill, body, max_steps: maxSteps }),
+      //
+      // `policy` is. The endpoint could only run the synthetic sweep, so the one screen
+      // where a human supervises a policy could never supervise a trained one — every
+      // correction collected here was a correction to a joint sweep. The adapter comes
+      // from the skill's `policy.adapter`; the runtime refuses with a reason when there
+      // is none, which is the same answer `tendon run` gives.
+      body: JSON.stringify({ skill, body, policy, max_steps: maxSteps }),
     }),
 
   session: (id: string) => request<SessionSnapshot>(`/api/sessions/${id}`),

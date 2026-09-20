@@ -73,7 +73,16 @@ interface SessionStore {
 
   checkRuntime: () => Promise<void>;
   choose: (skill: string | null, body: string | null) => Promise<void>;
-  start: (skill: string, body: string) => Promise<void>;
+  start: (skill: string, body: string, policy?: string) => Promise<void>;
+  /**
+   * Which policy the next run uses: `scripted` or `adapter`.
+   *
+   * Kept in the store rather than passed at the call site because the view needs to show
+   * which one is selected, and because the answer decides what the operator is actually
+   * supervising — a synthetic sweep with a placed uncertain region, or a trained model.
+   */
+  chosenPolicy: string;
+  choosePolicy: (policy: string) => void;
   decide: (resolution: string, correction?: Intent, note?: string) => Promise<void>;
   /** Whether the correction editor is open. Separate from `pending`: an operator can
    *  open it, think, and close it again without answering the interrupt. */
@@ -94,6 +103,9 @@ export const useSession = create<SessionStore>((set, get) => ({
   chosenBody: null,
   compatibility: null,
   chosenDetail: null,
+  // Scripted by default: it needs no weights, no GPU and no training run, so the shell
+  // still opens and demonstrates the loop on a clean checkout.
+  chosenPolicy: "scripted",
 
   session: null,
   step: 0,
@@ -161,9 +173,13 @@ export const useSession = create<SessionStore>((set, get) => ({
     set({ chosenDetail: detail.ok ? detail.value : null });
   },
 
-  async start(skill, body) {
+  choosePolicy(policy) {
+    set({ chosenPolicy: policy });
+  },
+
+  async start(skill, body, policy) {
     set({ decisionError: null });
-    const result = await api.startSession(skill, body);
+    const result = await api.startSession(skill, body, policy ?? get().chosenPolicy);
     if (!result.ok) {
       set({ status: "closed", statusDetail: result.error });
       return;

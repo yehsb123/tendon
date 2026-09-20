@@ -203,6 +203,8 @@ export function Live() {
     setCorrecting,
     lastResolution,
     chosenDetail,
+    chosenPolicy,
+    choosePolicy,
     observation,
     bodies,
     skills,
@@ -252,8 +254,10 @@ export function Live() {
           bodies={bodies}
           chosenSkill={chosenSkill}
           chosenBody={chosenBody}
+          chosenPolicy={chosenPolicy}
           compatibility={compatibility}
           onChoose={(skill, body) => void choose(skill, body)}
+          onChoosePolicy={choosePolicy}
         />
       ) : null}
 
@@ -327,15 +331,19 @@ function Chooser({
   bodies,
   chosenSkill,
   chosenBody,
+  chosenPolicy,
   compatibility,
   onChoose,
+  onChoosePolicy,
 }: {
   skills: SkillSummary[];
   bodies: Body[];
   chosenSkill: string | null;
   chosenBody: string | null;
+  chosenPolicy: string;
   compatibility: Compatibility | null;
   onChoose: (skill: string | null, body: string | null) => void;
+  onChoosePolicy: (policy: string) => void;
 }) {
   return (
     <div className="chooser">
@@ -369,6 +377,23 @@ function Chooser({
               {body.available ? "" : " (unavailable)"}
             </option>
           ))}
+        </select>
+      </label>
+
+      <label>
+        <span>policy</span>
+        {/*
+          What the operator is actually supervising. This screen could only ever run the
+          scripted sweep, so every correction it collected was a correction to a sweep —
+          and the v0.3 experiment, a trained policy with a real operator, could not be run
+          from the interface it exists for.
+
+          `adapter` needs one from `tendon train`; the runtime refuses with a reason when
+          there is none, in the same words `tendon run` uses.
+        */}
+        <select value={chosenPolicy} onChange={(event) => onChoosePolicy(event.target.value)}>
+          <option value="scripted">scripted — a sweep, uncertainty is a stand-in</option>
+          <option value="adapter">adapter — what tendon train produced</option>
         </select>
       </label>
 

@@ -73,6 +73,19 @@ class StartRequest(BaseModel):
 
     skill: str
     body: str = "mujoco"
+    #: Which policy drives the episode: `scripted` or `adapter`.
+    #:
+    #: `scripted` is the synthetic sweep with a placed uncertain region, and it was the
+    #: only thing this endpoint could run. So the operator's seat — the one surface where
+    #: a human supervises a policy — could never supervise a *real* one, and every
+    #: correction collected through the shell was a correction to a joint sweep.
+    #:
+    #: The CLI grew `--policy adapter` and this did not, which made the v0.3 experiment
+    #: (a trained policy, a real operator) impossible through the interface it is meant to
+    #: be run from.
+    policy: str = "scripted"
+    #: Adapter directory for `policy=adapter`. Falls back to the skill's `policy.adapter`.
+    adapter: str | None = None
     max_steps: int = 500
     seed: int | None = None
     #: Seconds an interrupt waits for a decision before aborting the episode.
@@ -93,6 +106,129 @@ class DecisionRequest(BaseModel):
     resolution: str
     correction: dict[str, Any] | None = None
     note: str | None = None
+
+
+#: Policies a session can run. `replay:` is deliberately absent — it plays a recording
+#: back, and there is nothing in that for an operator to supervise.
+#:
+#: A set, checked in the handler and named in the refusal, so the list somebody is shown
+#: cannot drift from the list that is accepted. `tests/integration` checks it against the
+#: CLI's, because two lists in two places is how the shell came to offer one policy while
+#: the command line offered three.
+_SUPERVISABLE = frozenset({"scripted", "adapter"})
+
+
+def _scripted_for(capability):
+    """The synthetic sweep with a placed uncertain region.
+
+    What this endpoint could only ever run. The uncertainty is a stand-in: a low-confidence
+    patch put at a chosen point in joint space so the loop has something to hand over
+    about (ADR 0003), and the shell says so on screen. Everything downstream of that moment
+    is real; the trigger is not.
+
+    `reference_spread` is 0.004 because that is what this policy's own disagreement looks
+    like. It is fitted to the sweep and means nothing for another policy — a real
+    checkpoint measured 0.0778 on the same body, nineteen times larger.
+    """
+    from tendon.services.adaptive import StochasticPolicy, UncertainRegion
+    from tendon.services.policies import sine_sweep
+
+    return StochasticPolicy(
+        sine_sweep(dof=capability.dof),
+        control_hz=capability.control_hz,
+        dof=capability.dof,
+        regions=(UncertainRegion(joint=0, centre=0.12, width=0.03, magnitude=0.08),),
+        reference_spread=0.004,
+        # A body with a jaw needs the jaw commanded, or the action is a channel narrower
+        # than what the recorder is set up to store.
+        gripper=1.0 if capability.gripper.value != "none" else None,
+    )
+
+
+def resolve_adapter(loaded, adapter: str | None) -> tuple[Path, str]:
+    """Which adapter and which checkpoint, decided from the request and the skill alone.
+
+    Split from the loading half and called **in the handler**, before a session exists.
+    The policy is built on the episode thread, so a refusal raised there never reaches the
+    response: the caller gets `200 OK` and a session that dies quietly a moment later.
+
+    The same surgery `tendon run` needed — its adapter check ran after `open_body` and was
+    moved ahead of it, because deciding whether a request is answerable should not require
+    starting the thing it asks for.
+
+    `HTTPException` and 400, not 500: every failure here is something the request asked for
+    and got wrong. The runtime is fine.
+    """
+    from tendon.services.policy_lerobot import PolicyError, adapter_base
+
+    path = adapter or loaded.policy_adapter
+    if not path:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"no adapter to run. Train one with `tendon train {loaded.ref}`, then pass "
+                f"it here or set policy.adapter in skill.yaml."
+            ),
+        )
+
+    directory = Path(path).expanduser()
+    if not (directory / "adapter_config.json").is_file():
+        raise HTTPException(status_code=400, detail=f"no adapter at {directory}")
+
+    try:
+        base = adapter_base(directory)
+    except PolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if loaded.policy_base and base != loaded.policy_base:
+        # A LoRA on different weights loads, runs, and is wrong with nothing to see.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"this adapter was trained on {base}, and {loaded.ref} declares "
+                f"{loaded.policy_base}. Fix policy.base or point at the right adapter."
+            ),
+        )
+
+    return directory, base
+
+
+def _adapter_for(loaded, capability, resolved: tuple[Path, str], body):
+    """A trained adapter, loaded the way `tendon run --policy adapter` loads one.
+
+    Through `services/policy_lerobot`, not a second construction here. A policy built
+    differently in the shell than on the command line would make a session and a
+    `tendon run` incomparable, and comparing them is what the v0.3 graph does.
+
+    Runs on the episode thread, because loading 450 million parameters is not something to
+    do while an HTTP request is waiting. Everything answerable without them has already
+    been answered by `resolve_adapter`.
+    """
+    from tendon.kernel.protocols import RendersFrames
+    from tendon.kernel.types import GripperKind
+    from tendon.services.calibration import DEFAULT_CALIBRATION_ROOT
+    from tendon.services.calibration import load as load_calibration
+    from tendon.services.policy_lerobot import load_adapter
+
+    directory, base = resolved
+
+    # The measured scale, and only if it was measured from this exact policy. A scale from
+    # another one produces confident-looking scores in the wrong units, and the interrupt
+    # threshold is read against them.
+    measured = load_calibration(DEFAULT_CALIBRATION_ROOT, loaded.ref, capability.body_id)
+    expected = f"{base}+{directory.name}"
+    spread = measured.reference_spread if measured and measured.policy == expected else 0.0
+
+    return load_adapter(
+        directory,
+        task=loaded.summary or loaded.ref,
+        dof=capability.dof,
+        control_hz=capability.control_hz,
+        policy_hz=loaded.policy_hz,
+        reference_spread=spread,
+        has_gripper=capability.gripper is not GripperKind.NONE,
+        frames=body.render if isinstance(body, RendersFrames) else None,
+    )
 
 
 def _open_recorder(loaded, root: Path):
@@ -551,7 +687,7 @@ def create_app(
         from tendon.api.session import EpisodeSession
         from tendon.kernel.bus import Bus
         from tendon.kernel.scheduler import Scheduler, StepRecord
-        from tendon.services.adaptive import AdaptivePolicy, StochasticPolicy, UncertainRegion
+        from tendon.services.adaptive import AdaptivePolicy
         from tendon.services.bodies import (
             BodyUnavailable,
             MissingDriverArgument,
@@ -560,7 +696,6 @@ def create_app(
         )
         from tendon.services.limits import LocalLimitsError
         from tendon.services.memory_store import load_memory
-        from tendon.services.policies import sine_sweep
         from tendon.services.skill import (
             IncompatibleBody,
             SkillError,
@@ -576,6 +711,23 @@ def create_app(
             loaded = load_skill(request.skill, root=root)
         except SkillError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Before the body, for the reason `tendon run` learned: whether the request names
+        # something this build can run is answerable from the request and the skill, and
+        # answering it after opening a body means a real arm opened to be told a name was
+        # misspelled. Resolved here so the refusal reaches the response at all — the policy
+        # itself is built on the episode thread, where nothing raised can be returned.
+        if request.policy not in _SUPERVISABLE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"policy {request.policy!r} is not one this runtime can start. "
+                    f"Available: {', '.join(sorted(_SUPERVISABLE))}."
+                ),
+            )
+        resolved_adapter = (
+            resolve_adapter(loaded, request.adapter) if request.policy == "adapter" else None
+        )
 
         try:
             body = open_body(request.body, allow_physical=request.allow_physical)
@@ -612,16 +764,15 @@ def create_app(
         holder: dict[str, Any] = {}
 
         def make_policy():
-            inner = StochasticPolicy(
-                sine_sweep(dof=capability.dof),
-                control_hz=capability.control_hz,
-                dof=capability.dof,
-                regions=(UncertainRegion(joint=0, centre=0.12, width=0.03, magnitude=0.08),),
-                reference_spread=0.004,
-                # A body with a jaw needs the jaw commanded, or the action is a channel
-                # narrower than what the recorder is set up to store.
-                gripper=1.0 if capability.gripper.value != "none" else None,
-            )
+            if request.policy == "adapter":
+                # The same loader the CLI uses, not a second copy. This project has
+                # shipped one bug from two copies of a construction twice, and a policy
+                # built differently here would make a shell session and a `tendon run`
+                # incomparable — which is exactly what the v0.3 graph compares.
+                inner = _adapter_for(loaded, capability, resolved_adapter, body)
+            else:
+                inner = _scripted_for(capability)
+
             key = (loaded.ref, capability.body_id)
             if key not in memories:
                 memories[key] = load_memory(memory_root, loaded.ref, capability.body_id)

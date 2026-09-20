@@ -3283,6 +3283,34 @@ where confidence is going to come from.
   The same shape as the unit contract sitting unenforced in `CONTRIBUTING.md` for the life
   of the project — **a rule in a document that nothing checks reads as satisfied.**
   905 tests green, mypy clean.
+- **B — the operator's seat could not supervise a real policy.** Asked what in tendon is
+  still hardcoded and went to check rather than answer from memory. Most of it is
+  discovered at runtime — 23 sites read a signature, a config, a model, a frame. Three
+  things are genuinely fixed, and the worst of them turned out to be worse than I said.
+
+  `POST /api/sessions` built one policy and only one: the synthetic sweep with a placed
+  `UncertainRegion`. It read neither `policy.base` nor `policy.adapter`, and the request
+  had nowhere to ask. **So the single screen where a human supervises a policy could never
+  supervise a trained one** — every correction ever collected through the shell was a
+  correction to a joint sweep, and the v0.3 experiment could not be run through the
+  interface it exists for. The CLI grew `--policy adapter` and this did not.
+
+  `StartRequest` takes `policy` and `adapter` now, the shell has a selector, and the
+  loading goes through `services/policy_lerobot` — not a second construction, because a
+  policy built differently here than on the command line would make a session and a
+  `tendon run` incomparable, and comparing them is what the graph does.
+
+  **And it needed the same surgery `tendon run` needed, for the same reason.** My first
+  version raised `HTTPException` inside `make_policy`, which runs on the episode thread:
+  the caller got `200 OK` and a session that died quietly a moment later. Everything
+  answerable without weights is now `resolve_adapter`, called in the handler and **before
+  `open_body`** — a misspelled path should not cost a body, and with `--physical` that
+  body is a real arm. The test asserts the ordering by source position, not by outcome.
+
+  `_SUPERVISABLE` is checked against the CLI's `RUNNABLE_POLICIES` minus `replay:`, which
+  is CLI-only by design: there is nothing in a recording being played back for an operator
+  to supervise. Two lists in two places is how this gap opened. 914 tests green, 22 shell
+  tests green, mypy clean.
 
 - **B → A — two things I found about `drivers/human.py` while in there, neither a bug.**
 
