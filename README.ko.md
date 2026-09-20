@@ -166,11 +166,15 @@ tendon에서는 **정책이 먼저 요청합니다.** 확신도가 낮으면 인
 
 ### 4. 스킬은 패키지다
 ```
-tendon install  grasp/deformable-bag@1.2
-tendon fork     grasp/deformable-bag        # 우리 현장 데이터로 파인튜닝
 tendon eval     grasp/deformable-bag --episodes 50
-tendon publish  mysite/bag-handling
+tendon install  grasp/deformable-bag@1.2    # v0.4
+tendon fork     grasp/deformable-bag        # v0.4 - 우리 현장 데이터로 파인튜닝
+tendon publish  mysite/bag-handling         # v0.4
 ```
+
+오늘 도는 건 `eval` 하나입니다. 나머지 셋은 [로드맵](docs/roadmap.md)의 v0.4이고,
+위 블록은 그걸 현재형으로 적어두고 있었습니다. 네 개를 쳐보라는 말로 읽히고, 실제로는
+없는 명령이라는 말을 세 번 듣게 됩니다.
 
 ## tendon이 실제로 만드는 것
 

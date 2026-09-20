@@ -3616,3 +3616,29 @@ where confidence is going to come from.
   Both of those were found by my own new test, not by me: `requires` was a fifth parsed
   block with no closed set, and `report` was a key declared known that the loader never
   looked up. 988 green, ruff and mypy clean.
+- **B — the documentation showed three commands that do not exist.** Closing the skill
+  format made the refusal hard rather than silent, so I went to check no documented key
+  would now be rejected. My first check reported zero problems and was checking nothing:
+  it scanned for ```` ```yaml ```` blocks in the docs and there are none. Worth writing
+  down because it is the exact trap this session keeps finding in other people's work.
+
+  Looking properly: `README.md` presents four commands under "a skill is a package" and
+  one exists. `src/tendon/cli/README.md` lists `install|fork|publish` beside nine working
+  commands. `skills/README.md` and `policy/README.md` say `tendon install` resolves a Hub
+  reference. All three are the v0.4 milestone. Marked `# v0.4` where they are shown, and
+  said what does fetch weights today (`tendon train` and `--policy adapter`, through
+  `policy.base`).
+
+  `skills/grasp/cube-sim/eval/README.md` described a `criteria.yaml` and an `episodes/`
+  directory that were never written, and said evaluation episodes are committed. They are
+  not: starting states are fixed by `--seed`, which defaults to 0 and increments per
+  episode, so the same command twice visits the same starts. The intent was implemented
+  and the description was of a different design.
+
+  `tests/unit/test_documented_commands_exist.py` holds it: a `tendon <word>` inside a
+  fenced block must be a real command or carry `# v0.4` on the line — and a command that
+  *has* shipped must not still carry the marker, so it cannot rot in the other direction.
+  Prose is left alone; a paragraph saying what the project is for is a description, a
+  fenced block is formatted to be copied. 71 blocks scanned, both directions verified by
+  planting. `docs/collaboration.md` is exempt: it is a record of what was true when each
+  line was written. 994 green, ruff and mypy clean.

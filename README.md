@@ -165,11 +165,15 @@ Develop in sim, deploy to hardware, no policy code changes.
 
 ### 4. A skill is a package
 ```
-tendon install  grasp/deformable-bag@1.2
-tendon fork     grasp/deformable-bag        # fine-tune on your own site data
 tendon eval     grasp/deformable-bag --episodes 50
-tendon publish  mysite/bag-handling
+tendon install  grasp/deformable-bag@1.2    # v0.4
+tendon fork     grasp/deformable-bag        # v0.4 - fine-tune on your own site data
+tendon publish  mysite/bag-handling         # v0.4
 ```
+
+Only `eval` runs today. The other three are the v0.4 milestone in
+[the roadmap](docs/roadmap.md) and the block above had them in the present tense, which
+read as four commands to try and was three ways to be told a command does not exist.
 
 ## What tendon actually builds
 

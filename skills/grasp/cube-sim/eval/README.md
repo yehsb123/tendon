@@ -2,17 +2,29 @@
 
 What "it worked" means for this skill, stated before the policy is trained.
 
+This directory holds no files. The success condition lives in `skill.yaml` under
+`eval.success`, which is where `tendon eval` reads it from:
+
+```yaml
+eval:
+  episodes: 50
+  success:
+    cube_height_above: 0.1
+  report: [success_rate, intervention_rate, failure_modes]
 ```
-criteria.yaml   success condition, from skill.yaml eval block
-episodes/       fixed starting states, committed so results are comparable
-```
+
+An earlier version of this page described a `criteria.yaml` and an `episodes/` directory
+beside it. Neither was ever written. Both are described below as they actually work.
 
 ## Fixed starting states
 
-The evaluation episodes are committed rather than sampled at run time. Two policies
-evaluated against different random seeds are not comparable, and the number this project
-lives on — intervention rate over cumulative corrections — is only meaningful if the
-denominator holds still.
+Fixed by seed rather than by committed files. `tendon eval --seed` defaults to 0 and each
+episode runs at `seed + index`, so the same command twice visits the same starting states
+in the same order.
+
+Two policies evaluated from different random starts are not comparable, and the number
+this project lives on — intervention rate over cumulative corrections — is only meaningful
+if the denominator holds still.
 
 ## What is reported
 
