@@ -35,11 +35,20 @@ finishes, at human timescale.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-__all__ = ["DEFAULT_PROGRESS_ROOT", "EpisodeRecord", "append", "history", "progress_path"]
+__all__ = [
+    "DEFAULT_PROGRESS_ROOT",
+    "EpisodeRecord",
+    "ThresholdPoint",
+    "append",
+    "history",
+    "progress_path",
+    "threshold_curve",
+]
 
 #: Beside the memory and the episodes, not inside either. This is a log of what happened;
 #: the memory is what is currently known and the store is the data itself.
@@ -80,6 +89,18 @@ class EpisodeRecord:
     #: learned.** The graph is the whole claim of this project and nothing distinguished
     #: those two readings of it: `examples/04_improve` prints PASS on the fall alone.
     succeeded: bool | None = None
+    #: The least sure the policy was at any step, or None when nothing measured it.
+    #:
+    #: The second half of what a threshold needs. `should_raise` fires strictly below the
+    #: threshold, so this episode would have handed over at threshold T exactly when
+    #: `lowest_confidence < T` — and `succeeded` beside it says what that would have cost
+    #: or saved. Paired across a run of episodes they are the calibration curve ADR 0003
+    #: leaves open.
+    #:
+    #: Usable as a counterfactual only where `interventions == 0`. An episode a human took
+    #: over has a trajectory that is no longer the policy's, so its outcome answers a
+    #: different question than the one being asked.
+    lowest_confidence: float | None = None
 
 
 def progress_path(root: Path, skill: str, body: str) -> Path:
@@ -125,6 +146,22 @@ def _verdict(value: object) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
+def _score(value: object) -> float | None:
+    """Read `lowest_confidence` back, keeping absent distinct from zero.
+
+    A confidence of 0.0 is a real measurement and the most alarming one there is — the
+    policy was as unsure as the scale allows. Absent means nothing measured it. Coercing
+    either into the other puts a run nobody scored at the bottom of every threshold
+    comparison, or hides the run that belongs there.
+
+    `bool` is excluded explicitly because it is a subclass of `int` in Python, so a stray
+    `true` in this column would otherwise read as a confidence of 1.0.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 def _read(path: Path) -> tuple[EpisodeRecord, ...]:
     if not path.is_file():
         return ()
@@ -156,6 +193,7 @@ def _read(path: Path) -> tuple[EpisodeRecord, ...]:
                     # `tendon progress` called unmeasured, which is two commands
                     # disagreeing about the one number v0.3 turns on.
                     succeeded=_verdict(raw.get("succeeded")),
+                    lowest_confidence=_score(raw.get("lowest_confidence")),
                 )
             )
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
@@ -209,5 +247,91 @@ def rate_curve(
         recent = records[index - window + 1 : index + 1]
         interrupted = sum(1 for r in recent if r.interventions > 0)
         points.append((records[index].corrections_known, interrupted / window))
+
+    return tuple(points)
+
+
+@dataclass(frozen=True)
+class ThresholdPoint:
+    """What one candidate threshold would have cost and bought, on episodes already run."""
+
+    threshold: float
+    #: Episodes where the policy would have raised its own hand at this threshold.
+    would_ask: int
+    #: Episodes it would have let run, of which `succeeded_unasked` met the skill's
+    #: criteria. The pair is the whole point: a threshold that asks for nothing and
+    #: succeeds at nothing is not a good threshold.
+    would_not_ask: int
+    succeeded_unasked: int
+    judged_unasked: int
+
+    @property
+    def ask_rate(self) -> float:
+        total = self.would_ask + self.would_not_ask
+        return self.would_ask / total if total else 0.0
+
+    @property
+    def success_rate_unasked(self) -> float | None:
+        """Among the episodes this threshold would have left alone, and only the judged
+        ones. None rather than zero when nothing was judged — the distinction this whole
+        project keeps having to re-learn."""
+        if not self.judged_unasked:
+            return None
+        return self.succeeded_unasked / self.judged_unasked
+
+
+def threshold_curve(
+    records: Sequence[EpisodeRecord], thresholds: Sequence[float] = ()
+) -> tuple[ThresholdPoint, ...]:
+    """What each candidate threshold would have done to episodes that already happened.
+
+    ADR 0003's postscript splits calibration into a scale and a threshold and says only
+    the second needs intervention outcomes. This is the second. `tendon calibrate`
+    measures how much disagreement is typical; this asks what it would have cost to treat
+    a given amount of it as a reason to stop.
+
+    **Only episodes nobody took over.** An episode with an intervention has a trajectory
+    that is partly an operator's, so whether it succeeded says nothing about what the
+    policy would have done alone — which is the question a threshold is an answer to.
+    Episodes with no measured confidence are excluded too: `lowest_confidence` is None for
+    them and there is no value to compare.
+
+    Returns empty rather than a table of zeroes when nothing qualifies. A curve drawn from
+    no episodes is the most confident-looking wrong answer available here.
+    """
+    usable = [
+        record
+        for record in records
+        if record.interventions == 0 and record.lowest_confidence is not None
+    ]
+    if not usable:
+        return ()
+
+    candidates = tuple(thresholds) or (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)
+
+    points: list[ThresholdPoint] = []
+    for threshold in candidates:
+        # Strictly below, matching `kernel.interrupt.should_raise`. A threshold of 0.0
+        # must never fire, and a curve that disagreed with the runtime about when a
+        # handover happens would be calibrating something the system does not do.
+        # Partitioned in one pass rather than by membership. `EpisodeRecord` is a frozen
+        # dataclass, so `r not in asked` compares by value — correct here only because
+        # `episode_id` happens to differ, which is not a property worth depending on.
+        asked: list[EpisodeRecord] = []
+        unasked: list[EpisodeRecord] = []
+        for record in usable:
+            assert record.lowest_confidence is not None  # filtered above; for the checker
+            (asked if record.lowest_confidence < threshold else unasked).append(record)
+
+        judged = [r for r in unasked if r.succeeded is not None]
+        points.append(
+            ThresholdPoint(
+                threshold=threshold,
+                would_ask=len(asked),
+                would_not_ask=len(unasked),
+                succeeded_unasked=sum(1 for r in judged if r.succeeded),
+                judged_unasked=len(judged),
+            )
+        )
 
     return tuple(points)

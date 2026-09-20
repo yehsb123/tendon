@@ -280,3 +280,60 @@ def report_thresholds(console: Console, measured, declared: float) -> None:
         "episodes where somebody took over - ADR 0003, still v0.3. What the table gives "
         "you is what each choice costs in interruptions.[/dim]"
     )
+
+
+def report_threshold_outcomes(console: Console, records) -> None:
+    """The other half of the threshold question: what each choice would have cost.
+
+    `report_thresholds` above says how *often* a threshold asks, measured on predictions.
+    It cannot say whether asking was worth it. This can, from episodes that already ran:
+    at each candidate, how many would have handed over, and how many of the rest still
+    met the skill's success criteria.
+
+    Only episodes nobody took over are counted, because an episode with an intervention
+    has a trajectory that is partly an operator's. That is not a technicality — it is the
+    difference between "what would this policy have done alone" and "what did a policy and
+    a person do together", and only the first is a property of a threshold.
+
+    Prints why it cannot answer rather than an empty table. Today nothing qualifies: the
+    scripted baseline reports `ConfidenceSource.NONE`, so `lowest_confidence` is None on
+    every episode this machine has recorded. A table of zeroes there would be the most
+    confident-looking wrong answer available.
+    """
+    from tendon.services.progress import threshold_curve
+
+    curve = threshold_curve(records)
+    if not curve:
+        scored = sum(1 for r in records if r.lowest_confidence is not None)
+        untouched = sum(1 for r in records if r.interventions == 0)
+        console.print()
+        console.print(
+            f"[dim]no threshold comparison yet - it needs episodes that nobody took over "
+            f"and that a confidence estimator scored. Of {len(records)}: {untouched} "
+            f"untouched, {scored} scored.[/dim]"
+        )
+        if not scored:
+            console.print(
+                "[dim]a scripted policy reports no confidence at all, so none of these "
+                "can be scored. Run a real one: tendon run <skill> --policy adapter[/dim]"
+            )
+        return
+
+    console.print()
+    console.print("[bold]what each threshold would have done to these episodes[/bold]")
+
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("threshold")
+    table.add_column("would ask", justify="right")
+    table.add_column("of the rest, succeeded", justify="right")
+    for point in curve:
+        rate = point.success_rate_unasked
+        succeeded = "not judged" if rate is None else f"{rate:.0%} of {point.judged_unasked}"
+        table.add_row(f"{point.threshold:g}", f"{point.ask_rate:.0%}", succeeded)
+    console.print(table)
+
+    console.print(
+        "[dim]Read the two columns together. A threshold that asks for nothing and "
+        "succeeds at nothing is not a good threshold, and neither is one that asks every "
+        "time.[/dim]"
+    )

@@ -355,6 +355,7 @@ def _record_progress(console: Console, loaded, capability, result, store: str) -
                 corrections=result.corrections,
                 corrections_known=known,
                 succeeded=succeeded,
+                lowest_confidence=result.lowest_confidence,
             ),
         )
     except Exception as exc:  # noqa: BLE001 - isolation, not silence
@@ -514,6 +515,7 @@ def progress(
             console.print(f"[dim]  intervention rate over a trailing {window} episodes[/dim]")
 
         reporting.report_success(console, records)
+        reporting.report_threshold_outcomes(console, records)
         console.print()
 
 

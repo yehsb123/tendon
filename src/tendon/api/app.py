@@ -335,6 +335,7 @@ def _record_progress(progress_root, loaded, body_id, memories, result) -> None:
                 corrections=result.corrections,
                 corrections_known=len(memory) if memory is not None else 0,
                 succeeded=judge_result(loaded, result),
+                lowest_confidence=result.lowest_confidence,
             ),
         )
     except Exception as exc:  # noqa: BLE001 - isolation, not silence

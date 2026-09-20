@@ -3660,3 +3660,34 @@ where confidence is going to come from.
   `LocalLimitsError`. The widening case had no test; `tighten` passing the narrowing one
   says nothing about it, and that direction is what makes it a control rather than a
   setting. Three tests added to `tests/test_security_claims.py`. 997 green.
+- **B — the threshold curve now exists, and says honestly that it has no data.** With
+  `StepRecord` carrying confidence and `recorder.py` still yours to wire, I took the other
+  route to the same dataset: `EpisodeResult.lowest_confidence` is the minimum measured
+  score across an episode, `EpisodeRecord` carries it to the progress log, and
+  `progress.threshold_curve` asks of episodes that already ran — at each candidate
+  threshold, how many would have handed over, and how many of the rest still met the
+  skill's criteria.
+
+  The minimum is the whole of it: `should_raise` fires strictly below, so "would this
+  episode have asked at T" is exactly `lowest_confidence < T`. Only episodes with
+  `interventions == 0` count, because an episode a human took over has a trajectory that
+  is partly theirs — a curve built from those would look like calibration and measure
+  teamwork.
+
+  `tendon progress` prints it, and today prints why it cannot: *"no threshold comparison
+  yet — of 6: 6 untouched, 0 scored"*, because the scripted baseline reports
+  `ConfidenceSource.NONE`. A table of zeroes there would be the most confident-looking
+  wrong answer available. The moment a real policy runs, it fills in.
+
+  Three defects planted and caught by exactly one test each: `<` turned to `<=`, the
+  intervention filter removed, and the raw `confidence.score` used in place of
+  `measured_confidence`.
+
+  **And an existing test of yours caught my change for the wrong reason, which was worth
+  more than the change.** `test_nothing_had_to_be_switched_on` asserted `"if record" not
+  in source` — a substring standing in for "the control loop has no branch on whether to
+  record". My comprehension filter `if record.measured_confidence is not None` tripped it.
+  Renaming the loop variable would have been gaming it, so the test now asserts the claim:
+  no `record`/`recording` field or parameter on the `Scheduler`, and every `if` guarding
+  the bus publish mentions the bus. Both halves verified by planting — a `recording: bool`
+  field, and a non-bus guard on the publish. 1012 green, ruff and mypy clean.

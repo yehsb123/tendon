@@ -77,10 +77,54 @@ def test_an_episode_lands_in_the_store(recorded) -> None:
 
 def test_nothing_had_to_be_switched_on(example) -> None:
     """Decision 1 is structural because the control loop has no branch for it. If a flag
-    ever appears in the scheduler, recording becomes something that can be off."""
+    ever appears in the scheduler, recording becomes something that can be off.
+
+    This used to assert `"if record" not in source` and `"record=" not in source`, which
+    is a substring standing in for the claim. It went red on
+    `if record.measured_confidence is not None` — a comprehension filter inside a property
+    that computes the lowest confidence of an episode, with nothing to do with recording.
+    A test that fails on an unrelated change is a test nobody will believe the next time,
+    and the honest fix is to assert the property rather than to rename a loop variable.
+
+    What the claim actually is: there is no switch, and the one thing that carries a step
+    out of the loop is guarded only by whether a bus exists at all.
+    """
+    import ast
+    import inspect
+
+    from tendon.kernel.scheduler import Scheduler
+
+    switches = {"record", "recording", "record_episodes", "collect"}
+
+    fields = set(Scheduler.__dataclass_fields__) & switches
+    assert not fields, f"Scheduler has {sorted(fields)}, so recording is now optional"
+
+    parameters = set(inspect.signature(Scheduler.run_episode).parameters) & switches
+    assert not parameters, f"run_episode takes {sorted(parameters)}"
+
     source = (REPO / "src/tendon/kernel/scheduler.py").read_text(encoding="utf-8")
-    assert "record=" not in source
-    assert "if record" not in source
+    tree = ast.parse(source)
+
+    def publishes(node: ast.AST) -> bool:
+        return any(
+            isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Attribute)
+            and inner.func.attr == "publish"
+            for inner in ast.walk(node)
+        )
+
+    guards = [
+        ast.unparse(branch.test)
+        for branch in ast.walk(tree)
+        if isinstance(branch, ast.If) and any(publishes(child) for child in branch.body)
+    ]
+
+    assert guards, "nothing publishes a step, so this test is checking nothing"
+    for guard in guards:
+        assert "bus" in guard, (
+            f"a step reaches the bus only when `{guard}`. Recording is supposed to be "
+            f"structural: the only question allowed here is whether a bus exists."
+        )
 
 
 # -------------------------------------------------- and the other arm does not

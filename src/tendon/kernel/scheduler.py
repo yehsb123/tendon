@@ -185,6 +185,32 @@ class EpisodeResult:
     subscriber_failures: tuple[SubscriberFailure, ...] = ()
     records: list[StepRecord] = field(default_factory=list)
 
+    @property
+    def lowest_confidence(self) -> float | None:
+        """The least sure this policy was at any point, or None if nothing measured it.
+
+        **The one number a threshold can be tested against.** `should_raise` fires when a
+        score is strictly below the threshold, so "would this episode have handed over at
+        threshold T" is exactly `lowest_confidence < T`. Everything else about the run is
+        irrelevant to that question.
+
+        Only scores something actually measured are considered — `measured_confidence`
+        returns None for `ConfidenceSource.NONE`, and a default dressed as an observation
+        would drag the minimum down and make every threshold look like it would have
+        fired.
+
+        Whether the *outcome* beside it is usable as a counterfactual is a separate
+        question, answered by `interventions`: an episode a human took over is an episode
+        whose trajectory is no longer the policy's, so what happened afterwards says
+        nothing about what would have happened had nobody been asked.
+        """
+        measured = [
+            record.measured_confidence
+            for record in self.records
+            if record.measured_confidence is not None
+        ]
+        return min(measured) if measured else None
+
 
 @dataclass
 class Scheduler:
