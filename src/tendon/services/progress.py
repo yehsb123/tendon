@@ -111,6 +111,20 @@ def history(root: Path, skill: str, body: str) -> tuple[EpisodeRecord, ...]:
     return _read(progress_path(root, skill, body))
 
 
+def _verdict(value: object) -> bool | None:
+    """Read `succeeded` back without collapsing its three states into two.
+
+    `bool(value)` would turn None into False, which is the failure this field was added to
+    prevent — *unmeasured* and *failed* are opposite claims. A record written before the
+    field existed has no key at all and is correctly unmeasured.
+
+    Anything that is not a JSON boolean is treated as unmeasured rather than coerced. A 0
+    or a "false" in this column did not come from `judge_result`, and guessing what it
+    meant would put a made-up verdict on the axis this project is judged by.
+    """
+    return value if isinstance(value, bool) else None
+
+
 def _read(path: Path) -> tuple[EpisodeRecord, ...]:
     if not path.is_file():
         return ()
@@ -136,6 +150,12 @@ def _read(path: Path) -> tuple[EpisodeRecord, ...]:
                     interventions=int(raw["interventions"]),
                     corrections=int(raw["corrections"]),
                     corrections_known=int(raw["corrections_known"]),
+                    # Written by `append` since the field existed and read by nothing
+                    # until now, so every verdict ever logged came back `None`. `tendon
+                    # eval` reported a real 0% success rate for the same episodes that
+                    # `tendon progress` called unmeasured, which is two commands
+                    # disagreeing about the one number v0.3 turns on.
+                    succeeded=_verdict(raw.get("succeeded")),
                 )
             )
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):

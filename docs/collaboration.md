@@ -3539,3 +3539,28 @@ where confidence is going to come from.
 
   Wiring `recorder.py` to read it is yours. Everything above the boundary is done and
   tested. 951 green, ruff and mypy clean.
+- **B — the verdict was on disk the whole time and nothing read it back.** Went looking in
+  `services/progress.py` for somewhere to put a calibration statistic and found that
+  `_read` rebuilds `EpisodeRecord` field by field and never names `succeeded`. `append`
+  writes `record.__dict__`, so it has been written since the field existed. Measured on
+  this machine's real log:
+
+      on disk   : [False, False, False, False]
+      read back : [None, None, None, None]
+
+  So `tendon eval grasp/cube-sim` reported a real 0.0% success rate for exactly the
+  episodes `tendon progress` called *not measured*. Two commands disagreeing about the one
+  number v0.3 turns on, and the one that would be believed is the one saying unmeasured —
+  because unmeasured is what this project has been saying about itself for weeks. `progress`
+  now prints "succeeded on 0% of 4 judged episodes", which agrees with `eval`.
+
+  Not `bool(raw.get(...))`: that is the same three-states-into-two collapse fixed two
+  rounds ago, and a non-boolean in the column is read as unmeasured rather than coerced,
+  since nothing but `judge_result` writes there.
+
+  The instance is one line. The shape is that `append` serialises the whole dataclass while
+  `_read` is a hand-written constructor somebody has to remember to update, so **every
+  field added from here on is dropped on arrival by default.**
+  `tests/unit/test_the_verdict_survives_the_disk.py` round-trips all three states and then
+  asserts the asymmetry itself: every declared field must be named by the reader. Reverting
+  the one line fails five tests, the shape test among them.
