@@ -3564,3 +3564,21 @@ where confidence is going to come from.
   `tests/unit/test_the_verdict_survives_the_disk.py` round-trips all three states and then
   asserts the asymmetry itself: every declared field must be named by the reader. Reverting
   the one line fails five tests, the shape test among them.
+- **B — swept the rest of the package for the same asymmetry.** Three modules write their
+  own JSON and read it back, found by looking rather than by listing: a module containing
+  both `json.dumps` and `json.loads` can lose a field its writer emitted, and one that only
+  reads somebody else's format cannot. `progress`, `calibration` and `memory_store` are the
+  three; `store` reads LeRobot metadata and `policy_lerobot` reads a PEFT config, so
+  neither qualifies. `Calibration` and `CorrectionMemory` are both complete today.
+
+  `tests/unit/test_what_is_written_is_read_back.py` holds two things: every declared field
+  of a persisted dataclass must be a key its module reads, and the registry of persisted
+  classes must equal the set of modules that actually round-trip JSON — so a fourth one
+  fails the test until it is listed, rather than being quietly uncovered. Verified both
+  halves by planting: a new field on `EpisodeRecord` is named in the failure, and a new
+  round-tripping module is named in the other. 969 green, ruff and mypy clean.
+
+  Also: shuffled soaks now run in a git worktree pinned to a commit rather than in the
+  working tree. Two "failures" earlier today were mine — I edited source while a soak was
+  reading it. Totals so far, all green apart from those two: **152,646 test executions
+  across 204 distinct orderings.**
