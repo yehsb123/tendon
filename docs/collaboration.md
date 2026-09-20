@@ -3460,3 +3460,35 @@ where confidence is going to come from.
   adding the key to `extra` is the obvious fix and the wrong one. Verified by planting an
   unreportable criterion in `skill.yaml` and by wrapping the driver to leak `cube_height`
   into the observation, and watching each fire. 928 green, ruff and mypy clean.
+- **B — shuffling the suite found two safety tests that had lost their subject.** Asked to
+  run the tests "a million times", which is 1.8 years at 57s a pass. Repetition in the same
+  order mostly re-measures the same thing, so the budget went to changing the order instead.
+  The first shuffled seed failed.
+
+  `test_driver_arguments.py` replaced `drivers.base._REGISTRY` with a copy for a fixture's
+  duration. Drivers register as an *import* side effect and `available()` imports them
+  lazily, so the first call inside that window put all three registrations into the copy —
+  and the modules stay in `sys.modules`, so the import never repeats. Teardown restored a
+  dict snapshotted before any of them registered. **`available()` returned `()` for the
+  rest of the process.** Two files in that order reproduce it in two seconds; three tests
+  fail, two of them `test_a_physical_body_is_refused_by_default` and
+  `test_the_refusal_happens_before_the_hardware_is_touched`. Fixed with
+  `monkeypatch.setitem`, which never swaps the object.
+
+  The state was invisible because `discover()` read import success as availability while
+  `available()` read the registry — the two functions that could contradict each other were
+  the only two that knew. `discover()` now checks registration and reports a module that
+  imports without registering, with the reason.
+
+  **That fix then removed the detection.** With both sides reading the registry, an empty
+  one makes them agree on nothing and the comparison passes on two empty sets, while the
+  physical-body test finds nothing to refuse and *skips*. So the invariant is stated
+  directly now — `test_every_driver_module_that_imports_also_registers` — and verified by
+  recreating the emptied registry: the old comparison passes, the new guard fails naming
+  all three.
+
+  And `tests/conftest.py` gains an autouse guard beside the home-directory one, for the
+  same reason it exists: the failure lands arbitrarily far from its cause. It asserts the
+  registry is the same object and has lost no keys, so the test that breaks it is the test
+  that reports it. Planted a swapping test and watched it be named. 930 green, five
+  shuffled seeds green, ruff and mypy clean.

@@ -90,6 +90,46 @@ def _no_writes_to_the_home_directory(tmp_path: Path, monkeypatch: pytest.MonkeyP
     _redirect(monkeypatch, tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _the_driver_registry_survives_this_test():
+    """Name the test that breaks driver registration, at the moment it breaks it.
+
+    `drivers.base._REGISTRY` is a module-level dict that drivers write into as an *import*
+    side effect, and `services.bodies.available()` imports them lazily. Both halves are
+    fine alone. Together they mean the registry can only ever be filled once per process:
+    the modules land in `sys.modules`, and no later call re-imports them.
+
+    So a test that swaps the object — `monkeypatch.setattr(base, "_REGISTRY", dict(...))`
+    — takes every registration that happens inside its window into a dict that is thrown
+    away on teardown, and `available()` returns `()` for the rest of the session. That is
+    not a hypothetical: a fixture in `test_driver_arguments.py` did exactly this, and
+    because pytest runs files alphabetically nobody saw it until the order was shuffled.
+    The casualties were two *safety* tests in `test_bodies.py` — physical bodies being
+    refused by default — which lost their subject and, under the repaired `discover()`,
+    would have skipped rather than failed.
+
+    Checked here rather than left to the tests that suffer, because the failure lands
+    arbitrarily far from its cause and reads as a bug in whatever ran next. Same reasoning
+    as the home-directory guard above: state shared across a suite needs a check where it
+    cannot be forgotten, not care from whoever writes the next fixture.
+    """
+    from tendon.drivers import base as driver_base
+
+    registry = driver_base._REGISTRY
+    before = set(registry)
+
+    yield
+
+    assert driver_base._REGISTRY is registry, (
+        "this test replaced drivers.base._REGISTRY with a different object. Registrations "
+        "made while it was in place are gone, the driver modules are already in "
+        "sys.modules so they will not register again, and available() is empty for the "
+        "rest of the session. Use monkeypatch.setitem to add a driver instead."
+    )
+    lost = before - set(driver_base._REGISTRY)
+    assert not lost, f"this test left {sorted(lost)} unregistered"
+
+
 #: Carried from sessionfinish to unconfigure, which is not handed the status.
 _EXIT_STATUS: int | None = None
 
