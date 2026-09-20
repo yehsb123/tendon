@@ -83,6 +83,78 @@ def video_schema(body) -> tuple[tuple[str, ...], tuple[int, int]]:
     return tuple(frames), (height, width)
 
 
+def recorded_streams(directory: Path) -> list[str] | None:
+    """Feature names already in a LeRobot store, or None when they cannot be read.
+
+    `meta/info.json` and nothing else, so this can run before anything expensive: before a
+    checkpoint is fetched, and before a body moves.
+
+    None rather than an empty list when the file is missing or unreadable. "This store
+    records no cameras" and "I could not tell" lead a reader to opposite conclusions, and
+    only the first is worth acting on.
+    """
+    import json
+
+    try:
+        info = json.loads((directory / "meta" / "info.json").read_text(encoding="utf-8"))
+        return list(info["features"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def check_camera_schema(console: Console, root: Path | None, loaded, cameras: tuple[str, ...]):
+    """Refuse a run whose video would not fit the store it is about to be written to.
+
+    A LeRobot dataset's feature schema is fixed when the dataset is created. Adding a
+    camera to a store that has episodes without one makes every `add_frame` raise, and the
+    recorder is a bus subscriber, so it dies at step 0 and the run continues to completion
+    recording nothing.
+
+    Found by following this project's own advice. `tendon run` prints "no video: ... has
+    scene, wrist and is rendering none. --driver-arg render_cameras=wrist to record one",
+    the store already held 26 episodes recorded without cameras, and the suggested flag
+    produced:
+
+        subscriber recorder died at step 0: ValueError: Feature mismatch in `frame`
+        dictionary: Extra features: {'observation.images.wrist'}
+
+    after sixty steps of motion. **The tool suggested the flag that breaks against the
+    store the tool had just filled.**
+
+    Checked here for the same reason `bodies.py` checks a physical body before
+    constructing it: deciding whether a run can be recorded does not require running it,
+    and finding out afterwards costs an episode that looked normal and kept nothing.
+    """
+    import typer
+
+    if root is None:
+        return
+
+    directory = root / loaded.ref.replace("/", "__")
+    streams = recorded_streams(directory)
+    if streams is None:
+        # No store yet, or one that cannot be read. A new dataset takes whatever schema
+        # this run gives it, which is the case that always works.
+        return
+
+    stored = {name.removeprefix("observation.images.") for name in streams if ".images." in name}
+    asked = set(cameras)
+    if stored == asked:
+        return
+
+    console.print("[red]this store already holds episodes with a different camera set.[/red]")
+    console.print(
+        f"[dim]{escape(str(directory))} records {sorted(stored) or 'no cameras'}; "
+        f"this run would record {sorted(asked) or 'no cameras'}.[/dim]"
+    )
+    console.print(
+        "[dim]A dataset's features are fixed when it is created, so the recorder would "
+        "die on the first frame and the run would keep nothing. Use --store with a new "
+        "path, or match the cameras this store was made with.[/dim]"
+    )
+    raise typer.Exit(code=1)
+
+
 def attach_recorder(console: Console, bus, loaded, store: str, body=None):
     """Subscribe a recorder to the step bus, or say why nothing is being recorded.
 

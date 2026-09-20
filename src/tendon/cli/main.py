@@ -249,6 +249,7 @@ def run(
     recorder, root = observers.attach_recorder(console, bus, loaded, store, body)
     if recorder is not None:
         cameras, frame_size = observers.video_schema(body)
+        observers.check_camera_schema(console, root, loaded, cameras)
         reporting.report_video(console, cameras, capability, driver)
         recorder.start(loaded.ref, capability, cameras=cameras, frame_size=frame_size)
 
@@ -826,25 +827,6 @@ def _ensure_writable(console: Console, destination: Path) -> None:
             probe.unlink()
 
 
-def _recorded_streams(directory: Path) -> list[str] | None:
-    """Feature names in a LeRobot store, or None when they cannot be read.
-
-    `meta/info.json` and nothing else: this runs before the decision to spend minutes on a
-    checkpoint, so it must not need torch, LeRobot, or a single frame off disk.
-
-    None rather than an empty list when the file is missing or unreadable, because "this
-    store records no cameras" and "I could not tell" lead a reader to opposite conclusions,
-    and the second one is not worth a warning.
-    """
-    import json
-
-    try:
-        info = json.loads((directory / "meta" / "info.json").read_text(encoding="utf-8"))
-        return list(info["features"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-
-
 @app.command()
 def train(
     skill: str,
@@ -929,7 +911,7 @@ def train(
     # vision-language-action policy cannot be trained on it. Stated rather than refused —
     # this reads `meta/info.json` and cannot know what any given base policy consumes, and
     # a state-only policy trains on exactly this data.
-    streams = _recorded_streams(directory)
+    streams = observers.recorded_streams(directory)
     if streams is not None:
         cameras = [name for name in streams if name.startswith("observation.images.")]
         if cameras:
@@ -1070,6 +1052,7 @@ def evaluate_skill(
     # the same size throughout, and `render()` costs a frame each time it is called.
     cameras, frame_size = observers.video_schema(body)
     if recorder is not None:
+        observers.check_camera_schema(console, root, loaded, cameras)
         reporting.report_video(console, cameras, capability, driver)
 
     outcomes: list[EpisodeOutcome] = []

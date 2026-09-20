@@ -3691,3 +3691,27 @@ where confidence is going to come from.
   no `record`/`recording` field or parameter on the `Scheduler`, and every `if` guarding
   the bus publish mentions the bus. Both halves verified by planting — a `recording: bool`
   field, and a non-bus guard on the publish. 1012 green, ruff and mypy clean.
+- **B — the tool suggested the flag that breaks against the store the tool had just
+  filled.** Went to train an adapter, so the threshold table would have real data instead
+  of my prediction that it would fill in. Recording the episodes needed video, so I
+  followed `tendon run`'s own suggestion:
+
+      no video: mujoco:so_arm100_cube has scene, wrist and is rendering none.
+      --driver-arg render_cameras=wrist to record one.
+
+  Sixty steps later: `subscriber recorder died at step 0: ValueError: Feature mismatch in
+  'frame' dictionary: Extra features: {'observation.images.wrist'}`. A LeRobot dataset's
+  schema is fixed at creation, the store held 26 episodes recorded without cameras, and
+  the recorder is a bus subscriber — so it dies on the first frame while the run completes
+  looking normal and keeps nothing. Confirmed by recording the same thing into a fresh
+  store, which works and writes the mp4.
+
+  `observers.check_camera_schema` now compares the store's declared streams against what
+  this run will render, before the body moves — the rule `bodies.py` already argues for
+  physical bodies. Both directions, since a store made *with* a camera and a run rendering
+  none fails the same way. It names what the store has, what the run would write, and
+  `--store`. `run` and `eval` both call it; a test asserts both do and that the call comes
+  before `recorder.start`.
+
+  `_recorded_streams` was duplicated in `main.py` for `train`; there is one now in
+  `observers.py`. 1023 green, ruff and mypy clean.
