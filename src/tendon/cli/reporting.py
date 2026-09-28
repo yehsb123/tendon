@@ -300,7 +300,16 @@ def report_threshold_outcomes(console: Console, records) -> None:
     every episode this machine has recorded. A table of zeroes there would be the most
     confident-looking wrong answer available.
     """
-    from tendon.services.progress import threshold_curve
+    from tendon.services.progress import approved_without_correcting, threshold_curve
+
+    waved, handovers = approved_without_correcting(records)
+    if handovers:
+        console.print()
+        console.print(
+            f"[dim]{waved} of {handovers} handovers were approved without a correction. "
+            f"That is what asking cost at the threshold these actually ran under - a fact "
+            f"about that threshold, not a number the table below can move.[/dim]"
+        )
 
     curve = threshold_curve(records)
     if not curve:

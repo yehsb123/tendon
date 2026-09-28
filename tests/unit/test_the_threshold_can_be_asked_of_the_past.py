@@ -240,3 +240,73 @@ def test_a_higher_threshold_never_asks_less() -> None:
 
     assert asks == sorted(asks), f"{asks} is not non-decreasing in the threshold"
     assert asks[0] < asks[-1], "and the candidates have to actually separate the episodes"
+
+
+# ------------------------------------------------------- the other cost, and the ADR
+
+
+def test_a_handover_the_operator_waved_through_is_counted() -> None:
+    """What asking cost, which the curve above cannot see.
+
+    An episode where a handover happened and the operator approved unchanged is attention
+    spent on a motion that was fine. `corrections == 0` beside `interventions > 0` is
+    exactly that.
+    """
+    from tendon.services.progress import approved_without_correcting
+
+    records = (
+        _record(episode_id="waved", interventions=2, corrections=0),
+        _record(episode_id="fixed", interventions=1, corrections=1),
+        _record(episode_id="clean", interventions=0, corrections=0),
+    )
+
+    assert approved_without_correcting(records) == (1, 2)
+
+
+def test_an_episode_with_no_handover_is_in_neither_count() -> None:
+    """It is the curve's material, not this one's. Counting it here would make every quiet
+    run look like a wasted ask."""
+    from tendon.services.progress import approved_without_correcting
+
+    assert approved_without_correcting([_record(interventions=0)]) == (0, 0)
+
+
+def test_the_two_halves_are_read_from_different_episodes() -> None:
+    """The distinction ADR 0003's postscript got backwards, asserted on one set of records.
+
+    Its sentence read "a property of what goes wrong when you do not [ask], which is only
+    visible in episodes where somebody took over" — and those are opposite sets. If
+    somebody took over, you asked.
+    """
+    from tendon.services.progress import approved_without_correcting
+
+    unasked = _record(episode_id="ran-alone", lowest_confidence=0.9, succeeded=False)
+    asked = _record(episode_id="handed-over", lowest_confidence=0.1, interventions=1)
+
+    (point,) = threshold_curve((unasked, asked), thresholds=[0.5])
+    waved, handovers = approved_without_correcting((unasked, asked))
+
+    assert point.would_not_ask == 1 and point.would_ask == 0, "the curve sees only the unasked"
+    assert handovers == 1, "and this sees only the one that was asked"
+
+
+def test_the_decision_record_names_the_episodes_the_code_reads() -> None:
+    """Doc and code agree about which episodes answer which half.
+
+    Not a substring search for the old sentence: the postscript now quotes it in order to
+    correct it, so its presence proves nothing either way. What is asserted is that the
+    document names the filter the code actually applies, and states the contradiction it
+    is fixing.
+    """
+    from pathlib import Path
+
+    adr = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "decisions"
+        / "0003-confidence-has-no-upstream-source.md"
+    ).read_text(encoding="utf-8")
+
+    assert "If somebody took over, you asked." in adr, "the correction has to be stated"
+    assert "interventions == 0" in adr, "and name the episodes threshold_curve reads"
+    assert "interventions > 0 and corrections == 0" in adr, "and the ones the other half reads"

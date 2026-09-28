@@ -103,10 +103,13 @@ threshold  asks on
 0.3             0%
 ```
 
-Which one is right is not answerable from a measurement: it depends on what goes wrong when
-nobody is asked, and that is visible only in episodes where somebody took over. ADR 0003
-keeps that in v0.3. What the table gives you is the half that was never in anyone's hands —
-what each choice costs in interruptions.
+Which one is right is not answerable from this measurement: it depends on what goes wrong
+when nobody is asked, and that is visible in episodes that ran *unasked* — beside the score
+they ran at and whether they succeeded. `tendon progress` computes it once such episodes
+exist, and says so plainly while they do not. ADR 0003 keeps the decision in v0.3.
+
+What the table above gives you is the other half — what each choice costs in interruptions,
+measured on predictions rather than outcomes.
 
 **And the uncertainty is a stand-in.** It is placed at a point in joint space so the loop
 has something to hand over about — a placeholder for whatever makes a real model unsure, an

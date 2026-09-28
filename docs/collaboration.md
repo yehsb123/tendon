@@ -3715,3 +3715,27 @@ where confidence is going to come from.
 
   `_recorded_streams` was duplicated in `main.py` for `train`; there is one now in
   `observers.py`. 1023 green, ruff and mypy clean.
+- **B — ADR 0003's postscript contradicted itself, and my code had quietly picked a side.**
+  Went to check whether the README needed a line about the new threshold table and found
+  the sentence the whole milestone rests on:
+
+  > A property of what goes wrong when you do not [ask], which is only visible in episodes
+  > where somebody took over and what happened after.
+
+  **If somebody took over, you asked.** What goes wrong when you do not ask cannot be
+  observed in an episode where you did. `threshold_curve` follows the first clause —
+  `interventions == 0` — and the document names the opposite set, so the code and the
+  reasoning it cites disagreed about which episodes answer the question.
+
+  Corrected in the postscript, where this decision already keeps its own amendments, and
+  split into the two costs that are actually visible in different places: *not asking when
+  it should have* from unasked episodes (the counterfactual, which a curve can be drawn
+  from), and *asking when it need not have* from handovers the operator approved unchanged
+  — `interventions > 0 and corrections == 0`, a fact about the threshold that ran and not
+  projectable onto any other. `progress.approved_without_correcting` computes the second,
+  and `tendon progress` prints it above the table saying exactly that.
+
+  The test does not grep for the old sentence — the postscript now quotes it in order to
+  correct it, so its presence proves nothing. It asserts the document names the filter the
+  code applies, and that one set of records feeds each half to a different function.
+  1027 green, ruff and mypy clean.

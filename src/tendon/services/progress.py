@@ -45,6 +45,7 @@ __all__ = [
     "EpisodeRecord",
     "ThresholdPoint",
     "append",
+    "approved_without_correcting",
     "history",
     "progress_path",
     "threshold_curve",
@@ -278,6 +279,27 @@ class ThresholdPoint:
         if not self.judged_unasked:
             return None
         return self.succeeded_unasked / self.judged_unasked
+
+
+def approved_without_correcting(records: Sequence[EpisodeRecord]) -> tuple[int, int]:
+    """Handovers the operator waved through, and handovers in total.
+
+    The other cost of a threshold, and the one `threshold_curve` cannot see. That curve
+    answers *what does it cost not to ask* from episodes that ran unasked. This answers
+    *what did asking cost* — an operator's attention spent on a motion they then approved
+    unchanged.
+
+    **Not a counterfactual, and it must not be read as one.** It is a fact about the
+    threshold that was actually in force. What an operator would have said about a
+    handover that never happened is not in any log, and a number projected onto another
+    threshold here would be invention.
+
+    ADR 0003's postscript used to name only this half, and it is the half a curve cannot
+    be drawn from.
+    """
+    handovers = [record for record in records if record.interventions > 0]
+    waved = sum(1 for record in handovers if record.corrections == 0)
+    return waved, len(handovers)
 
 
 def threshold_curve(

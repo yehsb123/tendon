@@ -108,9 +108,28 @@ outcomes:
 - **A scale.** How much disagreement is *typical* for this policy on this body. A property
   of the policy and the body, measured by running them and looking at the distribution. No
   labels, no operator, no episodes. `services/calibration.py` and `tendon calibrate`.
-- **A threshold.** How much disagreement means *ask for help*. A property of what goes
-  wrong when you do not, which is only visible in episodes where somebody took over and
-  what happened after. Still v0.3, still this decision as written.
+- **A threshold.** How much disagreement means *ask for help*. Still v0.3, still this
+  decision as written. The sentence that used to stand here said it was "a property of
+  what goes wrong when you do not [ask], which is only visible in episodes where somebody
+  took over" — and those are opposite sets. **If somebody took over, you asked.** What
+  goes wrong when you do not ask cannot be observed in an episode where you did.
+
+  Two costs, visible in different episodes:
+
+  - **Not asking when it should have.** A failure nobody was given the chance to prevent.
+    Visible only in episodes that ran *unasked* — `interventions == 0` — beside the score
+    they ran at and whether they succeeded. This is the counterfactual:
+    `progress.threshold_curve` reads those episodes and asks, at each candidate, which
+    would have been stopped and how many of the rest still met the skill's criteria.
+  - **Asking when it need not have.** An operator's attention spent on a motion that was
+    fine. Visible in episodes where a handover *did* happen and the operator approved
+    without correcting — `interventions > 0 and corrections == 0`. Not a counterfactual
+    and not available at other thresholds: it is a fact about the one that actually ran.
+
+  Naming only the second is what the old sentence did, and it is the half that cannot be
+  projected onto a threshold nobody used. The first half is the one a curve can be drawn
+  from, and it is the one that was missing — not for want of operators, but because the
+  score at each step was not being written down at all.
 
 The cost of conflating them was concrete: `estimate_from_samples` takes a
 `reference_spread` that every caller had to supply and none could measure, so `api/app.py`
