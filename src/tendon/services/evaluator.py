@@ -235,11 +235,22 @@ def judge_result(loaded, result) -> bool | None:
     read is ground truth it can learn to use, and that works in simulation and fails on
     hardware that has none.
 
-    None when the skill declares no criteria, or when the body cannot report the quantity
-    they need. Not False — those are opposite claims about what happened.
+    None when the skill declares no criteria, when the body cannot report the quantity
+    they need, or when the episode never took a step. Not False — those are opposite
+    claims about what happened.
+
+    **An episode with no steps has not failed the task; it has not attempted it.** With
+    zero steps `final_world` is the world as the scene was reset, so judging it judges the
+    setup. This is not hypothetical: a trained adapter raised its own hand at step 0 with
+    no operator attached, the episode stopped — correctly — and was logged `succeeded:
+    false` against a cube it had never been given a chance to lift. That verdict lands on
+    the success rate this whole project is judged by.
     """
     criteria = [SuccessCriterion.parse(name, value) for name, value in loaded.success_criteria]
     if not criteria:
+        return None
+
+    if getattr(result, "steps", 0) <= 0:
         return None
 
     verdict, _ = judge(getattr(result, "final_world", {}) or {}, criteria)

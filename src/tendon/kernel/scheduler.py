@@ -185,6 +185,16 @@ class EpisodeResult:
     subscriber_failures: tuple[SubscriberFailure, ...] = ()
     records: list[StepRecord] = field(default_factory=list)
 
+    #: Every confidence the deliberation tier weighed against the threshold, in order.
+    #:
+    #: Not the same set as the confidences on `records`, and the difference matters twice.
+    #: After a handover the steps carry the *operator's* replacement intent, which the
+    #: threshold never saw — including it would credit a person's certainty to the policy.
+    #: And an episode that hands over at step zero produces no records at all, so a set
+    #: derived from steps would be empty precisely when the policy's own uncertainty is
+    #: the entire story.
+    proposed: list[Confidence] = field(default_factory=list)
+
     @property
     def lowest_confidence(self) -> float | None:
         """The least sure this policy was at any point, or None if nothing measured it.
@@ -194,10 +204,15 @@ class EpisodeResult:
         threshold T" is exactly `lowest_confidence < T`. Everything else about the run is
         irrelevant to that question.
 
-        Only scores something actually measured are considered — `measured_confidence`
-        returns None for `ConfidenceSource.NONE`, and a default dressed as an observation
-        would drag the minimum down and make every threshold look like it would have
-        fired.
+        Read from `proposed` rather than from `records`, which is the correction a real
+        run forced. A trained adapter on `smolvla_base` raised its own hand at step 0 and
+        the episode stopped with nobody attached — the right behaviour, and it logged
+        `steps=0, lowest_confidence=None`. The score that made the decision was measured,
+        acted on, and not written down, because it never reached a step.
+
+        Only scores something actually measured are counted: a `ConfidenceSource.NONE`
+        carries a default, and a default dressed as an observation would drag the minimum
+        down and make every threshold look like it would have fired.
 
         Whether the *outcome* beside it is usable as a counterfactual is a separate
         question, answered by `interventions`: an episode a human took over is an episode
@@ -205,9 +220,9 @@ class EpisodeResult:
         nothing about what would have happened had nobody been asked.
         """
         measured = [
-            record.measured_confidence
-            for record in self.records
-            if record.measured_confidence is not None
+            confidence.score
+            for confidence in self.proposed
+            if confidence.source is not ConfidenceSource.NONE
         ]
         return min(measured) if measured else None
 
@@ -298,6 +313,10 @@ class Scheduler:
                     self.on_intent(observation, intent)
 
             # ---- deliberation tier: is this worth handing over before it executes?
+            # Kept before the decision, not after it. Whatever the threshold is compared
+            # against is what a later threshold has to be compared against too, and an
+            # episode that stops here is the one where that number matters most.
+            result.proposed.append(intent.confidence)
             if should_raise(intent.confidence, self.confidence_threshold):
                 outcome = self._hand_over(
                     machine, InterruptReason.LOW_CONFIDENCE, intent, observation, result

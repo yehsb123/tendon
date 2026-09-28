@@ -49,72 +49,36 @@ def _record(**overrides) -> EpisodeRecord:
 # ------------------------------------------------------------------ the number itself
 
 
-def test_the_lowest_score_across_an_episode_is_what_is_kept() -> None:
-    """A chunk's score repeats across its steps, so an episode has many; the threshold
-    only ever meets the smallest."""
-    from tendon.kernel.scheduler import EpisodeResult, StepRecord
-    from tendon.kernel.types import (
-        Action,
-        ActionSpace,
-        Confidence,
-        ConfidenceSource,
-        Observation,
-        Proprioception,
-    )
+def _proposed(*scores) -> object:
+    """An episode result carrying the confidences the deliberation tier weighed.
 
-    def step(score: float, source: ConfidenceSource) -> StepRecord:
-        action = Action(space=ActionSpace.JOINT_POSITION, values=[0.0])
-        return StepRecord(
-            step=0,
-            observation=Observation(step=0, proprio=Proprioception(joint_positions=(0.0,))),
-            commanded=action,
-            applied=action,
-            confidence=Confidence(score=score, source=source),
-        )
+    Built from `proposed` rather than from `records`, which is the correction a real run
+    forced: the threshold is compared against what the *policy* proposes, and after a
+    handover the steps belong to an operator's replacement that the threshold never saw.
+    """
+    from tendon.kernel.scheduler import EpisodeResult
+    from tendon.kernel.types import Confidence, ConfidenceSource
 
     result = EpisodeResult(episode_id="x")
-    result.records = [
-        step(0.9, ConfidenceSource.CHUNK_VARIANCE),
-        step(0.2, ConfidenceSource.CHUNK_VARIANCE),
-        step(0.7, ConfidenceSource.CHUNK_VARIANCE),
+    result.proposed = [
+        Confidence(score=score, source=source or ConfidenceSource.CHUNK_VARIANCE)
+        for score, source in scores
     ]
+    return result
 
-    assert result.lowest_confidence == pytest.approx(0.2)
+
+def test_the_lowest_score_across_an_episode_is_what_is_kept() -> None:
+    """One `predict` per chunk, so an episode proposes many; the threshold only ever meets
+    the smallest."""
+    assert _proposed((0.9, None), (0.2, None), (0.7, None)).lowest_confidence == pytest.approx(0.2)
 
 
 def test_an_unmeasured_score_does_not_drag_the_minimum_down() -> None:
     """`ConfidenceSource.NONE` carries a default, not an observation. Counting it would put
     every episode at the bottom of every threshold comparison."""
-    from tendon.kernel.scheduler import EpisodeResult, StepRecord
-    from tendon.kernel.types import (
-        Action,
-        ActionSpace,
-        Confidence,
-        ConfidenceSource,
-        Observation,
-        Proprioception,
-    )
+    from tendon.kernel.types import ConfidenceSource
 
-    action = Action(space=ActionSpace.JOINT_POSITION, values=[0.0])
-    observation = Observation(step=0, proprio=Proprioception(joint_positions=(0.0,)))
-
-    result = EpisodeResult(episode_id="x")
-    result.records = [
-        StepRecord(
-            step=0,
-            observation=observation,
-            commanded=action,
-            applied=action,
-            confidence=Confidence(score=0.0, source=ConfidenceSource.NONE),
-        ),
-        StepRecord(
-            step=1,
-            observation=observation,
-            commanded=action,
-            applied=action,
-            confidence=Confidence(score=0.6, source=ConfidenceSource.CHUNK_VARIANCE),
-        ),
-    ]
+    result = _proposed((0.0, ConfidenceSource.NONE), (0.6, None))
 
     assert result.lowest_confidence == pytest.approx(0.6)
 
@@ -123,6 +87,55 @@ def test_an_episode_nothing_scored_has_no_lowest() -> None:
     from tendon.kernel.scheduler import EpisodeResult
 
     assert EpisodeResult(episode_id="x").lowest_confidence is None
+
+
+def test_an_episode_that_handed_over_before_its_first_step_still_has_its_score() -> None:
+    """The case a real run produced and the old shape lost.
+
+    A trained adapter on `smolvla_base` raised its own hand at step 0. Nobody was
+    attached, so the episode stopped — the right behaviour — and logged `steps=0`. With
+    `lowest_confidence` derived from step records there were none, so the score that made
+    the decision went unrecorded: measured, acted on, and absent from the one table it
+    exists to fill.
+    """
+    from tendon.kernel.scheduler import EpisodeResult
+
+    result = _proposed((0.12, None))
+    assert isinstance(result, EpisodeResult)
+    assert result.steps == 0
+    assert result.records == []
+    assert result.lowest_confidence == pytest.approx(0.12)
+
+
+def test_a_replacement_an_operator_supplied_is_not_the_policys_own_score() -> None:
+    """`proposed` holds what the threshold was compared against. Steps after a handover
+    carry the operator's intent, and crediting their certainty to the policy would move
+    every threshold in the flattering direction."""
+    from tendon.kernel.scheduler import EpisodeResult, StepRecord
+    from tendon.kernel.types import (
+        Action,
+        ActionSpace,
+        Confidence,
+        ConfidenceSource,
+        Observation,
+        Proprioception,
+    )
+
+    result = _proposed((0.2, None))
+    assert isinstance(result, EpisodeResult)
+
+    action = Action(space=ActionSpace.JOINT_POSITION, values=[0.0])
+    result.records = [
+        StepRecord(
+            step=0,
+            observation=Observation(step=0, proprio=Proprioception(joint_positions=(0.0,))),
+            commanded=action,
+            applied=action,
+            confidence=Confidence(score=0.99, source=ConfidenceSource.CHUNK_VARIANCE),
+        )
+    ]
+
+    assert result.lowest_confidence == pytest.approx(0.2), "the operator's 0.99 is not the policy's"
 
 
 # ------------------------------------------------------------------- across the disk

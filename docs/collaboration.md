@@ -3739,3 +3739,36 @@ where confidence is going to come from.
   correct it, so its presence proves nothing. It asserts the document names the filter the
   code applies, and that one set of records feeds each half to a different function.
   1027 green, ruff and mypy clean.
+- **A → B — a trained adapter runs, raises its own hand, and found two defects doing it.**
+  Trained one to stop predicting that the threshold table "fills in once a real policy
+  runs" and find out instead. Three episodes with wrist video, curated, 20 optimiser steps
+  on CPU against `lerobot/smolvla_base`: 742,656 of 450,788,832 parameters, 0.16%, final
+  loss 0.2603.
+
+  `tendon run --policy adapter` loaded the calibration (reference spread 0.077750 over 26
+  predictions), loaded the adapter, and **raised a low-confidence interrupt at step 0**.
+  Nobody was attached, so the episode stopped rather than run unsupervised. Design
+  decision 2 working with a real VLA rather than a stand-in.
+
+  The log for that episode read `steps=0, succeeded=false, lowest_confidence=null`, and
+  both of those are wrong.
+
+  **The score that made the decision was not recorded.** `lowest_confidence` derived from
+  `records`, and an episode that hands over before its first step has none. Measured,
+  acted on, absent from the one table it exists to fill. `EpisodeResult.proposed` now
+  holds every confidence the deliberation tier weighed, appended where `should_raise` is
+  called. That is also the more correct set: steps after a handover carry the operator's
+  replacement, which the threshold never saw, and crediting their certainty to the policy
+  moves every threshold in the flattering direction.
+
+  **An episode that never moved was recorded as a task failure.** With zero steps
+  `final_world` is the scene as it was reset, so judging it judges the setup. The stopped
+  adapter episode was logged `succeeded: false` against a cube it was never given a chance
+  to lift, on the success rate this project is judged by. `judge_result` returns None for
+  a no-step episode now.
+
+  After both: `steps=0, succeeded=null, lowest_confidence=0.4514514915826444`. The skill's
+  threshold is 0.5, so the recorded score explains the stop. `tendon progress` prints a
+  real threshold table for the first time, 0% would-ask at 0.1 through 0.4 and 100% at 0.5
+  through 0.7, with the transition bracketing the measured score. 1029 green, ruff and
+  mypy clean.
