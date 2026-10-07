@@ -141,7 +141,17 @@ def check_force(measured: list[float] | None, limits: SafetyLimits) -> SafetyVer
             unchecked=("max_force: body reports no force sensing",),
         )
 
-    peak = max((abs(f) for f in measured), default=0.0)
+    # An empty list used to fall through to `max(..., default=0.0)` and come back allowed
+    # with nothing in `unchecked`: a force check that read no force and reported passing.
+    # That is the inconsistent coverage the docstring above says is worse than none.
+    # Found by mutation testing, where changing that default survived every test.
+    if not measured:
+        return SafetyVerdict(
+            allowed=True,
+            unchecked=("max_force: body reported no force readings this step",),
+        )
+
+    peak = max(abs(f) for f in measured)
     if peak > limits.max_force:
         return SafetyVerdict(
             allowed=False,

@@ -207,6 +207,85 @@ def test_no_force_limit_means_nothing_to_check() -> None:
     assert not verdict.unchecked
 
 
+def test_an_empty_force_reading_is_reported_not_passed() -> None:
+    """Nothing measured is not the same as nothing over the limit."""
+    verdict = check_force([], SafetyLimits(max_force=0.5))
+
+    assert verdict.allowed
+    assert any("max_force" in u for u in verdict.unchecked), (
+        "an empty reading came back as a passed check with nothing unchecked"
+    )
+
+
+# ------------------------------------------------------------ values, not only verdicts
+#
+# Added after mutation testing this module with cosmic-ray. Every test above asserted a
+# verdict, and every position-mode test started from a previous pose of 0.0. From zero,
+# `now - was` and `now + was` are the same number, so velocity derivation and the clamp
+# could have added instead of subtracting and nothing here would have failed. The
+# workspace tests asserted that something was refused, never which axis, so the ceiling
+# comparison could be inverted: the breach just moved to another axis.
+
+FROM = pos(0.5, -0.2)
+DT = CheckContext(previous=FROM, dt_s=0.1)
+
+
+def test_position_velocity_is_the_difference_from_the_previous_pose() -> None:
+    # 0.05 rad in 0.1 s on the first joint: 0.5 rad/s, under the 1.0 limit.
+    assert check(pos(0.55, -0.2), VEL_LIMIT, DT).allowed
+
+    # 0.2 rad in 0.1 s: 2.0 rad/s, and the message carries that number.
+    verdict = check(pos(0.7, -0.2), VEL_LIMIT, DT)
+    assert verdict.violated == ("max_joint_velocity: 2.0000 > 1.0000 [rad/s]",)
+
+
+def test_position_clamp_moves_from_the_previous_pose_not_from_zero() -> None:
+    # Deltas (0.2, 0.1) over 0.1 s peak at 2.0 rad/s; halving them lands on the ceiling.
+    verdict = check(pos(0.7, -0.1), VEL_LIMIT, DT)
+
+    assert verdict.clamped is not None
+    assert verdict.clamped.values == pytest.approx([0.6, -0.15])
+    assert check(verdict.clamped, VEL_LIMIT, DT).allowed
+
+
+def test_a_pose_inside_the_box_is_allowed() -> None:
+    """The case an inverted comparison fails, and no test had."""
+    verdict = check(ee_abs(0.1, -0.1, 0.3), BOX)
+
+    assert verdict.allowed
+    assert not verdict.violated
+
+
+def test_a_ceiling_breach_names_its_axis_and_value() -> None:
+    verdict = check(ee_abs(0.0, 0.45, 0.2), BOX)
+
+    assert verdict.violated == ("workspace: y=0.4500 > 0.4000 [m]",)
+
+
+def test_a_pose_exactly_on_the_bounds_is_allowed() -> None:
+    """Strict comparisons on both sides. On the boundary is inside the box."""
+    assert check(ee_abs(0.4, -0.4, 0.5), BOX).allowed
+    assert check(ee_abs(-0.4, 0.4, 0.0), BOX).allowed
+
+
+def test_a_delta_pose_is_added_to_the_current_position() -> None:
+    ctx = CheckContext(ee_position=(0.1, 0.0, 0.2))
+
+    inside = Action(space=ActionSpace.EE_DELTA_POSE, values=[0.25, 0, 0, 0, 0, 0])
+    assert check(inside, BOX, ctx).allowed, "0.1 + 0.25 = 0.35 is inside a 0.4 box"
+
+    outside = Action(space=ActionSpace.EE_DELTA_POSE, values=[0.35, 0, 0, 0, 0, 0])
+    assert check(outside, BOX, ctx).violated == ("workspace: x=0.4500 > 0.4000 [m]",)
+
+
+def test_a_short_delta_pose_is_unchecked_rather_than_misread() -> None:
+    ctx = CheckContext(ee_position=(0.1, 0.0, 0.2))
+    verdict = check(Action(space=ActionSpace.EE_DELTA_POSE, values=[0.1, 0.1]), BOX, ctx)
+
+    assert verdict.allowed
+    assert any("workspace" in u for u in verdict.unchecked)
+
+
 # ------------------------------------------------------------------------- empty case
 
 
