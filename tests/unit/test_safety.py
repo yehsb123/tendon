@@ -168,7 +168,15 @@ def test_delta_pose_needs_current_position() -> None:
 
 
 def test_no_partial_clamp_when_workspace_also_breached() -> None:
-    """A clamp that fixes one violation and not another invites a caller to trust it."""
+    """A clamp that fixes one violation and not another invites a caller to trust it.
+
+    What this can and cannot show. A velocity clamp needs a joint-space command and a
+    workspace check needs an end-effector pose, so today no single action produces both,
+    and `check()`'s guard against offering a clamp alongside a workspace breach cannot be
+    reached. Mutation testing made that visible: inverting the guard survived. The guard
+    stays for the day a driver supplies forward kinematics. This test asserts the reason
+    `clamped` is None here, so it no longer reads as proof of the guard.
+    """
     limits = SafetyLimits(
         max_joint_velocity=1.0,
         workspace_min=[-0.1, -0.1, 0.0],
@@ -180,6 +188,9 @@ def test_no_partial_clamp_when_workspace_also_breached() -> None:
     verdict = check(action, limits, ctx)
     assert not verdict.allowed
     assert verdict.clamped is None
+    assert any("max_joint_velocity" in u for u in verdict.unchecked), (
+        "no clamp because velocity cannot be derived from a pose, not because of the guard"
+    )
 
 
 # ------------------------------------------------------------------------------ force
@@ -276,6 +287,49 @@ def test_a_delta_pose_is_added_to_the_current_position() -> None:
 
     outside = Action(space=ActionSpace.EE_DELTA_POSE, values=[0.35, 0, 0, 0, 0, 0])
     assert check(outside, BOX, ctx).violated == ("workspace: x=0.4500 > 0.4000 [m]",)
+
+
+def test_a_ceiling_alone_is_still_enforced() -> None:
+    """A skill may bound only one side. The check ran only when the condition read `or`;
+    as `and` it would skip a ceiling-only skill entirely, and every test used both sides."""
+    ceiling_only = SafetyLimits(workspace_max=[0.4, 0.4, 0.5])
+    floor_only = SafetyLimits(workspace_min=[-0.4, -0.4, 0.0])
+
+    assert check(ee_abs(0.0, 0.0, 0.6), ceiling_only).violated == (
+        "workspace: z=0.6000 > 0.5000 [m]",
+    )
+    assert check(ee_abs(0.0, 0.0, -0.1), floor_only).violated == (
+        "workspace: z=-0.1000 < 0.0000 [m]",
+    )
+
+
+def test_a_position_only_pose_is_checked() -> None:
+    """Three values are a position with no orientation, which is enough for a workspace."""
+    position_only = Action(space=ActionSpace.EE_ABS_POSE, values=[0.0, 0.0, 0.6])
+
+    assert check(position_only, BOX).violated == ("workspace: z=0.6000 > 0.5000 [m]",)
+
+
+def test_a_pose_too_short_to_hold_a_position_is_unchecked() -> None:
+    """Two values would otherwise be checked on x and y and reported as checked."""
+    short = Action(space=ActionSpace.EE_ABS_POSE, values=[0.0, 0.9])
+    verdict = check(short, BOX)
+
+    assert verdict.allowed
+    assert any("workspace" in u for u in verdict.unchecked)
+
+
+def test_velocity_with_dt_but_no_previous_pose_is_unchecked() -> None:
+    """Each missing input on its own is enough to make velocity underdetermined."""
+    verdict = check(pos(0.3, 0.0), VEL_LIMIT, CheckContext(previous=None, dt_s=0.1))
+
+    assert verdict.allowed
+    assert any("max_joint_velocity" in u for u in verdict.unchecked)
+
+
+def test_force_exactly_at_the_limit_is_allowed() -> None:
+    """The limit is a ceiling, reached but not exceeded."""
+    assert check_force([10.0], SafetyLimits(max_force=10.0)).allowed
 
 
 def test_a_short_delta_pose_is_unchecked_rather_than_misread() -> None:
