@@ -195,6 +195,9 @@ def attach_recorder(console: Console, bus, loaded, store: str, body=None):
     # `Observation`, and an observation carries frame references rather than frames.
     # `services/` cannot import `drivers/` to go and fetch them, which is why the contract
     # this checks lives in the kernel.
-    renders = body is not None and isinstance(body, RendersFrames)
-    recorder.attach_to(bus, frames=body.render if renders else None)
+    # `isinstance` directly in the condition rather than through a `renders` flag. The flag
+    # read the same, but a type checker cannot carry the narrowing through a variable, and
+    # pyright reported `body.render` as an attribute of None.
+    frames = body.render if isinstance(body, RendersFrames) else None
+    recorder.attach_to(bus, frames=frames)
     return recorder, root

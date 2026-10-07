@@ -255,8 +255,11 @@ class EpisodeSession:
         max_steps: int = 500,
         seed: int | None = None,
         timeout_s: float = _DEFAULT_TIMEOUT_S,
-        before_episode: Callable[[], None] | None = None,
-        after_episode: Callable[[], None] | None = None,
+        # `object`, not `None`: the session never reads what these return, and the two it
+        # is actually given (`recorder.start` and `recorder.finish`) return an episode id
+        # and an `EpisodeMeta`. pyright reported both call sites; mypy accepted them.
+        before_episode: Callable[[], object] | None = None,
+        after_episode: Callable[[], object] | None = None,
         on_resolved: Callable[[InterruptContext, InterruptResolution], None] | None = None,
         on_result: Callable[[EpisodeResult], None] | None = None,
         on_closed: Callable[[], None] | None = None,

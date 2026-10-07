@@ -775,7 +775,10 @@ def create_app(
         holder: dict[str, Any] = {}
 
         def make_policy():
-            if request.policy == "adapter":
+            # Branches on the resolved value rather than repeating the `request.policy`
+            # test that produced it. Equivalent today, and it is one condition instead of
+            # two that have to stay in step.
+            if resolved_adapter is not None:
                 # The same loader the CLI uses, not a second copy. This project has
                 # shipped one bug from two copies of a construction twice, and a policy
                 # built differently here would make a shell session and a `tendon run`

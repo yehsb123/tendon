@@ -84,28 +84,36 @@ def test_no_flag_asked_for_any_of_this(store: Path) -> None:
 # ------------------------------------------------------ and says so accurately
 
 
-def test_the_output_names_where_the_episode_went(store: Path) -> None:
-    """A run that recorded and a run that did not used to print identically."""
-    result = invoke("grasp/cube-sim", "--steps", str(STEPS), "--store", str(store))
+def test_the_output_names_where_the_episode_went(tmp_path: Path) -> None:
+    """A run that recorded and a run that did not used to print identically.
+
+    Its own store, not the shared one. This test writes an episode, and writing it into
+    the module's store made `test_an_episode_appears_in_the_store` pass only when it
+    happened to run first: pytest-randomly found the count at 3 with seed 2683733729.
+    """
+    result = invoke("grasp/cube-sim", "--steps", str(STEPS), "--store", str(tmp_path))
 
     assert result.exit_code == 0, result.output
     assert "recorded to" in result.output
 
 
-def test_a_second_run_appends_rather_than_starting_over(store: Path) -> None:
+def test_a_second_run_appends_rather_than_starting_over(tmp_path: Path) -> None:
     """Three hundred single-episode datasets are not a training set.
 
-    Runs after the fixture's, so the count includes it and every run above.
+    Two runs into a store of its own. This used to append to the shared store and said
+    so ("the count includes it and every run above"), which is an assumption about the
+    order tests run in. The delta it checks never needed the shared store at all.
     """
-    before = list_datasets(store)[0].episodes
-    assert before is not None
+    first = invoke("grasp/cube-sim", "--steps", str(STEPS), "--store", str(tmp_path))
+    assert first.exit_code == 0, first.output
+    before = list_datasets(tmp_path)[0].episodes
+    assert before == 1
 
-    result = invoke("grasp/cube-sim", "--steps", str(STEPS), "--store", str(store))
-    assert result.exit_code == 0, result.output
+    second = invoke("grasp/cube-sim", "--steps", str(STEPS), "--store", str(tmp_path))
+    assert second.exit_code == 0, second.output
 
-    after = list_datasets(store)[0].episodes
-    assert after == before + 1
-    assert len(list_datasets(store)) == 1
+    assert list_datasets(tmp_path)[0].episodes == before + 1
+    assert len(list_datasets(tmp_path)) == 1
 
 
 # ------------------------------------------------------------ and the ref works

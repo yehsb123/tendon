@@ -37,6 +37,7 @@ import random
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
+from tendon.kernel.protocols import Policy
 from tendon.kernel.types import (
     Action,
     ActionSpace,
@@ -237,15 +238,20 @@ class CorrectionMemory:
 
 
 class AdaptivePolicy:
-    """A stochastic policy that reuses what an operator taught it.
+    """Any policy, plus what an operator taught it.
 
     When the body is near a situation that was corrected before, the stored correction is
     returned with high confidence, and no interrupt is raised. That is the mechanism by
     which the intervention rate falls — and it falls only where a human actually
     intervened, which is what makes the resulting graph mean something.
+
+    Typed as the kernel's `Policy`, not `StochasticPolicy`. It only ever calls `name`,
+    `requires`, `reset` and `predict` on what it wraps, and the shell already wraps a
+    `LeRobotPolicy` in it; the narrower annotation described a contract nothing enforced
+    and pyright reported the shell's adapter path as a type error because of it.
     """
 
-    def __init__(self, inner: StochasticPolicy, memory: CorrectionMemory | None = None) -> None:
+    def __init__(self, inner: Policy, memory: CorrectionMemory | None = None) -> None:
         self._inner = inner
         self.memory = memory if memory is not None else CorrectionMemory()
 

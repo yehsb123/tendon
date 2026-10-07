@@ -36,7 +36,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-sim   = ["mujoco>=3.1", "gymnasium>=0.29"]
+# gymnasium was listed here from the first scaffold commit and nothing ever imported it;
+# deptry found it. lerobot depends on gymnasium itself, so [robot] still brings it in.
+sim   = ["mujoco>=3.1"]
 # 0.6.1 is the newest release on PyPI, and the bound said >=0.6.2 for months: a version
 # that does not exist, so `pip install -e ".[robot]"` could not succeed for anyone
 # starting from a clean environment. It went unnoticed because this machine already had
@@ -68,6 +70,11 @@ dev   = [
   # >=1.0 asks for `httpx2`; CI resolves to the newer one, so a machine with an
   # older starlette already installed passes locally and fails there.
   "httpx2",
+  # Every run in a different order, with the seed printed so a failure can be replayed
+  # (`pytest -p randomly --randomly-seed=<seed>`). Its first full run found a test that
+  # passed only because it happened to run before two siblings that wrote to the same
+  # store, after 654 shuffled orderings by a hand-rolled plugin had missed it.
+  "pytest-randomly",
 ]
 all   = ["tendon-os[sim,robot,train,view]"]
 
@@ -124,7 +131,6 @@ ignore_missing_imports = false
 [[tool.mypy.overrides]]
 module = [
     "duckdb.*",
-    "gymnasium.*",
     "huggingface_hub.*",
     "lerobot.*",
     "mujoco.*",

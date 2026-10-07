@@ -47,6 +47,7 @@ from typing import Protocol
 from tendon.kernel import safety
 from tendon.kernel.bus import Bus, SubscriberFailure
 from tendon.kernel.interrupt import (
+    InterruptError,
     InterruptMachine,
     InterruptState,
     should_raise,
@@ -55,7 +56,6 @@ from tendon.kernel.protocols import Driver, MeasuresWorld, Policy, PolicyExhaust
 from tendon.kernel.types import (
     Action,
     Confidence,
-    ConfidenceSource,
     Intent,
     InterruptContext,
     InterruptReason,
@@ -141,7 +141,7 @@ class StepRecord:
         needs to. Handing out a `float | None` instead of a float is how a consumer is kept
         from storing that as a measurement without having to know the story.
         """
-        if self.confidence is None or self.confidence.source is ConfidenceSource.NONE:
+        if self.confidence is None or not self.confidence.is_measured:
             return None
         return self.confidence.score
 
@@ -219,11 +219,7 @@ class EpisodeResult:
         whose trajectory is no longer the policy's, so what happened afterwards says
         nothing about what would have happened had nobody been asked.
         """
-        measured = [
-            confidence.score
-            for confidence in self.proposed
-            if confidence.source is not ConfidenceSource.NONE
-        ]
+        measured = [confidence.score for confidence in self.proposed if confidence.is_measured]
         return min(measured) if measured else None
 
 
@@ -469,7 +465,11 @@ class Scheduler:
                 self.on_intervention(observation, resolution)
 
         if plan.use_correction:
-            assert resolution.correction is not None  # guaranteed by InterruptMachine
+            # An exception rather than `assert`. Under `python -O` the assert disappears and
+            # the loop below fails on `None.actions` with nothing saying why, on the path
+            # that checks an operator's correction against hard limits.
+            if resolution.correction is None:
+                raise InterruptError("resume plan uses a correction the resolution does not carry")
             correction = resolution.correction
             # An operator may correct a policy but may not exceed a hard limit. Checked
             # here so the refusal is reported rather than discovered when the first action

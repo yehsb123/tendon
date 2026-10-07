@@ -32,7 +32,6 @@ from enum import Enum
 
 from tendon.kernel.types import (
     Confidence,
-    ConfidenceSource,
     InterruptContext,
     InterruptReason,
     InterruptResolution,
@@ -101,7 +100,11 @@ def should_raise(confidence: Confidence, threshold: float) -> bool:
     Strictly below, not at or below: a threshold of 0.0 must never fire, or a skill opting
     out of confidence-based handover would interrupt on every step.
     """
-    if confidence.source is ConfidenceSource.NONE:
+    # `is_measured`, not a comparison against NONE written out here. The same rule was
+    # spelled out in three places in the kernel while the property that states it was read
+    # only by tests; a fourth non-measuring source would have been honoured in one place
+    # and missed in the others.
+    if not confidence.is_measured:
         return False
     return confidence.score < threshold
 
@@ -193,7 +196,10 @@ class InterruptMachine:
         if self.state is not InterruptState.PENDING:
             raise InvalidTransition(f"cannot resolve while {self.state.value}")
 
-        assert self.context is not None  # guaranteed by the PENDING invariant
+        # An exception rather than `assert`: `python -O` strips asserts, and this module is
+        # the one place a broken invariant here would be caught at all.
+        if self.context is None:
+            raise InterruptError("pending with no saved context; nothing to resume from")
         self.history.append(resolution)
 
         if resolution.resolution is Resolution.ABORTED:

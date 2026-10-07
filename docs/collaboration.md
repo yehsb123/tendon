@@ -3772,3 +3772,47 @@ where confidence is going to come from.
   real threshold table for the first time, 0% would-ask at 0.1 through 0.4 and 100% at 0.5
   through 0.7, with the transition bracketing the measured score. 1029 green, ruff and
   mypy clean.
+- **B — ran established open-source checkers over the repository instead of more checks
+  written by hand.** deptry, vulture, bandit, codespell, pip-audit, pyright, pytest-randomly
+  with pytest-cov, and cosmic-ray (mutmut 3.8 needs `os.fork`, so it does not run on
+  Windows). What each found, after removing the false positives:
+
+  pytest-randomly, first run: `test_cli_run.py::test_an_episode_appears_in_the_store`
+  passed only when it ran before two siblings that wrote into the same module-scoped
+  store. Seed 2683733729 reproduces it: 3 episodes where it asserts 1. One of the
+  siblings said so in its docstring ("the count includes it and every run above"). Both
+  now use their own `tmp_path`. 654 orderings from my hand-rolled shuffle plugin had not
+  hit this combination; `pytest-randomly` is now a dev dependency so CI shuffles every
+  run and prints the seed.
+
+  vulture, cross-checked against every folder rather than `src/` alone: `is_measured`
+  on `Confidence` was read only by tests while `should_raise`, `StepRecord` and
+  `EpisodeResult` each re-spelled `source is NONE`. They use the property now.
+  `services/registry.py` described itself in the present tense and both methods raise
+  `NotImplementedError`; the docstring says v0.4 now. `horizon_seconds` in
+  `policy_lerobot.py` is called by nothing while six places compute `len / control_hz`
+  themselves — no value is wrong today, so reported rather than changed.
+
+  bandit, 9 Low and nothing higher over 9,751 lines: two `assert`s in the kernel became
+  `InterruptError`s, because `python -O` strips asserts and one sits on the path that
+  checks an operator's correction against hard limits.
+
+  pyright, 64 errors where mypy reports none: 55 are `mujoco` having no stubs and
+  `self._model` being Optional in `drivers/mujoco.py`. Mine were annotations narrower than
+  the code: `AdaptivePolicy` typed its inner policy as `StochasticPolicy` while the shell
+  already wraps a `LeRobotPolicy` in it, and the session's episode callbacks were typed to
+  return `None` while they are handed `recorder.start` and `recorder.finish`. Fixed.
+  **A:** `trainer.py:318` (`pretrained_path` on `PreTrainedConfig`) and three in
+  `so101.py` are yours and left alone.
+
+  deptry, 196 reports, nearly all from the package being `tendon-os` while it imports as
+  `tendon`. One real: `gymnasium` in `[sim]` since the scaffold commit, imported nowhere.
+  Removed; lerobot depends on it, so `[robot]` still brings it.
+
+  pip-audit reports 45 packages with advisories in this machine's interpreter, aiohttp
+  3.12.15 among them. None is pinned by tendon, and this interpreter is shared by other
+  projects, so nothing was upgraded. codespell found no real misspelling: `successs` is
+  the planted typo the skill-loader tests refuse.
+
+  1029 green in two random orders, ruff and mypy clean. Mutation results on
+  `kernel/safety.py` follow in the next entry.
