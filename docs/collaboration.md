@@ -3816,3 +3816,31 @@ where confidence is going to come from.
 
   1029 green in two random orders, ruff and mypy clean. Mutation results on
   `kernel/safety.py` follow in the next entry.
+
+- **B — mutation testing on `kernel/safety.py` (cosmic-ray), 129 surviving mutants down to
+  96, and the 96 accounted for.** Each run in a separate worktree, after checking that
+  `src/` was unmodified and the baseline passed.
+
+  First run, 237 killed of 366. The tests checked verdicts but rarely values: `now - was`
+  turned into `now + was`, a delta pose subtracted instead of added, a ceiling-only
+  workspace skipped entirely (`or` → `and`), a force exactly at the limit refused. None of
+  these failed a test. Tests now assert the violation strings and clamp values
+  (bf0ad07, 120eae2).
+
+  Later runs added the cases that passed by accident. A pose command after a joint
+  command used six values against three, so the length check refused it before the
+  space check was ever reached; with equal lengths, ordering the enum (`>` instead of
+  `is not`) differenced a pose against joint angles. The `CheckContext` frozen flag had
+  no test either.
+
+  The 96 left: 55 change only an annotation (`X | None` under `from __future__ import
+  annotations`), 7 swap `is` for `==` on an enum, 6 flip `strict=` on a `zip` whose
+  lengths are already equal. The other 28 are unreachable or equivalent. `_clamp_velocity`
+  runs only after a peak above a limit that must be `> 0`, so its `peak == 0`, missing
+  `previous`, `dt <= 0` and empty-values guards never fire. Ordering comparisons on
+  `ActionSpace` (a `str` enum) select the same members as `is` once earlier branches
+  have run. The workspace-clears-clamp guard in `check()` is unreachable today: velocity
+  comes only from joint commands, workspace only from pose commands. It stays for when
+  forward kinematics exists.
+
+  1050 green in random order, ruff and mypy clean. **A:** nothing in your files.

@@ -9,6 +9,8 @@ refuses to claim, not only what it catches.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from tendon.kernel.safety import CheckContext, check, check_force
@@ -325,6 +327,74 @@ def test_velocity_with_dt_but_no_previous_pose_is_unchecked() -> None:
 
     assert verdict.allowed
     assert any("max_joint_velocity" in u for u in verdict.unchecked)
+
+
+def test_a_joint_command_stays_unchecked_for_workspace_even_with_a_known_pose() -> None:
+    """Knowing where the end effector is says nothing about where a joint command sends
+    it. A driver that reports `ee_position` every step must not turn joint values into a
+    position by accident."""
+    ctx = CheckContext(ee_position=(0.1, 0.0, 0.2))
+    verdict = check(pos(0.9, 0.9, 0.9), BOX, ctx)
+
+    assert verdict.allowed
+    assert any("workspace" in u for u in verdict.unchecked)
+
+
+def test_a_position_only_delta_pose_is_checked() -> None:
+    ctx = CheckContext(ee_position=(0.1, 0.0, 0.2))
+    delta = Action(space=ActionSpace.EE_DELTA_POSE, values=[0.35, 0.0, 0.0])
+
+    assert check(delta, BOX, ctx).violated == ("workspace: x=0.4500 > 0.4000 [m]",)
+
+
+@pytest.mark.parametrize(
+    "previous",
+    [vel(0.1, 0.1), ee_abs(0.1, 0.0, 0.2)],
+    ids=["after a velocity command", "after a pose command"],
+)
+def test_position_velocity_needs_a_previous_position(previous: Action) -> None:
+    """A velocity or a pose is not a position to subtract from. The command has as many
+    values as the previous one, so the length check cannot be what refuses it."""
+    command = pos(*[0.9] * len(previous.values))
+    verdict = check(command, VEL_LIMIT, CheckContext(previous=previous, dt_s=0.1))
+
+    assert verdict.allowed
+    assert any("max_joint_velocity" in u for u in verdict.unchecked)
+
+
+def test_a_pose_command_has_no_joint_velocity_even_after_a_position() -> None:
+    """Six pose values after six joint values: same length, so only the space can stop a
+    pose from being differenced against joint angles."""
+    previous = pos(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    verdict = check(ee_abs(0.1, 0.0, 0.2), VEL_LIMIT, CheckContext(previous=previous, dt_s=0.1))
+
+    assert verdict.allowed
+    assert any("max_joint_velocity" in u for u in verdict.unchecked)
+
+
+def test_a_context_cannot_be_changed_after_it_is_built() -> None:
+    """One context is read by every check in a step. If a check could rewrite `previous`,
+    the next check would compare against a pose that was never commanded."""
+    ctx = CheckContext(previous=pos(0.0), dt_s=0.1)
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        ctx.dt_s = 1.0  # type: ignore[misc]
+
+
+def test_fewer_joints_than_before_is_not_averaged_over_either() -> None:
+    """The existing test covers a joint appearing. A joint disappearing has to be just as
+    unchecked, not a `zip` that raises or a comparison of mismatched joints."""
+    ctx = CheckContext(previous=pos(0.0, 0.0, 0.0), dt_s=0.1)
+    verdict = check(pos(0.0, 0.0), VEL_LIMIT, ctx)
+
+    assert any("max_joint_velocity" in u for u in verdict.unchecked)
+
+
+def test_a_gripper_only_command_has_no_joint_velocity_to_exceed() -> None:
+    """No joint values, so nothing can be over a joint limit however small."""
+    gripper_only = Action(space=ActionSpace.JOINT_VELOCITY, values=[], gripper=1.0)
+
+    assert check(gripper_only, SafetyLimits(max_joint_velocity=0.5)).allowed
 
 
 def test_force_exactly_at_the_limit_is_allowed() -> None:
