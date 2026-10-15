@@ -113,7 +113,17 @@ def _the_driver_registry_survives_this_test():
     as the home-directory guard above: state shared across a suite needs a check where it
     cannot be forgotten, not care from whoever writes the next fixture.
     """
-    from tendon.drivers import base as driver_base
+    try:
+        from tendon.drivers import base as driver_base
+    except ModuleNotFoundError as missing:
+        # The layer-boundary job installs pytest and nothing else, because its checks read
+        # source with ast. Without pydantic the registry cannot exist, so no test in this
+        # process can break it. Importing it unconditionally here errored every boundary
+        # test at setup. A missing tendon module is a real bug and still raises.
+        if (missing.name or "").split(".")[0] == "tendon":
+            raise
+        yield
+        return
 
     registry = driver_base._REGISTRY
     before = set(registry)

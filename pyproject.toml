@@ -121,8 +121,8 @@ ignore_missing_imports = false
 
 # The libraries that ship no type information, named one by one rather than waved away
 # with a global `--ignore-missing-imports`. Naming them is what makes the check the same
-# in both places it runs: CI installs only mypy and pydantic, so every one of these is
-# unresolvable there, while a developer machine has them installed but unstubbed. The
+# in both places it runs: CI installs the runtime dependencies and no extras, so every one
+# of these is unresolvable there, while a developer machine has them installed. The
 # global flag hid both, which is why `mypy src/tendon` locally and the CI step disagreed
 # about whether this project type-checks.
 #
@@ -134,6 +134,8 @@ module = [
     "huggingface_hub.*",
     "lerobot.*",
     "mujoco.*",
+    # [train] only. Typed, like torch, so a machine with it installed checks the call.
+    "peft.*",
     "rerun.*",
     "torch.*",
 ]

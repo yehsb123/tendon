@@ -58,7 +58,12 @@ jobs:
           python-version: "3.12"
       # types-PyYAML so the yaml calls in `services/limits.py` are checked rather than
       # skipped. That module reads the local safety ceiling.
-      - run: python -m pip install --quiet mypy pydantic types-PyYAML
+      #
+      # `.` for the runtime dependencies, and only those. This step used to name pydantic
+      # alone, so numpy, typer, rich, fastapi and uvicorn were unresolvable here and the job
+      # failed on every push. They ship their own types, so ignoring them would check the
+      # calls into them against Any. The extras stay out; pyproject lists those by name.
+      - run: python -m pip install --quiet mypy types-PyYAML .
       # No flags and no paths: both are in pyproject.toml, so `mypy` here and `mypy` on a
       # developer's machine are the same check. `--ignore-missing-imports` lived only in
       # this file, which made the local run report errors CI could not see.
