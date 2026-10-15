@@ -202,10 +202,11 @@ tendon version           버전 출력
 | --- | --- | --- |
 | 로봇 제어, 데이터셋 | [LeRobot](https://github.com/huggingface/lerobot) | 자체 데이터셋 포맷 |
 | 시뮬레이션 | [MuJoCo](https://github.com/google-deepmind/mujoco) | 물리 엔진 |
-| 정책 | [OpenVLA](https://github.com/openvla/openvla), SmolVLA, GR00T N1.5 | 파운데이션 모델 |
+| 정책 | LeRobot 정책: ACT, Diffusion, pi0, SmolVLA | 파운데이션 모델 |
+| 학습, 추론 | [PyTorch](https://github.com/pytorch/pytorch) | 텐서 연산 라이브러리 |
 | 파인튜닝 | [PEFT](https://github.com/huggingface/peft) / LoRA | 학습 프레임워크 |
 | 시각화 | [Rerun](https://github.com/rerun-io/rerun) | 3D 렌더러 |
-| 레지스트리 | [Hugging Face Hub](https://huggingface.co/docs/hub) | 자체 레지스트리 |
+| 레지스트리 (v0.4 목표) | [Hugging Face Hub](https://huggingface.co/docs/hub) | 자체 레지스트리 |
 | 런타임, API | FastAPI, Pydantic | RPC 프레임워크 |
 
 ## 상태

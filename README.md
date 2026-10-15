@@ -199,10 +199,11 @@ Everything else is composed.
 | --- | --- | --- |
 | Robot control & datasets | [LeRobot](https://github.com/huggingface/lerobot) | our own dataset format |
 | Simulation | [MuJoCo](https://github.com/google-deepmind/mujoco) | a physics engine |
-| Policies | [OpenVLA](https://github.com/openvla/openvla), SmolVLA, GR00T N1.5 | a foundation model |
+| Policies | LeRobot policies: ACT, Diffusion, pi0, SmolVLA | a foundation model |
+| Training & inference | [PyTorch](https://github.com/pytorch/pytorch) | a tensor library |
 | Fine-tuning | [PEFT](https://github.com/huggingface/peft) / LoRA | a training framework |
 | Visualization | [Rerun](https://github.com/rerun-io/rerun) | a 3D renderer |
-| Registry | [Hugging Face Hub](https://huggingface.co/docs/hub) | our own registry |
+| Registry (v0.4) | [Hugging Face Hub](https://huggingface.co/docs/hub) | our own registry |
 | Runtime / API | FastAPI, Pydantic | an RPC framework |
 
 ## Quick start
