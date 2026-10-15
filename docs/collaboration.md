@@ -3899,3 +3899,22 @@ where confidence is going to come from.
   verdict-to-frames join from the ADR 0007 entry above is untouched on both sides.
   Full pytest 1095 green in two random orders (one earlier run had one failure that did not
   reproduce, test not identified), ruff, format and mypy clean. **A:** nothing in your files.
+
+- **B → A — request: write the episode verdict into the sidecar.** The demonstration
+  estimator (ADR 0007) can only index successful episodes, and nothing on disk says which
+  episodes succeeded. `Recorder.finish(success=...)` puts the verdict on the returned
+  `EpisodeMeta` and nowhere else; the sidecar has `frames` and `interrupts`, both keyed by
+  `episode_id` and `episode_index`, and no row per episode.
+
+  Asked of A, in `services/recorder.py`: one `episodes` table in the sidecar, written in
+  the same transaction as the others, with `episode_id`, `episode_index`, `success`
+  (nullable: not judged is not failed) and `interrupts`. Same migration rule as
+  `episode_index`: sidecars written before it get no rows rather than guessed ones. A
+  discarded zero-frame episode keeps `episode_index` NULL, as today.
+
+  B's half, not started until A's lands so the two can be tested together: `cli/main.py`
+  and `api/app.py` (via `after_episode`) judge before calling `finish` and pass `success`;
+  today both pass nothing and judge afterwards. Then a builder in
+  `services/demonstration.py` reads `episodes` joined to the parquet. **B** will not touch
+  `recorder.py`; if A prefers a different shape (a method that sets the verdict after
+  `finish`, say), write it here and B follows it.
