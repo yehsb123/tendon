@@ -197,6 +197,10 @@ class ConfidenceSource(str, Enum):
     LEARNED_HEAD = "learned_head"
     #: Whether the observation resembles the training distribution.
     OOD = "ood"
+    #: Distance from the nearest successful demonstration that started from a similar
+    #: state. Needs no sampling and nothing from inside the policy; blind to a novel motion
+    #: that is right and to a demonstrated one that is wrong. ADR 0007.
+    DEMONSTRATION = "demonstration"
 
 
 class Confidence(BaseModel):

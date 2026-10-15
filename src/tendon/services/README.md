@@ -31,7 +31,7 @@ Running something on a body:
 | `policy_scripted` | `ScriptedPolicy`: plays a real grasp. What a skill names in `policy.baseline`. |
 | `policy_lerobot` | Adapts a LeRobot checkpoint to the `Policy` protocol. |
 | `adaptive` | The correction memory and the policy that recalls from it. Where the intervention rate falls. |
-| `confidence` | Estimates confidence from sample spread — the only estimator there is, since a policy rarely reports its own (ADR 0003). |
+| `confidence` | Estimates confidence from sample spread, since a policy rarely reports its own (ADR 0003). Blind to a policy that is confidently wrong. |
 | `calibration` | Measures what sample spread is *typical* for one policy on one body, so `confidence` has a scale to score against. The scale, not the threshold: how much disagreement means ask for help needs intervention outcomes and stays v0.3. |
 | `demonstration` | A second confidence source: how far a predicted chunk is from the nearest successful demonstration that started from a similar state, scored against how far demonstrations are from each other. Needs no sampling and nothing from inside the policy; unlike the demonstrations is not the same as wrong (ADR 0007). |
 | `viz` | Streams a run into Rerun. Attached when somebody is watching, not to every run: it costs about ten times what the recorder does. |

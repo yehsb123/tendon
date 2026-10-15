@@ -117,6 +117,8 @@ export enum ConfidenceSource {
   LEARNED_HEAD = "learned_head",
   /** Whether the observation resembles the training distribution. */
   OOD = "ood",
+  /** Distance from the nearest successful demonstration from a similar state. ADR 0007. */
+  DEMONSTRATION = "demonstration",
 }
 
 /**
