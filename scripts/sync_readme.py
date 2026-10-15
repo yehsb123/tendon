@@ -81,14 +81,20 @@ class Command:
 def commands_of(app: Any) -> list[Command]:
     """Every visible command, in the order the app registers them.
 
-    Read through Typer's own conversion to click rather than from the decorated functions,
-    so the names and arguments are the ones a user actually types, `eval` included.
+    Read through Typer's own conversion to a command group rather than from the decorated
+    functions, so the names and arguments are the ones a user actually types, `eval`
+    included.
+
+    By attribute rather than by class. Typer 0.27 vendors click as `typer._click` and no
+    longer depends on it, so its group is not a `click.Group` even where click is installed
+    (uvicorn brings it). An isinstance check against `click` passed on 0.24 here and failed
+    on the first runner that resolved 0.27.
     """
-    import click
     import typer.main
 
     group = typer.main.get_command(app)
-    assert isinstance(group, click.Group)
+    if not hasattr(group, "commands"):
+        raise SyncError("the tendon app has a single command, not a group of them")
 
     found = []
     for name, command in group.commands.items():
@@ -100,7 +106,7 @@ def commands_of(app: Any) -> list[Command]:
         arguments = " ".join(
             f"<{param.name}>"
             for param in command.params
-            if isinstance(param, click.Argument) and param.required
+            if param.param_type_name == "argument" and param.required
         )
         found.append(Command(name, arguments, lines[0]))
     return found
