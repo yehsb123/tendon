@@ -38,12 +38,17 @@ a similar state. Far means the policy is about to do something no success did.
   apart the start states were, and how differently the chunks moved relative to their own
   start states. The same joint targets from a different place are a different motion.
 - **Scaled like calibration.** The reference is the median, over every window, of the
-  distance to the nearest window from another episode. Scored `1 / (1 + d / reference)`,
+  distance to the nearest window from another episode. Distances of exactly zero are left
+  out, as `calibration.from_spreads` leaves out zero spreads: a home pose shared by every
+  episode matches exactly, and held for most of each episode it made the median zero and
+  the index answer "identical". Fewer than twenty non-zero distances is refused. Scored `1 / (1 + d / reference)`,
   the formula sample spread uses, so a chunk as far from the demonstrations as they are from
   each other scores 0.5.
 - **Refuses rather than guesses.** No windows, fewer than two episodes, fewer than twenty
   windows, identical demonstrations, or a chunk that is too short, the wrong width, or not
-  joint positions: `NONE`, with the reason.
+  joint positions, or a chunk, state or demonstration holding a value that is not finite:
+  `NONE`, with the reason. A non-finite demonstration is refused when the index is built,
+  since one NaN made the scale NaN and every later chunk score 1.0.
 - **numpy brute force.** No vector index and no new dependency.
 
 ## What it sees and what it cannot see

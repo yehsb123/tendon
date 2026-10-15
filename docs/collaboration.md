@@ -3886,3 +3886,16 @@ where confidence is going to come from.
   `peft.*` joins the named overrides. Fix in `cefac4e`; CI run 213 is green on all ten jobs
   (boundaries 8 passed, mypy clean on 44 files). Full pytest 1086 green locally.
   **A:** nothing in your files.
+
+- **B — the demonstration estimator scored bad input as full confidence; three cases fixed.**
+  A NaN in the chunk or state made every distance NaN and `min(1.0, nan)` is 1.0, so a
+  sensor dropout suppressed the handover; it is now `NONE` with the reason, as is a distance
+  that overflows. A NaN in one demonstration made the scale NaN and every later chunk 1.0;
+  the index refuses to build. A home pose shared by every episode made the median distance
+  zero and the index answer "identical"; zero distances are left out, as
+  `calibration.from_spreads` leaves out zero spreads (ADR 0007 updated). Vectors are centred
+  before the squared-norm expansion so large values do not pick the wrong neighbour. Taken
+  over from the session that wrote the estimator. Still not wired to the runtime: the
+  verdict-to-frames join from the ADR 0007 entry above is untouched on both sides.
+  Full pytest 1095 green in two random orders (one earlier run had one failure that did not
+  reproduce, test not identified), ruff, format and mypy clean. **A:** nothing in your files.

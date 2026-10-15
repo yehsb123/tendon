@@ -58,7 +58,9 @@ Distance has no absolute meaning for the same reason spread does, so it is score
 what is typical, the way `calibration.py` scores spread: for every window, the distance to
 the nearest window *from another episode*, and the median of those. Leave-one-episode-out
 because a window's nearest neighbour in its own episode is the next step, a fraction of a
-control period away, and that would measure the frame rate. The score is
+control period away, and that would measure the frame rate. Distances of exactly zero are
+left out of the median, as `calibration.from_spreads` leaves out zero spreads: a home pose
+every episode shares would otherwise make the scale zero. The score is
 `1 / (1 + distance / reference)`, the formula `estimate_from_samples` uses, so a chunk as
 far from the demonstrations as they typically are from each other scores 0.5 — and the
 caveat `Calibration.ask_rate` states applies here unchanged: a threshold of 0.5 asks on
@@ -268,8 +270,12 @@ class DemonstrationIndex:
         motion = np.array([a.values for a in actions[: self.horizon]], dtype=float) - here
 
         dof = self._states.shape[1]
-        state_sq = ((self._states - here) ** 2).sum(axis=1) / dof
-        motion_sq = ((self._motions - motion) ** 2).sum(axis=(1, 2)) / (dof * self.horizon)
+        # Finite inputs can still square past float range. That comes back as an infinite
+        # distance, which `estimate_from_demonstrations` turns into NONE, so the warning
+        # numpy would print says nothing the result does not.
+        with np.errstate(over="ignore"):
+            state_sq = ((self._states - here) ** 2).sum(axis=1) / dof
+            motion_sq = ((self._motions - motion) ** 2).sum(axis=(1, 2)) / (dof * self.horizon)
         best = int(np.argmin(state_sq + motion_sq))
 
         return Nearest(
@@ -286,6 +292,12 @@ class DemonstrationIndex:
         compared = actions[: self.horizon]
         if any(a.space is not ActionSpace.JOINT_POSITION for a in compared):
             return "chunk is not joint positions, so it cannot be compared with a joint state"
+        values = [*state, *(v for a in compared for v in a.values)]
+        if not all(math.isfinite(v) for v in values):
+            # Checked before anything is subtracted: one NaN makes every distance NaN,
+            # `argmin` returns the first window, and `min(1.0, nan)` is 1.0 -- a sensor
+            # dropout scored as full confidence, the one case that must hand over.
+            return "chunk or state holds a value that is not finite, so it cannot be measured"
         if self.dof is not None:
             widths = {len(state), *(len(a.values) for a in compared)}
             if widths != {self.dof}:
@@ -317,6 +329,10 @@ class DemonstrationIndex:
             ],
             axis=1,
         )
+        # Centred, which moves no distance. The expansion below subtracts two squared
+        # norms; far from zero they are large, the difference between neighbours is lost
+        # to rounding, and the wrong partner is chosen.
+        vectors = vectors - vectors.mean(axis=0)
         _, owner = np.unique(np.array(self._owners), return_inverse=True)
 
         norms = (vectors**2).sum(axis=1)
@@ -335,11 +351,24 @@ class DemonstrationIndex:
             partner[block] = squared.argmin(axis=1)
         nearest = np.sqrt(((vectors - vectors[partner]) ** 2).sum(axis=1))
 
-        reference = float(np.median(nearest))
-        if reference <= 0.0:
+        # Zero distances are left out, as `calibration.from_spreads` leaves out zero spreads.
+        # A window with an exact twin in another episode -- a shared home pose, a replayed
+        # approach -- says nothing about how far demonstrations typically are apart, and
+        # counted, a home pose held for most of each episode makes the median zero.
+        moving = nearest[nearest > 0.0]
+        if moving.size == 0:
             return None, (
                 "demonstrations are identical to each other, so distance from them has no scale"
             )
+        if moving.size < MINIMUM_WINDOWS:
+            return None, (
+                f"{moving.size} window(s) differ from every other episode; at least "
+                f"{MINIMUM_WINDOWS} are needed before a median distance means anything"
+            )
+
+        reference = float(np.median(moving))
+        if not math.isfinite(reference):  # pragma: no cover - `_arrays` refuses non-finite
+            return None, "the distance between demonstrations is not finite"
         return reference, None
 
 
@@ -368,6 +397,10 @@ def estimate_from_demonstrations(
         return _unmeasured("no successful demonstrations are indexed")
 
     ratio = nearest.distance / reference
+    if not math.isfinite(ratio):
+        # Every input was checked finite; an overflow is still not a measurement, and
+        # `min(1.0, nan)` would score it as certainty.
+        return _unmeasured("distance from the demonstrations is not finite")
     reasons: list[str] = []
     if ratio > 2.0:
         reasons.append(
@@ -428,5 +461,12 @@ def _arrays(demo: Demonstration) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError(
             f"demonstration {demo.episode_id} has states {state.shape} and actions "
             f"{action.shape}; they must be the same width"
+        )
+    if not (np.isfinite(state).all() and np.isfinite(action).all()):
+        # Malformed, not unsuccessful. One NaN makes the median NaN, `NaN <= 0` is False,
+        # and the index would count as scaled while scoring every chunk 1.0.
+        raise ValueError(
+            f"demonstration {demo.episode_id} holds a value that is not finite; a dropout "
+            f"in a recording has to be cleaned or the episode left out"
         )
     return state.reshape(len(demo.states), -1), action.reshape(len(demo.actions), -1)

@@ -13,6 +13,7 @@ is zero; the distance between two such windows is the difference in offsets.
 from __future__ import annotations
 
 import math
+import random
 
 import pytest
 
@@ -305,3 +306,137 @@ def test_an_empty_or_short_successful_episode_adds_no_windows() -> None:
     assert built.episodes == ("empty", "short", "0", "1", "2", "3", "outlier")
     assert built.windows == 5 * (STEPS - HORIZON + 1)
     assert built.reference_distance == pytest.approx(0.1)
+
+
+# ---------------------------------------------------------------- values that lie
+
+
+@pytest.mark.parametrize(
+    ("state", "chunk"),
+    [
+        ([math.nan, 0.2], [joint(0.2, 0.2)] * HORIZON),
+        ([0.2, 0.2], [joint(0.2, math.nan)] * HORIZON),
+        ([0.2, math.inf], [joint(0.2, 0.2)] * HORIZON),
+    ],
+)
+def test_a_non_finite_value_in_the_chunk_is_not_measured(state, chunk) -> None:
+    """A sensor dropout makes every distance NaN, and `min(1.0, nan)` is 1.0: without the
+    check it scored full confidence with this source and suppressed the handover."""
+    result = estimate_from_demonstrations(index(), state, chunk)
+
+    assert result.source is ConfidenceSource.NONE
+    assert result.score == 0.0
+    assert "not finite" in result.reasons[0]
+
+
+@pytest.mark.parametrize("where", ["states", "actions"])
+def test_a_demonstration_holding_a_non_finite_value_is_refused(where: str) -> None:
+    """One NaN made the median NaN, `NaN <= 0` is False, so the index counted as scaled
+    and every chunk then scored 1.0. Malformed, not unsuccessful: refused loudly."""
+    states = [[0.0, 0.0]] * STEPS
+    actions = [joint(0.0, 0.0)] * STEPS
+    if where == "states":
+        states = [*states[:-1], [0.0, math.nan]]
+    else:
+        actions = [*actions[:-1], joint(math.nan, 0.0)]
+    broken = Demonstration(
+        episode_id="dropout", states=states, actions=actions, succeeded=True, interventions=0
+    )
+
+    with pytest.raises(ValueError, match="dropout.*not finite"):
+        DemonstrationIndex.build([*spaced(), broken], horizon=HORIZON)
+
+
+# ------------------------------------------------------------ the scale, harder cases
+
+
+def test_a_shared_home_pose_does_not_collapse_the_scale() -> None:
+    """Three episodes hold the same home pose for 20 steps and then move differently. The
+    home windows match another episode exactly, so more than half the nearest distances
+    are zero; counted, they made the median zero and the index answered "identical".
+    Dropped, as `calibration.from_spreads` drops zero spreads, the scale is what the
+    moving windows say: every window that leaves home is 0.1 from its neighbour episode
+    at the same step (offsets 0.0, 0.1, 0.2 on joint 0 after step 20)."""
+
+    def leaves_home(episode_id: str, offset: float) -> Demonstration:
+        states = [[0.0, 0.0]] * 20 + [[offset, 0.0]] * 10
+        return Demonstration(
+            episode_id=episode_id,
+            states=states,
+            actions=[joint(*s) for s in states],
+            succeeded=True,
+            interventions=0,
+        )
+
+    built = DemonstrationIndex.build(
+        [leaves_home("a", 0.0), leaves_home("b", 0.1), leaves_home("c", 0.2)], horizon=HORIZON
+    )
+
+    assert built.unscaled_because is None
+    # Windows that have left home: state 0.1 apart on one of two joints, motion zero.
+    # Windows straddling the step out differ in motion too; the median sits in the first.
+    assert built.reference_distance == pytest.approx(0.1 / math.sqrt(2))
+
+
+def test_the_scale_holds_across_the_block_boundary() -> None:
+    """Over 2048 windows the leave-one-out search runs in blocks. Joint 1 ramps by 0.001 a
+    step, so a window's own episode is 0.0007 away and another episode 0.0707 away: a block
+    that masked the wrong rows would pull the median down by a factor of a hundred."""
+
+    def ramp(episode_id: str, offset: float) -> Demonstration:
+        states = [[offset, 0.001 * t] for t in range(702)]
+        return Demonstration(
+            episode_id=episode_id,
+            states=states,
+            actions=[joint(*s) for s in states],
+            succeeded=True,
+            interventions=0,
+        )
+
+    built = DemonstrationIndex.build([ramp(str(k), 0.1 * k) for k in range(3)], horizon=HORIZON)
+
+    assert built.windows == 2100
+    assert built.reference_distance == pytest.approx(0.1 / math.sqrt(2))
+
+
+def test_the_scale_does_not_depend_on_where_the_joints_are_zeroed() -> None:
+    """Shifting every demonstration by the same amount changes no distance. Far from zero,
+    |x|^2 + |y|^2 - 2xy loses the hundredths that separate neighbours to rounding and picks
+    the wrong partner unless the vectors are centred first. Random walks rather than the
+    spaced geometry, which has so few distinct distances that a wrong pick still lands on
+    the right value."""
+
+    def walks(shift: float) -> list[Demonstration]:
+        rng = random.Random(1)
+        demos = []
+        for episode in range(6):
+            position = [shift] * 6
+            states = []
+            for _ in range(40):
+                position = [p + rng.gauss(0.0, 0.01) for p in position]
+                states.append(position)
+            demos.append(
+                Demonstration(
+                    episode_id=str(episode),
+                    states=states,
+                    actions=[joint(*(v + 0.01 for v in s)) for s in states],
+                    succeeded=True,
+                    interventions=0,
+                )
+            )
+        return demos
+
+    near_zero = DemonstrationIndex.build(walks(0.0), horizon=5).reference_distance
+    far_away = DemonstrationIndex.build(walks(1e7), horizon=5).reference_distance
+
+    assert near_zero is not None
+    assert far_away == pytest.approx(near_zero, rel=1e-4)
+
+
+def test_a_distance_that_overflows_is_not_a_measurement() -> None:
+    """Finite inputs, infinite distance: 1e200 squared is inf. Not a number an operator
+    can read against a threshold, so it is reported as unmeasured with the reason."""
+    result = estimate_from_demonstrations(index(), [1e200, 1e200], [joint(1e200, 1e200)] * 3)
+
+    assert result.source is ConfidenceSource.NONE
+    assert result.reasons == ("distance from the demonstrations is not finite",)
