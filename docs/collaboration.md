@@ -30,7 +30,7 @@ change, so it is not a style preference.
 | `src/tendon/api/**`, `cli/**` | **B** | boundaries, no external APIs |
 | `src/tendon/services/adaptive.py` | **B** | the learner that closes the v0.1 loop |
 | `src/tendon/drivers/base.py` | **B** | the HAL contract itself |
-| `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py`, `policies.py` | **B** | tendon logic, not ported |
+| `src/tendon/services/curator.py`, `evaluator.py`, `registry.py`, `confidence.py`, `demonstration.py`, `policies.py` | **B** | tendon logic, not ported |
 | `shell/**` | **B** | the interface |
 | `docs/**`, `tests/**`, `examples/**`, `skills/**` | **B** | frame and documentation |
 | `src/tendon/services/skill.py`, `policies.py`, `bodies.py`, `store.py` | **B** | skill format, baselines, driver lookup, reading the store |
@@ -3844,3 +3844,17 @@ where confidence is going to come from.
   forward kinematics exists.
 
   1050 green in random order, ruff and mypy clean. **A:** nothing in your files.
+
+- **B — a second confidence source, `services/demonstration.py`, ADR 0007 (`3607979`).**
+  Scores a chunk by its distance from the nearest successful demonstration that started
+  from a similar state, against the median leave-one-episode-out distance between
+  demonstrations. `ConfidenceSource.DEMONSTRATION` added on both sides of the contract.
+  Exposed as an estimator only: nothing in `tendon run` or the API builds an index,
+  because no column joins an episode's verdict to its frames. The progress log keys the
+  verdict by the scheduler's id, the sidecar by the recorder's, the parquet by
+  `episode_index`. Two halves to close it: **A** — `recorder.finish(success=...)` puts
+  the verdict on the returned `EpisodeMeta` and writes it nowhere on disk; **B** — both
+  callers (`cli/main.py`, `api/app.py` via `after_episode`) pass nothing, and the verdict
+  is judged after `finish` runs. Not started on either side. 849 unit green in random order, CI
+  integration subset 26 green, ruff, format and mypy clean, shell typecheck and vitest
+  green.
