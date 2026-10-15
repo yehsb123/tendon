@@ -35,7 +35,7 @@ tendon이 직접 만드는 부분은 다섯 가지입니다. 나머지는 아래
 - 인터럽트 프로토콜: 제어권을 사람에게 넘기고 되받는 방법
 - 큐레이션 지표: 어떤 에피소드가 학습에 도움이 되는지 매기는 기준
 - 셸: 사람이 로봇의 의도를 읽고 개입하는 화면
-- 확신도 추정: 정책은 자기 확신도를 알려 주지 않으므로 tendon이 따로 계산합니다([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md))
+- 확신도 추정: 정책은 자기 확신도를 알려 주지 않으므로 tendon이 따로 계산합니다. 지금 쓰는 신호는 같은 상황에서 뽑은 예측들이 서로 얼마나 어긋나는지입니다. 비슷한 상태에서 시작한 성공 시연에서 얼마나 벗어났는지를 재는 두 번째 신호는 추정기로만 있고, 성공 판정이 저장된 뒤 런타임에 연결합니다([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md), [ADR 0007](docs/decisions/0007-demonstration-distance-is-a-second-confidence-source.md))
 
 ## 실행 결과
 
@@ -71,7 +71,7 @@ intervention rate over a trailing window of 10 episodes
 
 스케줄러, 안전 검사, 인터럽트 상태 머신, 평가기는 학습된 정책을 돌릴 때와 같은 코드입니다.
 
-임시로 대신 넣은 부분은 둘입니다. 불확실한 구간은 실제 모델이 낯선 물체나 처음 보는 시야에서 보이는 불확실성을 흉내 낸 값이고, 교정하는 사람도 스크립트입니다. 실제 정책과 실제 조작자로 바꾸는 작업이 v0.3 실험입니다.
+임시로 대신 넣은 부분은 둘입니다. 불확실한 구간은 실제 모델이 낯선 물체나 처음 보는 시야에서 보이는 불확실성을 흉내 낸 대역(stand-in)이고, 교정하는 사람도 스크립트입니다. 실제 정책과 실제 조작자로 바꾸는 작업이 v0.3 실험입니다.
 
 ## 설치
 
@@ -182,21 +182,27 @@ Rerun 뷰어에는 명령한 값과 실제 적용된 값이 같은 축에 그려
 
 ### 명령
 
+<!-- BEGIN generated:commands -->
+
 ```
+tendon version           버전 출력
 tendon doctor            이 환경에서 되는 기능과 빠진 부분, 빠졌을 때 잃는 기능
 tendon run <skill>       커널 위에서 정책을 몸에 실행하고 기록
-tendon eval <skill>      반복 실행하고 기록한 뒤 결과 보고
-tendon episodes          기록된 에피소드 목록
-tendon progress          개입률이 줄고 있는지 터미널에 그래프로 표시
 tendon serve             런타임 API, 셸이 빌드돼 있으면 셸 화면까지
 tendon shell             serve와 같고, 이 환경에서 화면을 여는 방법을 안내
-tendon curate <skill>    기록된 에피소드를 학습 가치 순으로 정렬
+tendon progress          개입률이 줄고 있는지 터미널에 그래프로 표시
+tendon episodes          기록된 에피소드 목록
 tendon calibrate <skill> 보통의 예측 불일치를 측정해 확신도 기준 생성
+tendon curate <skill>    기록된 에피소드를 학습 가치 순으로 정렬
 tendon train <skill>     큐레이션한 에피소드로 베이스 정책을 LoRA 파인튜닝
-tendon version           버전 출력
+tendon eval <skill>      반복 실행하고 기록한 뒤 결과 보고
 ```
 
+<!-- END generated:commands -->
+
 ## 기반 오픈소스
+
+<!-- BEGIN generated:built-on -->
 
 | 층 | 사용 | tendon이 만들지 않는 부분 |
 | --- | --- | --- |
@@ -208,6 +214,8 @@ tendon version           버전 출력
 | 시각화 | [Rerun](https://github.com/rerun-io/rerun) | 3D 렌더러 |
 | 레지스트리 (v0.4 목표) | [Hugging Face Hub](https://huggingface.co/docs/hub) | 자체 레지스트리 |
 | 런타임, API | FastAPI, Pydantic | RPC 프레임워크 |
+
+<!-- END generated:built-on -->
 
 ## 상태
 
@@ -221,19 +229,21 @@ v0.1이고 시뮬레이션 전용입니다. 위의 순환은 처음부터 끝까
 
 디렉터리마다 README가 있고, 그 디렉터리에 들어가는 코드와 들어가지 않는 코드를 적어 두었습니다.
 
+<!-- BEGIN generated:layout -->
+
 ```
 src/tendon/
   kernel/        스케줄러, 스텝 버스, 인터럽트, 안전 검사, 다른 계층이 구현할 계약
                  (types.py, protocols.py)
-  drivers/       몸 추상화(HAL): mujoco, so101, 사람 시연 영상
-  services/      recorder, curator, confidence, calibration, adaptive, evaluator,
-                 policies, skill, bodies, trainer, progress, registry 등
+  drivers/       몸 추상화(HAL): 사람 시연 영상, mujoco, so101
+  services/      recorder, curator, confidence, demonstration, calibration, adaptive,
+                 evaluator, policies, skill, bodies, trainer, progress, registry 등
   api/           REST, WebSocket, 둘을 잇는 세션
   cli/           tendon 명령
   assets/        로봇 모델과 장면 파일
 
 shell/src/
-  views/         Live, Episodes, Skills, Curate, Progress
+  views/         Curate, Episodes, Live, Progress, Skills
   panels/        의도 미리보기, 궤적 미리보기, 교정 편집기
   rerun/         Rerun 뷰어 임베드, 에피소드 타임라인과 시계 동기화
   api/           kernel/types.py와 같은 타입을 쓰는 클라이언트
@@ -246,6 +256,8 @@ skills/          설치할 수 있는 스킬 (grasp/cube-sim)
 examples/        01_record부터 04_improve까지, 순서대로 하나씩 증명
 tests/           unit(CPU만, 설치 직후 실행 가능), integration
 ```
+
+<!-- END generated:layout -->
 
 ## 문서
 

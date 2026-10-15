@@ -189,11 +189,17 @@ open source. tendon writes only the five things nobody else has:
 3. **Curation metrics** — which episodes help training and which poison it
 4. **The shell** — the interface where a human reads intent and intervenes
 5. **Confidence estimation** — no upstream policy reports how sure it is, and that
-   number is what makes intervention fire ([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md))
+   number is what makes intervention fire ([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md)).
+   The signal in use today is how far sampled predictions disagree. A second one, how far
+   the predicted chunk strays from successful demonstrations that started from a similar
+   state, exists as an estimator only ([ADR 0007](docs/decisions/0007-demonstration-distance-is-a-second-confidence-source.md));
+   it is wired into the runtime once success verdicts are stored.
 
 Everything else is composed.
 
 ## Built on
+
+<!-- BEGIN generated:built-on -->
 
 | Layer | We use | Not building |
 | --- | --- | --- |
@@ -205,6 +211,8 @@ Everything else is composed.
 | Visualization | [Rerun](https://github.com/rerun-io/rerun) | a 3D renderer |
 | Registry (v0.4) | [Hugging Face Hub](https://huggingface.co/docs/hub) | our own registry |
 | Runtime / API | FastAPI, Pydantic | an RPC framework |
+
+<!-- END generated:built-on -->
 
 ## Quick start
 
@@ -307,18 +315,23 @@ store does not grow, and refuses to run at all without the recorder installed.
 
 ## Commands
 
+<!-- BEGIN generated:commands -->
+
 ```
-tendon doctor            what works here, and what each missing piece costs
-tendon run <skill>       run a policy on a body, and record it
-tendon eval <skill>      run it repeatedly, record it, and report what happened
-tendon episodes          list what has been recorded
-tendon progress          is it asking less often than it used to
-tendon serve             the runtime API, and the shell when it is built
-tendon shell             the same, and how to open it from where you are
-tendon curate <skill>    rank recorded episodes by what is worth training on
-tendon calibrate <skill> measure what counts as typical disagreement, so confidence has a scale
-tendon train <skill>     LoRA fine-tune the base policy on the curated episodes
+tendon version           Print the tendon version.
+tendon doctor            Check what works here, and what each missing piece costs.
+tendon run <skill>       Run a policy on a body under the kernel.
+tendon serve             Serve the runtime, and the shell when it has been built.
+tendon shell             Serve the runtime and say how to open the interface from here.
+tendon progress          Is it asking less often than it used to.
+tendon episodes          List what has been recorded.
+tendon calibrate <skill> Measure what counts as typical disagreement for this policy on this body.
+tendon curate <skill>    Score recorded episodes and rank them by what is worth training on.
+tendon train <skill>     LoRA fine-tune a skill's base policy on its curated episodes.
+tendon eval <skill>      Run a skill repeatedly and report what happened.
 ```
+
+<!-- END generated:commands -->
 
 A skill is named the way everything else names it — `tendon run grasp/cube-sim` — and a
 path to a skill directory works too.
@@ -427,18 +440,21 @@ See [docs/roadmap.md](docs/roadmap.md).
 Every directory carries a README stating what belongs in it and what does not. That is
 the load-bearing part of the structure, not decoration.
 
+<!-- BEGIN generated:layout -->
+
 ```
 src/tendon/
   kernel/        scheduler, step bus, interrupt, safety, and the contracts
                  other layers implement (types.py, protocols.py)
-  drivers/       the embodiment HAL — mujoco, human video, more to come
-  services/      recorder, curator, confidence, adaptive, evaluator,
+  drivers/       the embodiment HAL — human video, mujoco, so101
+  services/      recorder, curator, confidence, demonstration, adaptive, evaluator,
                  policies, skill, bodies, trainer, registry
   api/           REST, WebSocket, and the session that bridges the two
-  cli/           doctor, run, eval, serve, shell
+  cli/           the tendon command, listed under Commands
+  assets/        robot models and scene files
 
 shell/src/
-  views/         Live, Episodes, Skills, Training
+  views/         Curate, Episodes, Live, Progress, Skills
   panels/        IntentPreview.tsx — the centre; fixed grid so nothing shifts
   rerun/         embedded Rerun viewer, clock-aligned to the episode
   api/           typed client mirroring kernel/types.py
@@ -451,6 +467,8 @@ skills/          installable capabilities, distributed via the HF Hub
 examples/        01_record → 04_improve, ordered by what each one proves
 tests/           unit (CPU-only, runs on a bare checkout) + integration
 ```
+
+<!-- END generated:layout -->
 
 ## Documentation
 

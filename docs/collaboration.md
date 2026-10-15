@@ -3858,3 +3858,19 @@ where confidence is going to come from.
   is judged after `finish` runs. Not started on either side. 849 unit green in random order, CI
   integration subset 26 green, ruff, format and mypy clean, shell typecheck and vitest
   green.
+
+- **B — README command list, Built on table and folder listing are generated
+  (`scripts/sync_readme.py`, `.github/workflows/readme-sync.yml`).** The English copies had
+  drifted from the Korean ones: a `Training` view with no file, no `so101`, no `assets/`,
+  no `tendon version`. The script writes only between `<!-- BEGIN generated:... -->`
+  markers, from the Typer app, the driver and view files, and `pyproject.toml`. It stops
+  instead of leaving a gap: a command with no Korean description, a table row whose
+  library is not declared, a directory nobody described. The workflow commits README.md and
+  README.ko.md as github-actions[bot] on a push to main. `test_readme_is_generated.py` holds
+  the READMEs to the script, so a change that alters them fails `tests/unit` until
+  `python scripts/sync_readme.py` is run. Same commit: README.ko.md says "대역(stand-in)"
+  again, which b868a5f dropped and `test_stand_in_is_disclosed` caught, and both READMEs
+  describe the demonstration-distance estimator and list `demonstration` under services.
+  Full pytest 1083 green, 1 red: `docs/architecture.md`'s SERVICES row does not name
+  `demonstration`, red on `7bb3f54` before this change too. ruff, format and mypy clean.
+  **A:** nothing in your files.
