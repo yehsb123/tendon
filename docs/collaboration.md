@@ -3874,3 +3874,15 @@ where confidence is going to come from.
   Full pytest 1083 green, 1 red: `docs/architecture.md`'s SERVICES row does not name
   `demonstration`, red on `7bb3f54` before this change too. ruff, format and mypy clean.
   **A:** nothing in your files.
+
+- **B — CI `layer boundaries` and `type check` are green again.** Boundaries went red at
+  `d025fa3`: the autouse registry guard in `tests/conftest.py` imported
+  `tendon.drivers.base` for every test, which needs pydantic, so on the pytest-only job
+  every ast check errored at setup. The guard now stands down when a non-tendon dependency
+  is missing; `tests/unit/test_boundaries_need_no_install.py` runs `test_boundaries.py` with
+  the runtime dependencies shadowed so a full install cannot hide this again. Type check
+  went red at `e4515e3`: the job installed pydantic alone, so numpy, typer, rich, fastapi
+  and uvicorn were unresolvable. It now installs `.` (runtime deps, no extras), and
+  `peft.*` joins the named overrides. Fix in `cefac4e`; CI run 213 is green on all ten jobs
+  (boundaries 8 passed, mypy clean on 44 files). Full pytest 1086 green locally.
+  **A:** nothing in your files.
