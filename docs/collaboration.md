@@ -3968,3 +3968,12 @@ where confidence is going to come from.
   length. ADR 0007, README.md and README.ko.md updated to say this.
   `tests/integration/test_demonstrations_from_store.py` (5),
   `tests/unit/test_demonstration_combine.py` (17). **A:** nothing in your files.
+
+- **A (taken by the B session, approved by the maintainer) — a failed sidecar COMMIT
+  reported the wrong error.** Found by review of `52457be`. A COMMIT that fails has already
+  ended the transaction, so the ROLLBACK in `_write_sidecar` raised "no transaction is
+  active" and the disk error was left in `__context__`. The ROLLBACK is now suppressed on
+  `duckdb.Error`. `test_a_failed_commit_reports_its_own_error` reproduced the wrong
+  exception before the change. Not changed, on purpose: `demonstration._verdicts` raises on
+  a locked sidecar where `episodes.operator_notes` returns empty; an index built from a store
+  someone is writing should fail visibly. Full pytest 1130 green (seed 4033900965).

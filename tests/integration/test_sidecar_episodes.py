@@ -207,3 +207,34 @@ def test_the_verdict_and_the_frames_are_one_transaction(recorder: Recorder) -> N
     finally:
         con.close()
     assert after == before
+
+
+class _CommitFails:
+    """A connection whose COMMIT ends the transaction and then reports a disk error.
+
+    That is what a failed write at commit time leaves behind: no transaction is open, so a
+    ROLLBACK afterwards raises one of its own.
+    """
+
+    def __init__(self, con: object) -> None:
+        self._con = con
+
+    def execute(self, sql: str, *args: object) -> object:
+        result = self._con.execute(sql, *args)  # type: ignore[attr-defined]
+        if sql.strip().upper() == "COMMIT":
+            raise OSError("disk full while committing the sidecar")
+        return result
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._con, name)
+
+
+def test_a_failed_commit_reports_its_own_error(
+    recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The caller is told the disk failed, not that a rollback found nothing to roll back."""
+    real_connect = duckdb.connect
+    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: _CommitFails(real_connect(*a, **k)))
+
+    with pytest.raises(OSError, match="disk full"):
+        record_episode(recorder, success=True)

@@ -23,6 +23,7 @@ skill has to know.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -592,7 +593,10 @@ class Recorder:
         except BaseException:
             # Rolled back rather than left to the connection's close, so the half that did
             # get written is discarded on purpose and the error that caused it propagates.
-            con.execute("ROLLBACK")
+            # A COMMIT that failed has already ended the transaction, and the ROLLBACK then
+            # raises "no transaction is active", which would replace the error worth seeing.
+            with contextlib.suppress(duckdb.Error):
+                con.execute("ROLLBACK")
             raise
         finally:
             con.close()
