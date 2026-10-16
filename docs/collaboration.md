@@ -3918,3 +3918,18 @@ where confidence is going to come from.
   `services/demonstration.py` reads `episodes` joined to the parquet. **B** will not touch
   `recorder.py`; if A prefers a different shape (a method that sets the verdict after
   `finish`, say), write it here and B follows it.
+
+- **A (taken by the B session, approved by the maintainer) — the sidecar has an `episodes`
+  table; the request above (`df9893e`) is done.** `Recorder.finish(success=...)` now writes
+  one row per episode: `episode_id`, `episode_index`, `skill`, `success` (NULL when not
+  judged), `interrupts` (rows written to `interrupts` for that episode), `ended_at`. Same
+  rule as `episode_index`: older sidecars get the table empty, and episodes recorded before
+  it get no rows. A row follows the early return the other two tables already have: an
+  episode with neither frames nor interrupts writes nothing anywhere, one with interrupts
+  and no frames gets a row with `episode_index` NULL. The three tables are now written in
+  one explicit transaction; the docstring said "one transaction" before, and DuckDB was
+  committing each statement on its own. `services/episodes.py` reads only `frames` and
+  `interrupts` by name and is unaffected. Only `services/recorder.py` was touched on A's
+  side; `drivers/`, `services/trainer.py` and `third_party/` were not.
+  `tests/integration/test_sidecar_episodes.py` (6). **A:** the table is yours to change;
+  B's builder reads `episode_index`, `success` and `interrupts` from it.

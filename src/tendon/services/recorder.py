@@ -396,10 +396,17 @@ class Recorder:
         The expensive call in this module, and deliberately the only one. `save_episode`
         encodes video and writes parquet; doing it here rather than per frame is what
         keeps `record` off the disk.
+
+        Args:
+            success: The evaluator's verdict, judged before this is called. Written to the
+                sidecar's `episodes` table, which is the only place on disk a verdict joins
+                to the frames it judges. None when nobody could judge, which is stored as
+                NULL and is not a failure.
         """
         if self._episode_id is None or self._meta is None:
             raise RecorderError("no episode is open")
 
+        ended_at = _now()
         if self._frame_count == 0:
             # Nothing was recorded. Discard rather than write an empty episode: a
             # zero-frame episode is indistinguishable from a broken one downstream.
@@ -413,11 +420,11 @@ class Recorder:
             episode_index = self._dataset.num_episodes - 1
         self._dataset.finalize()
 
-        self._write_sidecar(episode_index)
+        self._write_sidecar(episode_index, success=success, ended_at=ended_at)
 
         meta = self._meta.model_copy(
             update={
-                "ended_at": _now(),
+                "ended_at": ended_at,
                 "steps": self._frame_count,
                 "interrupts": len(self._interrupts),
                 "success": success,
@@ -439,12 +446,20 @@ class Recorder:
         """
         return self._root / self._repo_id.replace("/", "__") / "tendon_sidecar.duckdb"
 
-    def _write_sidecar(self, episode_index: int | None = None) -> None:
+    def _write_sidecar(
+        self,
+        episode_index: int | None = None,
+        *,
+        success: bool | None = None,
+        ended_at: datetime | None = None,
+    ) -> None:
         """Flush this episode's sidecar rows. One transaction, once per episode.
 
         Args:
             episode_index: The index LeRobot filed this episode under, or None when it was
                 discarded for having no frames.
+            success: The evaluator's verdict, or None when nobody could judge.
+            ended_at: When `finish` was called, so the row and `EpisodeMeta` agree.
 
         `episode_index` is the column that makes this file joinable to the dataset. Without
         it the sidecar keys everything by the recorder's uuid while the parquet numbers
@@ -455,6 +470,23 @@ class Recorder:
         Added after the tables already existed in the field, so the ALTER runs for sidecars
         written before this column did. Rows from those runs keep NULL, because the join
         they needed was never recorded and inventing one would be worse than admitting it.
+
+        `episodes` is one row per episode with the verdict, and it exists because nothing on
+        disk said which episodes succeeded: the verdict went onto the returned `EpisodeMeta`
+        and nowhere else, so the demonstration index (ADR 0007) could not be built from the
+        store. It follows the same rule: the table appears in older sidecars empty, and the
+        episodes recorded before it get no rows, because their verdict was never written and
+        a guessed one would be indexed as a success.
+
+        The early return covers it too. An episode with no frames and no interrupts leaves
+        nothing in `frames` or `interrupts`, and a verdict row for it would point at nothing
+        in any table or in the parquet. One with interrupts and no frames gets a row with
+        `episode_index` NULL, as its interrupts do: what the operator did is kept, and there
+        is no parquet row to join it to.
+
+        Written inside an explicit transaction. DuckDB commits each statement on its own
+        otherwise, and frames committed without their verdict would read as an episode
+        nobody judged.
         """
         if not self._sidecar and not self._interrupts:
             return
@@ -464,6 +496,7 @@ class Recorder:
         self.sidecar_path.parent.mkdir(parents=True, exist_ok=True)
         con = duckdb.connect(str(self.sidecar_path))
         try:
+            con.execute("BEGIN TRANSACTION")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS frames (
@@ -530,6 +563,37 @@ class Recorder:
                         for r in self._interrupts
                     ],
                 )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS episodes (
+                    episode_id    VARCHAR,
+                    episode_index BIGINT,
+                    skill         VARCHAR,
+                    success       BOOLEAN,
+                    interrupts    BIGINT,
+                    ended_at      TIMESTAMPTZ
+                )
+                """
+            )
+            con.execute(
+                "INSERT INTO episodes "
+                "(episode_id, episode_index, skill, success, interrupts, ended_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    self._episode_id,
+                    episode_index,
+                    self._task,
+                    success,
+                    len(self._interrupts),
+                    ended_at,
+                ],
+            )
+            con.execute("COMMIT")
+        except BaseException:
+            # Rolled back rather than left to the connection's close, so the half that did
+            # get written is discarded on purpose and the error that caused it propagates.
+            con.execute("ROLLBACK")
+            raise
         finally:
             con.close()
         self._sidecar.clear()
