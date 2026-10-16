@@ -171,6 +171,34 @@ def test_a_worker_failure_is_surfaced_not_swallowed() -> None:
     assert "driver exploded" in snapshot["error"]
 
 
+def test_after_episode_is_handed_the_result_to_judge() -> None:
+    """The recorder is closed with the verdict, so the verdict has to exist by then.
+
+    It was judged in `on_result`, after `after_episode` had already closed the episode
+    with nothing, and the sidecar never learned which episodes succeeded (ADR 0007).
+    """
+    seen: list[object] = []
+    session = a_session(after_episode=seen.append, max_steps=10)
+    session.start()
+    session.join(timeout=2.0)
+
+    assert len(seen) == 1
+    assert getattr(seen[0], "episode_id", None) == "ep-1"
+
+
+def test_after_episode_still_runs_when_the_episode_raised() -> None:
+    """None, not a missing call: the dataset has to be closed either way."""
+    seen: list[object] = []
+    session = a_session(
+        scheduler_factory=lambda h, s: FakeScheduler(fail=True), after_episode=seen.append
+    )
+    session.start()
+    session.join(timeout=2.0)
+
+    assert seen == [None]
+    assert "driver exploded" in (session.snapshot()["error"] or "")
+
+
 def test_a_session_cannot_be_started_twice() -> None:
     session = a_session()
     session.start()

@@ -342,6 +342,28 @@ def _record_progress(progress_root, loaded, body_id, memories, result) -> None:
         _LOG.warning("could not record progress for %s on %s: %s", skill, body_id, exc)
 
 
+def _finish_judged(recorder, loaded, result) -> None:
+    """Close the recorder with the episode's verdict.
+
+    Judged here, before `finish`, because `finish` is what writes the verdict into the
+    sidecar's `episodes` table, and it was being called with nothing: the shell's
+    episodes reached the store unjudged while the progress log had the verdict, so the
+    demonstration index (ADR 0007) could not be built from the store.
+
+    `result` is None when the episode raised; there is nothing to judge, and the recorder
+    is closed anyway. Judging that raises still closes it, with None, and the error goes
+    on to the session, which reports it.
+    """
+    from tendon.services.evaluator import judge_result
+
+    verdict: bool | None = None
+    try:
+        if result is not None:
+            verdict = judge_result(loaded, result)
+    finally:
+        recorder.finish(success=verdict)
+
+
 def _record_decision(recorder, context, resolution, skill) -> None:
     """Write an operator's decision into the episode.
 
@@ -843,7 +865,11 @@ def create_app(
             before_episode=(
                 None if recorder is None else lambda: recorder.start(loaded.ref, capability)
             ),
-            after_episode=None if recorder is None else recorder.finish,
+            after_episode=(
+                None
+                if recorder is None
+                else lambda result: _finish_judged(recorder, loaded, result)
+            ),
             # Two things happen when an operator decides. `note_interrupt` writes it into
             # the episode — the most valuable rows in the store, because demonstration data
             # almost never contains recovery from failure. And the memory is persisted, so

@@ -3933,3 +3933,17 @@ where confidence is going to come from.
   side; `drivers/`, `services/trainer.py` and `third_party/` were not.
   `tests/integration/test_sidecar_episodes.py` (6). **A:** the table is yours to change;
   B's builder reads `episode_index`, `success` and `interrupts` from it.
+
+- **B — every caller judges before `finish` and passes the verdict.** `tendon run` and
+  `tendon eval` call `judge_result` inside the `try` around `run_episode`, then
+  `finish(success=...)` in the same `finally` as before, and hand the same value to
+  `_record_progress`, which no longer judges on its own. The API's `EpisodeSession` now
+  passes the result to `after_episode` (None when the episode raised), and
+  `api/app.py._finish_judged` judges and closes the recorder in a `finally`, so a judge
+  that raises still closes it. Every exit that closed the dataset before still does; one
+  that raised before a result existed closes it with None. The API's `_record_progress`
+  still judges for itself from the same `judge_result` on the same result.
+  `tests/integration/test_the_verdict_reaches_the_sidecar.py` runs the real `run`, `eval`
+  and an API session and compares the sidecar's `success` with the progress log's
+  `succeeded` (both `False` on cube-sim at these step counts, never None); two session
+  tests in `tests/unit/test_session.py`. **A:** nothing in your files.

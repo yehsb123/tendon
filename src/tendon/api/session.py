@@ -259,7 +259,7 @@ class EpisodeSession:
         # is actually given (`recorder.start` and `recorder.finish`) return an episode id
         # and an `EpisodeMeta`. pyright reported both call sites; mypy accepted them.
         before_episode: Callable[[], object] | None = None,
-        after_episode: Callable[[], object] | None = None,
+        after_episode: Callable[[EpisodeResult | None], object] | None = None,
         on_resolved: Callable[[InterruptContext, InterruptResolution], None] | None = None,
         on_result: Callable[[EpisodeResult], None] | None = None,
         on_closed: Callable[[], None] | None = None,
@@ -271,6 +271,12 @@ class EpisodeSession:
                 be opened and closed around the run without this module knowing what a
                 recorder is — the episode happens on a thread nobody else can reach, so
                 there is no other moment for the caller to take.
+
+                `after_episode` is handed the result, or None when the episode raised, so
+                the caller can judge it before closing the recorder. It was called with
+                nothing and the verdict was judged later in `on_result`, which meant the
+                recorder closed every episode unjudged and the sidecar never held a
+                verdict (ADR 0007).
             on_closed: Called last, whatever happened, for releasing what the caller opened
                 before handing it over. The body is the reason: `create_app` opens one per
                 session and closed it only on the failure paths, so every episode that
@@ -323,13 +329,15 @@ class EpisodeSession:
 
             if self._before_episode is not None:
                 self._before_episode()
+            ran: EpisodeResult | None = None
             try:
                 result = scheduler.run_episode(policy, max_steps=self._max_steps, seed=self._seed)
+                ran = result
             finally:
                 # In `finally` so a run that raises still closes whatever was opened. A
                 # dataset left half written is what the store reports as unreadable later.
                 if self._after_episode is not None:
-                    self._after_episode()
+                    self._after_episode(ran)
 
             self.state.result = result
             self.state.steps = result.steps

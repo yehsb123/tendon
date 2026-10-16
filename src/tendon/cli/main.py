@@ -168,6 +168,7 @@ def run(
         PhysicalBodyRefused,
         open_body,
     )
+    from tendon.services.evaluator import judge_result
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
     try:
@@ -253,14 +254,20 @@ def run(
         reporting.report_video(console, cameras, capability, driver)
         recorder.start(loaded.ref, capability, cameras=cameras, frame_size=frame_size)
 
+    # Judged before the recorder closes, because `finish` is what writes the verdict to
+    # the sidecar. It was called with nothing and the episode judged afterwards, so the
+    # progress log had a verdict and the store did not (ADR 0007). One value for both, so
+    # the two cannot disagree.
+    succeeded: bool | None = None
     try:
         result = scheduler.run_episode(running, max_steps=steps, seed=seed)
+        succeeded = judge_result(loaded, result)
     finally:
         # Nested so that a recorder which fails to close still leaves the body closed. A
         # half-written dataset is recoverable; a driver left holding a port is not.
         try:
             if recorder is not None:
-                recorder.finish()
+                recorder.finish(success=succeeded)
         finally:
             try:
                 # Flushed before the body closes: an unflushed recording is a file that
@@ -270,7 +277,7 @@ def run(
             finally:
                 body.close()
 
-    _record_progress(console, loaded, capability, result, store)
+    _record_progress(console, loaded, capability, result, store, succeeded)
     reporting.report(console, result, bus, root)
 
     if result.subscriber_failures:
@@ -306,7 +313,9 @@ def _effective_limits(console: Console, loaded):
     return limits
 
 
-def _record_progress(console: Console, loaded, capability, result, store: str) -> None:
+def _record_progress(
+    console: Console, loaded, capability, result, store: str, succeeded: bool | None
+) -> None:
     """Append one finished episode to the progress log.
 
     The log is what `tendon progress` draws, and that graph is the whole of v0.3: *after N
@@ -330,11 +339,9 @@ def _record_progress(console: Console, loaded, capability, result, store: str) -
     the graph that nobody can see.
     """
     from tendon.services import progress
-    from tendon.services.evaluator import judge_result
     from tendon.services.memory_store import DEFAULT_MEMORY_ROOT, load_memory
 
     root = Path(store).parent / "progress" if store else progress.DEFAULT_PROGRESS_ROOT
-    succeeded = judge_result(loaded, result)
 
     try:
         known = len(load_memory(DEFAULT_MEMORY_ROOT, loaded.ref, capability.body_id))
@@ -1015,7 +1022,13 @@ def evaluate_skill(
         PhysicalBodyRefused,
         open_body,
     )
-    from tendon.services.evaluator import EpisodeOutcome, SuccessCriterion, evaluate, judge
+    from tendon.services.evaluator import (
+        EpisodeOutcome,
+        SuccessCriterion,
+        evaluate,
+        judge,
+        judge_result,
+    )
     from tendon.services.skill import IncompatibleBody, SkillError, load_skill, require_compatible
 
     try:
@@ -1078,11 +1091,14 @@ def evaluate_skill(
             # that could not tell them apart would be useless for training.
             if recorder is not None:
                 recorder.start(loaded.ref, capability, cameras=cameras, frame_size=frame_size)
+            # Before `finish`, as in `run`: the recorder writes the verdict it is given.
+            succeeded: bool | None = None
             try:
                 result = scheduler.run_episode(running, max_steps=steps, seed=seed + index)
+                succeeded = judge_result(loaded, result)
             finally:
                 if recorder is not None:
-                    recorder.finish()
+                    recorder.finish(success=succeeded)
 
             if result.subscriber_failures:
                 for failure in result.subscriber_failures:
@@ -1099,7 +1115,7 @@ def evaluate_skill(
             # Every episode, not the sweep. Thirty evaluation episodes are thirty points on
             # the graph, and a sweep recorded as one would hide the thing the graph is for:
             # whether the rate moves across them.
-            _record_progress(console, loaded, capability, result, store)
+            _record_progress(console, loaded, capability, result, store, succeeded)
 
             # The world at the end, not the policy's last observation. See `_judge`.
             verdict, reason = judge(result.final_world, criteria)
