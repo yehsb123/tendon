@@ -35,7 +35,7 @@ tendon이 직접 만드는 부분은 다섯 가지입니다. 나머지는 아래
 - 인터럽트 프로토콜: 제어권을 사람에게 넘기고 되받는 방법
 - 큐레이션 지표: 어떤 에피소드가 학습에 도움이 되는지 매기는 기준
 - 셸: 사람이 로봇의 의도를 읽고 개입하는 화면
-- 확신도 추정: 정책은 자기 확신도를 알려 주지 않으므로 tendon이 따로 계산합니다. 지금 쓰는 신호는 같은 상황에서 뽑은 예측들이 서로 얼마나 어긋나는지입니다. 비슷한 상태에서 시작한 성공 시연에서 얼마나 벗어났는지를 재는 두 번째 신호는 추정기로만 있고, 성공 판정이 저장된 뒤 런타임에 연결합니다([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md), [ADR 0007](docs/decisions/0007-demonstration-distance-is-a-second-confidence-source.md))
+- 확신도 추정: 정책은 자기 확신도를 알려 주지 않으므로 tendon이 따로 계산합니다. 지금 쓰는 신호는 같은 상황에서 뽑은 예측들이 서로 얼마나 어긋나는지입니다. 비슷한 상태에서 시작한 성공 시연에서 얼마나 벗어났는지를 재는 두 번째 신호는 실행마다 성공 판정이 저장되어 저장소에서 만들 수 있지만, 어느 신호가 넘김을 일으켰는지 보고하는 방법을 정하기 전까지 `tendon run`과 셸에는 연결하지 않습니다([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md), [ADR 0007](docs/decisions/0007-demonstration-distance-is-a-second-confidence-source.md))
 
 ## 실행 결과
 

@@ -192,8 +192,9 @@ open source. tendon writes only the five things nobody else has:
    number is what makes intervention fire ([ADR 0003](docs/decisions/0003-confidence-has-no-upstream-source.md)).
    The signal in use today is how far sampled predictions disagree. A second one, how far
    the predicted chunk strays from successful demonstrations that started from a similar
-   state, exists as an estimator only ([ADR 0007](docs/decisions/0007-demonstration-distance-is-a-second-confidence-source.md));
-   it is wired into the runtime once success verdicts are stored.
+   state, can now be built from the store, since every run writes its success verdict,
+   but `tendon run` and the shell do not use it yet: an episode scored by two estimators
+   needs a way to report which one drove each handover first ([ADR 0007](docs/decisions/0007-demonstration-distance-is-a-second-confidence-source.md)).
 
 Everything else is composed.
 

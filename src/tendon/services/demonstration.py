@@ -52,6 +52,11 @@ and indexing the motion an operator rejected as "like a success" would teach thi
 wave through exactly what needed a human. Corrections are not lost: `adaptive.
 CorrectionMemory` recalls them by state already.
 
+From a store, `read_demonstrations` takes the verdict from the sidecar's `episodes` table
+(`success`, and `interrupts` as the intervention count) and the states and actions from the
+parquet, joined on `episode_index`. Episodes recorded before that table have no verdict and
+are left out, not counted as failures.
+
 ## The scale
 
 Distance has no absolute meaning for the same reason spread does, so it is scored against
@@ -90,6 +95,8 @@ not evidence of enough.
 different places: spread misses a confidently wrong policy, distance misses a familiar
 mistake. When both are measured, a chunk should hand over if *either* is below the
 threshold — never an average, which lets one confident signal hide the other's alarm.
+`combine` is that rule. Nothing in the runtime calls it yet; ADR 0007 says what has to be
+decided first.
 
 ## Cost
 
@@ -104,6 +111,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -116,7 +124,10 @@ __all__ = [
     "Demonstration",
     "DemonstrationIndex",
     "Nearest",
+    "combine",
     "estimate_from_demonstrations",
+    "index_from_store",
+    "read_demonstrations",
 ]
 
 #: Below this a median is not a distribution. The same floor `calibration.py` sets for
@@ -425,6 +436,134 @@ def estimate_from_demonstrations(
         source=ConfidenceSource.DEMONSTRATION,
         reasons=tuple(reasons),
     )
+
+
+def combine(spread: Confidence, demonstration: Confidence | None) -> Confidence:
+    """The rule from ADR 0007 for two sources: the lower measured score, never an average.
+
+    The scheduler hands over when a score is strictly below the threshold, so returning the
+    lower of two measured scores hands over exactly when either alone would have. An
+    average would let a tight sample spread hide a chunk no success ever resembled, which
+    is the failure the second source exists to catch.
+
+    Returned as it was, not relabelled or merged: evaluation reports which estimator
+    produced a rate (ADR 0003), and a score whose source named the other one would be
+    filed under the wrong estimator.
+
+    With no index, or one that cannot measure this chunk, `spread` comes back unchanged
+    and is the same object. Adding a source that has nothing to say must not move a
+    single decision the scheduler was already making. A tie keeps `spread` for the same
+    reason.
+    """
+    if demonstration is None or not demonstration.is_measured:
+        return spread
+    if not spread.is_measured:
+        # A deterministic policy has no spread. Distance needs no samples, which is half
+        # of why it was added.
+        return demonstration
+    return demonstration if demonstration.score < spread.score else spread
+
+
+def read_demonstrations(directory: Path) -> tuple[Demonstration, ...]:
+    """Every episode in a dataset directory, with the verdict the sidecar holds for it.
+
+    The parquet supplies `observation.state` and `action` per frame; the sidecar's
+    `episodes` table supplies `success` and `interrupts`, joined on `episode_index`. Read
+    with duckdb, as `episodes.read_episodes` reads, so building an index needs neither
+    LeRobot nor torch.
+
+    An episode with no row in `episodes` comes back with `succeeded` and `interventions`
+    None: it was recorded before the verdict was written, or the sidecar is missing, and
+    `DemonstrationIndex.build` leaves it out with the reason rather than guessing.
+
+    Raises `EpisodeReadError` when the parquet cannot be read, as `read_episodes` does,
+    and `ValueError` when the sidecar holds two verdicts for one episode, which no writer
+    produces and which no choice between them would make right.
+    """
+    import duckdb
+
+    from tendon.services.episodes import EpisodeReadError, _action, _has_gripper, _info
+
+    files = sorted(str(p) for p in (directory / "data").rglob("*.parquet"))
+    if not files:
+        raise EpisodeReadError(f"no episode data under {directory / 'data'}")
+    has_gripper = _has_gripper(_info(directory))
+    verdicts = _verdicts(directory)
+
+    con = duckdb.connect()
+    try:
+        rows = con.execute(
+            'SELECT episode_index, "observation.state", action FROM read_parquet(?) '
+            "ORDER BY episode_index, frame_index",
+            [files],
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - duckdb raises its own hierarchy
+        raise EpisodeReadError(f"could not read {directory}: {exc}") from exc
+    finally:
+        con.close()
+
+    grouped: dict[int, tuple[list[list[float]], list[Action]]] = {}
+    for episode_index, state, values in rows:
+        states, actions = grouped.setdefault(int(episode_index), ([], []))
+        states.append([float(v) for v in state])
+        actions.append(_action(values, has_gripper))
+
+    demonstrations = []
+    for index, (states, actions) in sorted(grouped.items()):
+        success, interrupts = verdicts.get(index, (None, None))
+        demonstrations.append(
+            Demonstration(
+                episode_id=str(index),
+                states=states,
+                actions=actions,
+                succeeded=success,
+                interventions=interrupts,
+            )
+        )
+    return tuple(demonstrations)
+
+
+def index_from_store(directory: Path, *, horizon: int) -> DemonstrationIndex:
+    """`DemonstrationIndex.build` over what `read_demonstrations` finds in `directory`."""
+    return DemonstrationIndex.build(read_demonstrations(directory), horizon=horizon)
+
+
+def _verdicts(directory: Path) -> dict[int, tuple[bool | None, int | None]]:
+    """`episode_index` to `(success, interrupts)` from the sidecar, empty when it has none.
+
+    Empty rather than an error for a missing sidecar or a missing table: both describe a
+    store recorded before the verdict was written, and every episode in it is then
+    unjudged, which `build` already reports per episode.
+    """
+    sidecar = directory / "tendon_sidecar.duckdb"
+    if not sidecar.is_file():
+        return {}
+
+    import duckdb
+
+    con = duckdb.connect(str(sidecar), read_only=True)
+    try:
+        present = con.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'episodes'"
+        ).fetchone()
+        if not present or present[0] == 0:
+            return {}
+        rows = con.execute(
+            "SELECT episode_index, success, interrupts FROM episodes "
+            "WHERE episode_index IS NOT NULL"
+        ).fetchall()
+    finally:
+        con.close()
+
+    verdicts: dict[int, tuple[bool | None, int | None]] = {}
+    for index, success, interrupts in rows:
+        if int(index) in verdicts:
+            raise ValueError(
+                f"{sidecar} holds more than one verdict for episode_index {index}; "
+                f"which one is true cannot be read from the store"
+            )
+        verdicts[int(index)] = (success, None if interrupts is None else int(interrupts))
+    return verdicts
 
 
 def _unmeasured(reason: str) -> Confidence:

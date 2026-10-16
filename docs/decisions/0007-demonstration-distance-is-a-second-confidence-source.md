@@ -66,9 +66,15 @@ asked constantly learns to approve without looking.
 
 Not done silently. The two are blind in different places, so when both are measured a
 chunk should hand over if either scores below the threshold. Never an average, which lets
-one confident signal hide the other's alarm. The rule is written here and in the module
-docstring rather than as code, because nothing in the runtime builds an index yet (below),
-and a combiner nothing calls is the kind of code this repository removes.
+one confident signal hide the other's alarm.
+
+`demonstration.combine` is that rule as code: the lower of two measured scores, returned
+with its own source, and the spread confidence unchanged (the same object) when there is
+no index or the index cannot measure the chunk. This section first kept it out of the code,
+because a combiner nothing calls is the kind of code this repository removes. It is code now
+because the index can be built from the store (below), so the rule can be held by tests
+before the scheduler uses it. Nothing in the runtime calls it yet; if the wiring below is
+dropped, the combiner goes with it.
 
 ## Consequences
 
@@ -77,10 +83,20 @@ The shell's `ConfidenceSource` mirrors the new value; the contract test enforces
 Evaluation must report which source produced a rate, as ADR 0003 already requires. A rate
 under `demonstration` is not comparable with one under `chunk_variance`.
 
-**Not wired into `tendon run` or the API.** The estimator needs, per stored episode, the
-state and action columns and the evaluator's verdict. The store has the first two. The
-verdict is in the progress log under the scheduler's episode id, the sidecar keys episodes
-by the recorder's id, and the parquet numbers them from zero, so no column joins a verdict
-to its frames. `recorder.finish` accepts `success` and is called without it. Until one of
-those is fixed, the index can only be built by a caller who already knows which episodes
-succeeded.
+**Built from the store, not yet wired into `tendon run` or the API.** The estimator
+needs, per stored episode, the state and action columns and the evaluator's verdict. When
+this ADR was written no column joined a verdict to its frames: the progress log keyed it by
+the scheduler's id, the sidecar by the recorder's, and `recorder.finish` was called without
+it. Now `tendon run`, `tendon eval` and the API judge before `finish`, the sidecar's
+`episodes` table holds `success` and `interrupts` per `episode_index`, and
+`demonstration.index_from_store` builds the index from a dataset directory with duckdb
+alone. Episodes recorded before that table have no verdict and are left out as "success
+was not measured".
+
+What is still missing is the scheduler using it, and it is held back by reporting, not by
+data. `reporting.episode_source` labels an episode with the source of its first chunk, and
+evaluation keeps rates from different sources apart (ADR 0003). With two sources combined
+per chunk, one episode carries both, and the first chunk's label would file the whole
+episode under whichever estimator happened to win it. The threshold in `skill.yaml` is also
+one number calibrated against spread. Both need a decision before a run is scored by two
+estimators.

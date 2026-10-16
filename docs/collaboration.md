@@ -3947,3 +3947,24 @@ where confidence is going to come from.
   and an API session and compares the sidecar's `success` with the progress log's
   `succeeded` (both `False` on cube-sim at these step counts, never None); two session
   tests in `tests/unit/test_session.py`. **A:** nothing in your files.
+
+- **B — the demonstration index is built from the store; the combining rule is code; the
+  scheduler does not use either yet.** `demonstration.read_demonstrations(directory)` reads
+  `observation.state` and `action` from the parquet with duckdb (no LeRobot, no torch; the
+  trailing gripper channel is split off with `episodes._action`) and joins `success` and
+  `interrupts` from the sidecar's `episodes` table on `episode_index`. An episode with no
+  row comes back unjudged and `build` leaves it out as "success was not measured"; two
+  verdicts for one index raise. `index_from_store` is `build` over that.
+  `demonstration.combine(spread, demonstration)` is ADR 0007's rule: the lower of two
+  measured scores with its own source, the spread object unchanged when distance is
+  missing or `NONE`, distance alone when spread is `NONE`. Not wired, and the reason is
+  reporting rather than size: `reporting.episode_source` labels an episode by its first
+  chunk's source, so a per-chunk combination would file each episode under whichever
+  estimator won chunk one, and evaluation keeps sources apart (ADR 0003). The threshold in
+  `skill.yaml` is also calibrated against spread only. Left for B: decide how a
+  two-source episode is reported and thresholded, then wrap the policy in `services/`
+  (no kernel change needed; `test_boundaries.py` untouched) and build the index in
+  `tendon run` and the API from the skill's store with `horizon` = the policy's chunk
+  length. ADR 0007, README.md and README.ko.md updated to say this.
+  `tests/integration/test_demonstrations_from_store.py` (5),
+  `tests/unit/test_demonstration_combine.py` (17). **A:** nothing in your files.
